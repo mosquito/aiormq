@@ -2,7 +2,9 @@ FROM rabbitmq:3-alpine
 
 RUN mkdir -p /certs
 
-COPY ca.pem server.key server.pem /certs/
+COPY tests/certs/ca.pem /certs/
+COPY tests/certs/server.key /certs/
+COPY tests/certs/server.pem /certs/
 
 ENV RABBITMQ_SSL_CERTFILE=/certs/server.pem
 ENV RABBITMQ_SSL_KEYFILE=/certs/server.key

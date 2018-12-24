@@ -53,15 +53,6 @@ steps:
 services:
   - name: rabbitmq
     image: rabbitmq:3-alpine
-    volumes:
-      - name: certs
-        path: /certs
     when:
       branch:
         - master
-
-
-volumes:
-- name: certs
-  host:
-    path: tests/certs
