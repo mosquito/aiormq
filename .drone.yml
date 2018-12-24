@@ -52,7 +52,7 @@ steps:
 
 services:
   - name: rabbitmq
-    image: rabbitmq:3-alpine
+    image: mosquito/aiormq-rabbitmq
     when:
       branch:
         - master
