@@ -52,7 +52,7 @@ steps:
 
 services:
   - name: rabbitmq
-    image: mosquito/aiormq-rabbitmq
+    image: mosquito/aiormq-rabbitmq:latest
     when:
       branch:
         - master
