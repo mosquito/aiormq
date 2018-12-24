@@ -1,5 +1,5 @@
-AIO-Lapin
-=========
+AIORMQ
+======
 
 .. image:: https://img.shields.io/pypi/status/aiormq.svg
     :target: https://github.com/mosquito/aiormq
