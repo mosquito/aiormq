@@ -60,7 +60,14 @@ services:
       - RABBITMQ_DEFAULT_USER=guest
       - RABBITMQ_DEFAULT_PASS=guest
     volumes:
-      - tests/certs:/certs
+      - name: certs
+        path: /certs
     when:
       branch:
         - master
+
+
+volumes:
+- name: certs
+  host:
+    path: tests/certs
