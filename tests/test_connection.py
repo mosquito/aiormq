@@ -38,7 +38,7 @@ async def test_simple(amqp_connection: Connection):
     queue = asyncio.Queue()
 
     deaclare_ok = await channel.queue_declare(auto_delete=True)
-    await channel.basic_consume(deaclare_ok.queue, queue.put)
+    consume_ok = await channel.basic_consume(deaclare_ok.queue, queue.put)
     await channel.basic_publish(b'foo', routing_key=deaclare_ok.queue)
 
     message = await queue.get()     # type: DeliveredMessage
@@ -55,9 +55,24 @@ async def test_simple(amqp_connection: Connection):
     assert message.delivery.routing_key == deaclare_ok.queue + 'foo'
     assert message.body == b'bar'
 
+    cancel_ok = await channel.basic_cancel(consume_ok.consumer_tag)
+    assert cancel_ok.consumer_tag == consume_ok.consumer_tag
     await channel.queue_delete(deaclare_ok.queue)
 
+    deaclare_ok = await channel.queue_declare(auto_delete=True)
+    await channel.basic_publish(b'foo bar', routing_key=deaclare_ok.queue)
+
+    message = await channel.basic_get(deaclare_ok.queue)
+    assert message.body == b'foo bar'
+
     await amqp_connection.close()
+
+    with pytest.raises(RuntimeError):
+        await channel.basic_get(deaclare_ok.queue)
+
+    with pytest.raises(RuntimeError):
+        await amqp_connection.channel()
+
     assert amqp_connection.reader is None
     assert amqp_connection.writer is None
 
@@ -123,6 +138,11 @@ async def test_auth_plain(amqp_connection):
     auth_parts = auth.split(b"\x00")
     assert auth_parts == [b'', b'foo', b'bar']
 
+    auth = PlainAuth(connection)
+    auth.value = b'boo'
+
+    assert auth.marshal() == b'boo'
+
 
 async def test_channel_closed(amqp_connection):
 
@@ -144,6 +164,16 @@ async def test_bad_credentials(amqp_connection):
         await connection.connect()
 
 
+async def test_non_publisher_confirms(amqp_connection):
+    amqp_connection.server_capabilities['publisher_confirms'] = False
+
+    with pytest.raises(ValueError):
+        await amqp_connection.channel(publisher_confirms=True)
+
+    await amqp_connection.channel(publisher_confirms=False)
+
+
+@pytest.mark.skipif(os.getenv("TEST_QUICK") is not None, reason='quick test')
 async def test_no_free_channels(amqp_connection):
     for _ in range(amqp_connection.connection_tune.channel_max):
         await amqp_connection.channel()

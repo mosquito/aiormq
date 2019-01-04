@@ -56,3 +56,20 @@ async def amqp_connection(request, event_loop):
         await yield_(connection)
     finally:
         await connection.close()
+
+
+channel_params = [
+    dict(channel_number=None, frame_buffer=10, publisher_confirms=True),
+    dict(channel_number=None, frame_buffer=1, publisher_confirms=True),
+    dict(channel_number=None, frame_buffer=10, publisher_confirms=False),
+    dict(channel_number=None, frame_buffer=1, publisher_confirms=False),
+]
+
+
+@pytest.fixture(params=channel_params)
+@async_generator
+async def amqp_channel(request, amqp_connection):
+    try:
+        await yield_(await amqp_connection.channel(**request.param))
+    finally:
+        await amqp_connection.close()

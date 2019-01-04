@@ -27,12 +27,6 @@ class TaskWrapper:
         return getattr(self.task, item)
 
 
-def create_blank_future(loop):
-    future = loop.create_future()
-    future.set_result(None)
-    return future
-
-
 class FutureStore:
     __slots__ = "futures", "loop", "parent"
 
@@ -54,7 +48,7 @@ class FutureStore:
         if self.parent:
             self.parent.add(future)
 
-    def reject_all(self, exception: Exception) -> asyncio.Future:
+    async def reject_all(self, exception: Exception):
         tasks = []
 
         while self.futures:
@@ -69,10 +63,8 @@ class FutureStore:
             elif isinstance(future, asyncio.Future):
                 future.set_exception(exception)
 
-        if not tasks:
-            return create_blank_future(self.loop)
-
-        return self.loop.create_task(asyncio.wait(tasks, loop=self.loop))
+        if tasks:
+            await asyncio.wait(tasks, loop=self.loop)
 
     def create_task(self, coro: T) -> T:
         task = TaskWrapper(self.loop.create_task(coro))
@@ -121,29 +113,25 @@ class Base:
     def create_future(self) -> asyncio.Future:
         return self.__future_store.create_future()
 
+    @abc.abstractmethod
     async def _on_close(self, exc=None):
-        pass
+        return
 
     async def __closer(self, exc):
         if self.is_closed:
             return
 
         with suppress(Exception):
-            result = await self._on_close(exc)
-            print(result)
+            await self._on_close(exc)
 
         with suppress(Exception):
             await self._cancel_tasks(exc)
 
+    async def close(self, exc=asyncio.CancelledError()):
         if self.is_closed:
             return
 
-        self.closing.set_exception(exc)
-
-    def close(self, exc=asyncio.CancelledError()):
-        if self.is_closed:
-            return create_blank_future(self.loop)
-        return self.loop.create_task(self.__closer(exc))
+        await self.loop.create_task(self.__closer(exc))
 
     def __repr__(self):
         cls_name = self.__class__.__name__

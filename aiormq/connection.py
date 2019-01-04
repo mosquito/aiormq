@@ -293,7 +293,11 @@ class Connection(Base):
         return self.server_capabilities.get('publisher_confirms')
 
     async def channel(self, channel_number: int = None,
-                      publisher_confirms=True, **kwargs) -> Channel:
+                      publisher_confirms=True,
+                      frame_buffer=FRAME_BUFFER, **kwargs) -> Channel:
+
+        if self.is_closed:
+            raise RuntimeError('%r closed' % self)
 
         if not self.publisher_confirms and publisher_confirms:
             raise ValueError("Server doesn't support publisher_confirms")
@@ -312,7 +316,7 @@ class Connection(Base):
         self.last_channel = min(self.last_channel, channel_number)
 
         channel = Channel(
-            self, channel_number, frame_buffer=self.FRAME_BUFFER,
+            self, channel_number, frame_buffer=frame_buffer,
             publisher_confirms=publisher_confirms, **kwargs
         )
 

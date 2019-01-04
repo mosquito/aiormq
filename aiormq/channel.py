@@ -69,6 +69,9 @@ class Channel(Base):
 
     @task
     async def rpc(self, frame: spec.Frame) -> typing.Optional[spec.Frame]:
+        if self.is_closed:
+            raise RuntimeError('%r closed' % self)
+
         async with self.lock:
             self.writer.write(
                 pamqp.frame.marshal(frame, self.number)
@@ -242,7 +245,7 @@ class Channel(Base):
             frame, message = await self.getter
             self.getter = None
 
-        return frame, message
+        return message
 
     async def basic_cancel(self, consumer_tag, *,
                            nowait=False) -> spec.Basic.CancelOk:
