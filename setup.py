@@ -27,7 +27,7 @@ setup(
         "amqp driver",
         "amqp",
         "asyncio",
-        "pamqp",
+        "pamqp~=2.1",
     ],
     classifiers=[
         'License :: OSI Approved :: Apache Software License',
