@@ -59,7 +59,7 @@ class Connection(Base):
         )
 
         self.started = False
-        self.lock = asyncio.Lock(loop=self.loop)
+        self.__lock = asyncio.Lock(loop=self.loop)
 
         self.channels = {}  # type: typing.Dict[int, typing.Optional[Channel]]
 
@@ -67,6 +67,13 @@ class Connection(Base):
         self.connection_tune = None  # type: spec.Connection.TuneOk
 
         self.last_channel = 0
+
+    @property
+    def lock(self):
+        if self.is_closed:
+            raise RuntimeError('%r closed' % self)
+
+        return self.__lock
 
     @property
     def is_opened(self):
@@ -257,8 +264,6 @@ class Connection(Base):
                     continue
 
                 queue = self.channels[channel].frames
-
-                # Inverse priority
                 await queue.put((weight, frame))
             except asyncio.CancelledError:
                 return

@@ -3,10 +3,11 @@ import os
 import uuid
 
 import pytest
+from binascii import hexlify
 
-from aiormq import exceptions as exc
+import aiormq
 from aiormq.auth import AuthBase, PlainAuth
-from aiormq.connection import Connection
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -18,7 +19,7 @@ pytest.mark.parametrize(
 )
 
 
-async def test_simple(amqp_connection: Connection):
+async def test_simple(amqp_connection: aiormq.Connection):
     assert amqp_connection.reader is not None
     assert amqp_connection.writer is not None
 
@@ -44,7 +45,7 @@ async def test_simple(amqp_connection: Connection):
     message = await queue.get()     # type: DeliveredMessage
     assert message.body == b'foo'
 
-    with pytest.raises(exc.DeliveryError) as e:
+    with pytest.raises(aiormq.exceptions.DeliveryError) as e:
         await channel.basic_publish(
             b'bar', routing_key=deaclare_ok.queue + 'foo',
             mandatory=True,
@@ -62,7 +63,7 @@ async def test_simple(amqp_connection: Connection):
     deaclare_ok = await channel.queue_declare(auto_delete=True)
     await channel.basic_publish(b'foo bar', routing_key=deaclare_ok.queue)
 
-    message = await channel.basic_get(deaclare_ok.queue)
+    message = await channel.basic_get(deaclare_ok.queue, no_ack=True)
     assert message.body == b'foo bar'
 
     await amqp_connection.close()
@@ -77,7 +78,7 @@ async def test_simple(amqp_connection: Connection):
     assert amqp_connection.writer is None
 
 
-async def test_bad_channel(amqp_connection: Connection):
+async def test_bad_channel(amqp_connection: aiormq.Connection):
     with pytest.raises(ValueError):
         await amqp_connection.channel(65536)
 
@@ -86,7 +87,7 @@ async def test_bad_channel(amqp_connection: Connection):
 
     channel = await amqp_connection.channel(65535)
 
-    with pytest.raises(exc.ChannelNotFoundEntity):
+    with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
         await channel.queue_bind(
             uuid.uuid4().hex,
             uuid.uuid4().hex
@@ -96,7 +97,7 @@ async def test_bad_channel(amqp_connection: Connection):
 
     assert amqp_connection.channels[channel.number] is None
 
-    with pytest.raises(exc.ConnectionChannelError):
+    with pytest.raises(aiormq.exceptions.ConnectionChannelError):
         await amqp_connection.channel(65535)
 
 
@@ -129,7 +130,7 @@ async def test_auth_plain(amqp_connection):
     auth_parts = auth.split(b"\x00")
     assert auth_parts == [b'', b'guest', b'guest']
 
-    connection = Connection(
+    connection = aiormq.Connection(
         amqp_connection.url.with_user('foo').with_password('bar')
     )
 
@@ -148,19 +149,18 @@ async def test_channel_closed(amqp_connection):
 
     channel = await amqp_connection.channel()
 
-    with pytest.raises(exc.ChannelNotFoundEntity):
+    with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
         await channel.basic_consume("foo", lambda x: None)
 
     await amqp_connection.close()
-    return
 
 
 async def test_bad_credentials(amqp_connection):
-    connection = Connection(
+    connection = aiormq.Connection(
         amqp_connection.url.with_password(uuid.uuid4().hex),
     )
 
-    with pytest.raises(exc.ProbableAuthenticationError):
+    with pytest.raises(aiormq.exceptions.ProbableAuthenticationError):
         await connection.connect()
 
 
@@ -178,5 +178,60 @@ async def test_no_free_channels(amqp_connection):
     for _ in range(amqp_connection.connection_tune.channel_max):
         await amqp_connection.channel()
 
-    with pytest.raises(exc.ConnectionNotAllowed):
+    with pytest.raises(aiormq.exceptions.ConnectionNotAllowed):
         await amqp_connection.channel()
+
+
+async def test_huge_message(amqp_connection: aiormq.Connection):
+    conn = amqp_connection      # type: aiormq.Connection
+    body = os.urandom(int(conn.connection_tune.frame_max * 2.5))
+    channel = await conn.channel()       # type: aiormq.Channel
+
+    queue = asyncio.Queue()
+
+    deaclare_ok = await channel.queue_declare(auto_delete=True)
+    await channel.basic_consume(deaclare_ok.queue, queue.put)
+    await channel.basic_publish(body, routing_key=deaclare_ok.queue)
+
+    message = await queue.get()  # type: DeliveredMessage
+    assert message.body == body
+
+
+async def test_return_message(amqp_connection: aiormq.Connection):
+    conn = amqp_connection      # type: aiormq.Connection
+    body = os.urandom(512)
+    routing_key = hexlify(os.urandom(16)).decode()
+
+    channel = await conn.channel(
+        on_return_raises=False
+    )   # type: aiormq.Channel
+
+    result = await channel.basic_publish(
+        body,
+        routing_key=routing_key,
+        mandatory=True
+    )
+
+    assert result.delivery.name == 'Basic.Return'
+    assert result.delivery.routing_key == routing_key
+
+
+async def test_cancel_on_queue_deleted(amqp_connection, event_loop):
+    conn = amqp_connection  # type: aiormq.Connection
+    channel = await conn.channel()  # type: aiormq.Channel
+    deaclare_ok = await channel.queue_declare(auto_delete=True)
+    consume_ok = await channel.basic_consume(deaclare_ok.queue, print)
+
+    assert consume_ok.consumer_tag in channel.consumers
+
+    with pytest.raises(aiormq.DuplicateConsumerTag):
+        await channel.basic_consume(
+            deaclare_ok.queue, print,
+            consumer_tag=consume_ok.consumer_tag
+        )
+
+    await channel.queue_delete(deaclare_ok.queue)
+
+    await asyncio.sleep(0.1, loop=event_loop)
+
+    assert consume_ok.consumer_tag not in channel.consumers

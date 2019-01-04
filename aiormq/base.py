@@ -31,14 +31,15 @@ class FutureStore:
     __slots__ = "futures", "loop", "parent"
 
     def __init__(self, loop: asyncio.AbstractEventLoop):
-        self.futures = set()      # type: typing.Set[TaskWrapper]
-        self.loop = loop        # type: asyncio.AbstractEventLoop
-        self.parent = None      # type: FutureStore
+        self.futures = set()  # type: typing.Set[TaskWrapper]
+        self.loop = loop  # type: asyncio.AbstractEventLoop
+        self.parent = None  # type: FutureStore
 
     def __on_task_done(self, future):
         def remover(*_):
             nonlocal future
             self.futures.remove(future)
+
         return remover
 
     def add(self, future: typing.Union[asyncio.Future, TaskWrapper]):
@@ -52,7 +53,7 @@ class FutureStore:
         tasks = []
 
         while self.futures:
-            future = self.futures.pop()     # type: TaskWrapper
+            future = self.futures.pop()  # type: TaskWrapper
 
             if future.done():
                 continue
@@ -85,7 +86,7 @@ class FutureStore:
 class Base:
     __slots__ = 'loop', '__future_store', 'closing'
 
-    def __init__(self, *, loop, parent: 'Base'=None):
+    def __init__(self, *, loop, parent: 'Base' = None):
         self.loop = loop
 
         if parent:
@@ -100,7 +101,7 @@ class Base:
         future.add_done_callback(lambda x: x.exception())
         return future
 
-    def _cancel_tasks(self, exc: Union[Exception, Type[Exception]]=None):
+    def _cancel_tasks(self, exc: Union[Exception, Type[Exception]] = None):
         return self.__future_store.reject_all(exc)
 
     def _future_store_child(self):
@@ -114,11 +115,11 @@ class Base:
         return self.__future_store.create_future()
 
     @abc.abstractmethod
-    async def _on_close(self, exc=None):
+    async def _on_close(self, exc=None):  # pragma: no cover
         return
 
     async def __closer(self, exc):
-        if self.is_closed:
+        if self.is_closed:  # pragma: no cover
             return
 
         with suppress(Exception):
@@ -138,7 +139,7 @@ class Base:
         return '<{0}: "{1}">'.format(cls_name, str(self))
 
     @abc.abstractmethod
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         raise NotImplementedError
 
     @property

@@ -30,7 +30,8 @@ class Channel(Base):
 
         super().__init__(loop=connector.loop, parent=connector)
 
-        if publisher_confirms and not connector.publisher_confirms:
+        if publisher_confirms and not \
+           connector.publisher_confirms:     # pragma: no cover
             raise ValueError("Server does't support publisher confirms")
 
         self.consumers = {}
@@ -50,7 +51,7 @@ class Channel(Base):
             connector.connection_tune.frame_max - self.CONTENT_FRAME_SIZE
         )
 
-        self.lock = asyncio.Lock(loop=connector.loop)
+        self.__lock = asyncio.Lock(loop=connector.loop)
         self.number = number
         self.publisher_confirms = publisher_confirms
         self.publisher_confirms = publisher_confirms
@@ -60,8 +61,16 @@ class Channel(Base):
 
         self.create_task(self._reader())
 
+    @property
+    def lock(self):
+        if self.is_closed:
+            raise RuntimeError('%r closed' % self)
+
+        return self.__lock
+
     async def _get_frame(self) -> spec.Frame:
         weight, frame = await self.frames.get()
+        self.frames.task_done()
         return frame
 
     def __str__(self):
@@ -69,9 +78,6 @@ class Channel(Base):
 
     @task
     async def rpc(self, frame: spec.Frame) -> typing.Optional[spec.Frame]:
-        if self.is_closed:
-            raise RuntimeError('%r closed' % self)
-
         async with self.lock:
             self.writer.write(
                 pamqp.frame.marshal(frame, self.number)
@@ -79,8 +85,9 @@ class Channel(Base):
 
             if frame.synchronous or getattr(frame, 'nowait', False):
                 result = await self.rpc_frames.get()
+                self.rpc_frames.task_done()
 
-                if result.name not in frame.valid_responses:
+                if result.name not in frame.valid_responses:  # pragma: no cover
                     raise e.InvalidFrameError(frame)
 
                 return result
@@ -91,7 +98,7 @@ class Channel(Base):
         if self.publisher_confirms:
             await self.rpc(spec.Confirm.Select())
 
-        if frame is None:
+        if frame is None:   # pragma: no cover
             raise spec.AMQPFrameError(frame)
 
     async def _read_content(self, frame, header: ContentHeader):
@@ -113,7 +120,7 @@ class Channel(Base):
         )
 
     @staticmethod
-    def __exception_by_code(frame: spec.Channel.Close):
+    def __exception_by_code(frame: spec.Channel.Close):     # pragma: nocover
         if frame.reply_code == 403:
             return e.ChannelAccessRefused(frame.reply_text)
         elif frame.reply_code == 404:
@@ -126,17 +133,13 @@ class Channel(Base):
             return e.ChannelClosed(frame.reply_code, frame.reply_text)
 
     async def _on_deliver(self, frame: spec.Basic.Deliver):
+        # async with self.lock:
         header = await self._get_frame()    # type: ContentHeader
         message = await self._read_content(frame, header)
 
         consumer = self.consumers.get(frame.consumer_tag)
         if consumer is not None:
-            # noinspection PyBroadException
-            try:
-                # noinspection PyAsyncCall
-                self.loop.create_task(consumer(message))
-            except Exception:
-                log.exception("Consumer callback exception")
+            self.create_task(consumer(message))
 
     async def _on_get(
         self, frame: typing.Union[spec.Basic.GetOk, spec.Basic.GetEmpty]
@@ -146,8 +149,9 @@ class Channel(Base):
             header = await self._get_frame()    # type: ContentHeader
             message = await self._read_content(frame, header)
 
-        if self.getter.done():
+        if self.getter.done():          # pragma: nocover
             log.error('Got message but no active getter')
+            return
 
         return self.getter.set_result((frame, message))
 
@@ -158,22 +162,22 @@ class Channel(Base):
 
         delivery_tag = self.message_id_delivery_tag.get(message_id)
 
-        if delivery_tag is None:
+        if delivery_tag is None:        # pragma: nocover
             log.error("Unhandled message %r returning", message)
             return
 
         confirmation = self.confirmations.pop(delivery_tag, None)
-        if confirmation is None:
+        if confirmation is None:        # pragma: nocover
             return
 
         if self.on_return_raises:
             confirmation.set_exception(e.DeliveryError(message, frame))
             return
 
-        confirmation.set_result(frame)
+        confirmation.set_result(message)
 
     async def _on_confirm(self, frame: ConfirmationFrameType):
-        if not self.publisher_confirms:
+        if not self.publisher_confirms:     # pragma: nocover
             return
 
         if frame.delivery_tag not in self.confirmations:
@@ -181,7 +185,7 @@ class Channel(Base):
             return
 
         confirmation = self.confirmations.pop(frame.delivery_tag)
-        if confirmation.done():
+        if confirmation.done():     # pragma: nocover
             log.error(
                 "Delivery tag %r confirmed %r was ignored",
                 frame.delivery_tag, frame
@@ -192,7 +196,9 @@ class Channel(Base):
             confirmation.set_result(frame)
             return
 
-        confirmation.set_exception(e.DeliveryError(None, frame))
+        confirmation.set_exception(
+            e.DeliveryError(None, frame)
+        )   # pragma: nocover
 
     async def _reader(self):
         while True:
@@ -226,8 +232,8 @@ class Channel(Base):
                 await self.rpc_frames.put(frame)
             except asyncio.CancelledError:
                 return
-            except Exception as e:
-                await self._cancel_tasks(e)
+            except Exception as exc:  # pragma: nocover
+                await self._cancel_tasks(exc)
                 raise
 
     async def _on_close(self, exc=None):
