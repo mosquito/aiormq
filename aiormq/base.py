@@ -41,14 +41,20 @@ class FutureStore:
         self.loop = loop        # type: asyncio.AbstractEventLoop
         self.parent = None      # type: FutureStore
 
-    def add(self, task: typing.Union[asyncio.Future, TaskWrapper]):
-        self.futures.add(task)
-        task.add_done_callback(lambda *_: self.futures.remove(task))
+    def __on_task_done(self, future):
+        def remover(*_):
+            nonlocal future
+            self.futures.remove(future)
+        return remover
+
+    def add(self, future: typing.Union[asyncio.Future, TaskWrapper]):
+        self.futures.add(future)
+        future.add_done_callback(self.__on_task_done(future))
 
         if self.parent:
-            self.parent.add(task)
+            self.parent.add(future)
 
-    def reject_all(self, exception: Exception):
+    def reject_all(self, exception: Exception) -> asyncio.Future:
         tasks = []
 
         while self.futures:
@@ -123,7 +129,8 @@ class Base:
             return
 
         with suppress(Exception):
-            await self._on_close(exc)
+            result = await self._on_close(exc)
+            print(result)
 
         with suppress(Exception):
             await self._cancel_tasks(exc)
