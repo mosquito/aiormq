@@ -317,7 +317,7 @@ class Channel(Base):
         self, body: bytes, *, exchange: str = '', routing_key: str = '',
         properties: spec.Basic.Properties = None,
         mandatory: bool = False, immediate: bool = False
-    ):
+    ) -> typing.Optional[ConfirmationFrameType]:
 
         body_io = BytesIO(body)
 

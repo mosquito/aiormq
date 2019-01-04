@@ -1,4 +1,4 @@
-FROM rabbitmq:3-alpine
+FROM rabbitmq:3-management-alpine
 
 RUN mkdir -p /certs
 

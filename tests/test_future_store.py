@@ -16,8 +16,7 @@ async def test_simple(event_loop):
     assert root_store.futures
     assert child_store.futures
 
-    root_store.reject_all(RuntimeError)
-
+    await root_store.reject_all(RuntimeError)
     await asyncio.sleep(0.1, loop=event_loop)
 
     assert isinstance(future1.exception(), RuntimeError)
@@ -33,7 +32,7 @@ async def test_simple(event_loop):
 
     async def coro(store):
         await asyncio.sleep(0.1, loop=event_loop)
-        store.reject_all(RuntimeError)
+        await store.reject_all(RuntimeError)
 
     task1 = child_store.create_task(coro(child_store))
     assert root_store.futures

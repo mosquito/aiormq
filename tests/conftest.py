@@ -11,7 +11,8 @@ from aiormq.connection import Connection
 @pytest.fixture
 def event_loop():
     asyncio.get_event_loop().close()
-    loop = asyncio.new_event_loop()
+    loop = asyncio.new_event_loop()     # type: asyncio.AbstractEventLoop
+    loop.set_debug(True)
     asyncio.set_event_loop(loop)
     try:
         yield loop

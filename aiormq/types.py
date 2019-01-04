@@ -26,7 +26,7 @@ SSLCerts = typing.NamedTuple(
         ('cert', str),
         ('key', str),
         ('ca', str),
-        ('verify', str),
+        ('verify', bool),
     ]
 )
 FrameReceived = typing.NamedTuple(

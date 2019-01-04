@@ -62,7 +62,6 @@ class Connection(Base):
         self.lock = asyncio.Lock(loop=self.loop)
 
         self.channels = {}  # type: typing.Dict[int, typing.Optional[Channel]]
-        self.channel_lock = asyncio.Lock(loop=self.loop)
 
         self.server_properties = None   # type: spec.Connection.OpenOk
         self.connection_tune = None  # type: spec.Connection.TuneOk
@@ -264,14 +263,14 @@ class Connection(Base):
             except asyncio.CancelledError:
                 return
 
-    def _on_close(self, exc=e.ConnectionClosed(0, 'normal closed')):
+    async def _on_close(self, exc=e.ConnectionClosed(0, 'normal closed')):
         writer = self.writer
         self.reader = None
         self.writer = None
 
         # noinspection PyShadowingNames
         writer.close()
-        return writer.wait_closed()
+        return await writer.wait_closed()
 
     @property
     def server_capabilities(self) -> ArgumentsType:
@@ -293,38 +292,44 @@ class Connection(Base):
     def publisher_confirms(self):
         return self.server_capabilities.get('publisher_confirms')
 
-    async def channel(self, channel_number: int = None, **kwargs) -> "Channel":
-        async with self.channel_lock:
-            if channel_number is None:
+    async def channel(self, channel_number: int = None,
+                      publisher_confirms=True, **kwargs) -> Channel:
+
+        if not self.publisher_confirms and publisher_confirms:
+            raise ValueError("Server doesn't support publisher_confirms")
+
+        if channel_number is None:
+            self.last_channel += 1
+
+            while self.last_channel in self.channels.keys():
                 self.last_channel += 1
-                while self.last_channel in self.channels.keys():
-                    self.last_channel += 1
 
-                channel_number = self.last_channel
+            channel_number = self.last_channel
 
-            if channel_number < 0 or channel_number > 65535:
-                raise ValueError('Channel number too large')
+        if channel_number < 0 or channel_number > 65535:
+            raise ValueError('Channel number too large')
 
-            self.last_channel = min(self.last_channel, channel_number)
+        self.last_channel = min(self.last_channel, channel_number)
 
-            channel = Channel(
-                self, channel_number, frame_buffer=self.FRAME_BUFFER, **kwargs
-            )
+        channel = Channel(
+            self, channel_number, frame_buffer=self.FRAME_BUFFER,
+            publisher_confirms=publisher_confirms, **kwargs
+        )
 
-            self.channels[channel_number] = channel
+        self.channels[channel_number] = channel
 
-            try:
-                await channel.open()
-            except Exception:
-                self.channels.pop(channel_number, None)
-                raise
+        try:
+            await channel.open()
+        except Exception:
+            self.channels.pop(channel_number, None)
+            raise
 
-            def on_close(*_):
-                self.channels[channel_number] = None
+        def on_close(*_):
+            self.channels[channel_number] = None
 
-            channel.closing.add_done_callback(on_close)
+        channel.closing.add_done_callback(on_close)
 
-            return channel
+        return channel
 
     async def __aenter__(self):
         await self.connect()
