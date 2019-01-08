@@ -30,6 +30,7 @@ setup(
         "pamqp~=2.1",
     ],
     classifiers=[
+        'Development Status :: 4 - Beta',
         'License :: OSI Approved :: Apache Software License',
         'Topic :: Internet',
         'Topic :: Software Development',
