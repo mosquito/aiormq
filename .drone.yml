@@ -14,6 +14,7 @@ steps:
   - name: python 3.5
     image: snakepacker/python:all
     commands:
+      - wait-for-port rabbitmq:5672 rabbitmq:5671
       - tox
     environment:
       AMQP_URL: amqp://guest:guest@rabbitmq
@@ -27,6 +28,7 @@ steps:
   - name: python 3.6
     image: snakepacker/python:all
     commands:
+      - wait-for-port rabbitmq:5672 rabbitmq:5671
       - tox
     environment:
       AMQP_URL: amqp://guest:guest@rabbitmq
@@ -40,6 +42,7 @@ steps:
   - name: python 3.7
     image: snakepacker/python:all
     commands:
+      - wait-for-port rabbitmq:5672 rabbitmq:5671
       - tox
     environment:
       AMQP_URL: amqp://guest:guest@rabbitmq
@@ -74,6 +77,6 @@ services:
         - master
 ---
 kind: signature
-hmac: 05f59ccb0f89a05f5311562ba0e701633187fcbd252feb292e986b8b15f70c60
+hmac: 5ad8fda08e9133e8138dbb2982a360f0065bfa52f16b66e0e8f3a9b30341e567
 
 ...
