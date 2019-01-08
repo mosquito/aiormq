@@ -24,7 +24,7 @@ AIORMQ
    :target: https://pypi.python.org/pypi/aiormq/
 
 .. image:: https://img.shields.io/pypi/l/aiormq.svg
-   :target: https://pypi.python.org/pypi/aiormq/
+   :target: https://github.com/mosquito/aiormq/blob/master/LICENSE.md
 
 
 aiormq is a pure python AMQP client library.
