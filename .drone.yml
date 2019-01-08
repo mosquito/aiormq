@@ -76,11 +76,12 @@ steps:
 services:
   - name: rabbitmq
     image: mosquito/aiormq-rabbitmq:latest
+    pull: always
     when:
       branch:
         - master
 ---
 kind: signature
-hmac: 8e758f2d20791005a49d406a4c0a43f0264d7af9de88741ed6bab2a972d6ca81
+hmac: 9bd6a0156331c57ada322ef1f51b6c2614e75605bf2c881edb7f62d867ad1734
 
 ...
