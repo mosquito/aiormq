@@ -27,7 +27,7 @@ AIORMQ
    :target: https://pypi.python.org/pypi/aiormq/
 
 
-Asynchronous operations for unix pipes with asyncio support.
+aiormq is a pure python AMQP client library.
 
 
 Status
@@ -39,6 +39,20 @@ Development - BETA
 Features
 --------
 
-* aiormq is a pure python AMQP client library
-* Delivery confirmations
+* Buffered queue for received channels
+* `Publisher confirms`_ support
+* `Transactions`_ support
+* Channel based asynchronous locks
 
+  .. note::
+      AMQP 0.9.1 requires serialize sending for some frame types
+      on the channel. e.g. Content body must be following after
+      content header. But frames might be sent asynchronously
+      on another channels.
+
+* Tracking unroutable messages
+* Full SSL/TLS support
+
+
+.. _Publisher confirms: https://www.rabbitmq.com/confirms.html
+.. _Transactions: https://www.rabbitmq.com/semantics.html
