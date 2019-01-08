@@ -39,6 +39,6 @@ Development - BETA
 Features
 --------
 
-* aiormq is a pure python AMQP client library.
+* aiormq is a pure python AMQP client library
 * Delivery confirmations
-*
+
