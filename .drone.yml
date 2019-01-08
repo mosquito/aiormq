@@ -1,3 +1,4 @@
+---
 kind: pipeline
 name: default
 
@@ -49,6 +50,21 @@ steps:
       branch:
         - master
 
+  - name: notify
+    image: drillster/drone-email
+    settings:
+      host:
+        from_secret: SMTP_HOST
+      username:
+        from_secret: SMTP_USERNAME
+      password:
+        from_secret: SMTP_PASSWORD
+      from:
+        from_secret: SMTP_USERNAME
+      when:
+        status:
+          - changed
+          - failure
 
 services:
   - name: rabbitmq
@@ -56,3 +72,8 @@ services:
     when:
       branch:
         - master
+---
+kind: signature
+hmac: 05f59ccb0f89a05f5311562ba0e701633187fcbd252feb292e986b8b15f70c60
+
+...
