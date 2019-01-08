@@ -39,7 +39,13 @@ Development - BETA
 Features
 --------
 
-* Buffered queue for received channels
+* Connecting by URL
+
+ * amqp example: **amqp://user:password@server.host/vhost**
+ * secure amqp example: **amqps://user:password@server.host/vhost?cafile=ca.pem&keyfile=key.pem&certfile=cert.pem&no_verify_ssl=0**
+
+* Buffered queue for received frames
+* Only `PLAIN`_ auth mechanism support
 * `Publisher confirms`_ support
 * `Transactions`_ support
 * Channel based asynchronous locks
@@ -51,8 +57,14 @@ Features
       on another channels.
 
 * Tracking unroutable messages
+  (Use **connection.channel(on_return_raises=False)** for disabling)
 * Full SSL/TLS support
+* Python `type hints`_
+* Uses `pamqp`_ as an AMQP 0.9.1 frame encoder/decoder
 
 
 .. _Publisher confirms: https://www.rabbitmq.com/confirms.html
 .. _Transactions: https://www.rabbitmq.com/semantics.html
+.. _PLAIN: https://www.rabbitmq.com/authentication.html
+.. _type hints: https://docs.python.org/3/library/typing.html
+.. _pamqp: https://pypi.org/project/pamqp/
