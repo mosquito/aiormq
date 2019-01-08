@@ -7,7 +7,7 @@ from binascii import hexlify
 
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
-from tests.conftest import skip_when_quick_test
+from .conftest import skip_when_quick_test
 
 
 pytestmark = pytest.mark.asyncio
