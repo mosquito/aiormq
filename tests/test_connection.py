@@ -176,8 +176,10 @@ async def test_non_publisher_confirms(amqp_connection):
 
 @skip_when_quick_test
 async def test_no_free_channels(amqp_connection):
-    for _ in range(amqp_connection.connection_tune.channel_max):
-        await amqp_connection.channel()
+    await asyncio.wait([
+        amqp_connection.channel(n + 1)
+        for n in range(amqp_connection.connection_tune.channel_max)
+    ])
 
     with pytest.raises(aiormq.exceptions.ConnectionNotAllowed):
         await amqp_connection.channel()
