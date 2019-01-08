@@ -3,3 +3,4 @@ branch = True
 omit =
     */env/*
     */tests/*
+    */.*/*

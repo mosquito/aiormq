@@ -23,10 +23,11 @@ upload: sdist
 	twine upload dist/*$(VERSION)*
 
 quick-test:
-	TEST_QUICK='1' pytest -x --cov=aiormq --cov-report=term-missing tests
+	TEST_QUICK='1' env/bin/pytest -x --cov=aiormq \
+		--cov-report=term-missing tests
 
 test: quick-test
-	tox
+	env/bin/tox
 
 clean:
 	rm -fr *.egg-info .tox
