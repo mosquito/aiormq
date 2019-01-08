@@ -6,6 +6,7 @@ name: default
 steps:
   - name: linter
     image: snakepacker/python:all
+    pull: always
     commands:
       - tox
     environment:
@@ -13,6 +14,7 @@ steps:
 
   - name: python 3.5
     image: snakepacker/python:all
+    pull: always
     commands:
       - wait-for-port rabbitmq:5672 rabbitmq:5671
       - tox
@@ -27,6 +29,7 @@ steps:
 
   - name: python 3.6
     image: snakepacker/python:all
+    pull: always
     commands:
       - wait-for-port rabbitmq:5672 rabbitmq:5671
       - tox
@@ -41,6 +44,7 @@ steps:
 
   - name: python 3.7
     image: snakepacker/python:all
+    pull: always
     commands:
       - wait-for-port rabbitmq:5672 rabbitmq:5671
       - tox
@@ -77,6 +81,6 @@ services:
         - master
 ---
 kind: signature
-hmac: 5ad8fda08e9133e8138dbb2982a360f0065bfa52f16b66e0e8f3a9b30341e567
+hmac: 8e758f2d20791005a49d406a4c0a43f0264d7af9de88741ed6bab2a972d6ca81
 
 ...
