@@ -73,3 +73,9 @@ async def amqp_channel(request, amqp_connection):
         await yield_(await amqp_connection.channel(**request.param))
     finally:
         await amqp_connection.close()
+
+
+skip_when_quick_test = pytest.mark.skipif(
+    os.getenv("TEST_QUICK") is not None,
+    reason='quick test'
+)

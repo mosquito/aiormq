@@ -7,6 +7,7 @@ from binascii import hexlify
 
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
+from tests.conftest import skip_when_quick_test
 
 
 pytestmark = pytest.mark.asyncio
@@ -173,7 +174,7 @@ async def test_non_publisher_confirms(amqp_connection):
     await amqp_connection.channel(publisher_confirms=False)
 
 
-@pytest.mark.skipif(os.getenv("TEST_QUICK") is not None, reason='quick test')
+@skip_when_quick_test
 async def test_no_free_channels(amqp_connection):
     for _ in range(amqp_connection.connection_tune.channel_max):
         await amqp_connection.channel()

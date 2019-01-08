@@ -12,7 +12,7 @@ from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 from aiormq.channel import Channel
-from . import exceptions as e
+from . import exceptions as exc
 from .auth import AuthMechanism
 from .base import Base, task
 from .tools import censor_url
@@ -126,7 +126,7 @@ class Connection(Base):
             with suppress(KeyError):
                 return AuthMechanism[mechanism]
 
-        raise e.AuthenticationError(
+        raise exc.AuthenticationError(
             start_frame.mechanisms,
             [m.name for m in AuthMechanism]
         )
@@ -143,9 +143,9 @@ class Connection(Base):
             raise spec.AMQPInternalError(frame, frame)
         elif isinstance(frame, spec.Connection.Close):
             if frame.reply_code == 403:
-                raise e.ProbableAuthenticationError(frame.reply_text)
+                raise exc.ProbableAuthenticationError(frame.reply_text)
 
-            raise e.ConnectionClosed(frame.reply_code, frame.reply_text)
+            raise exc.ConnectionClosed(frame.reply_code, frame.reply_text)
         return frame
 
     @task
@@ -165,14 +165,17 @@ class Connection(Base):
                 self.url.host, self.url.port, ssl=ssl_context,
                 loop=self.loop
             )
-        except OSError as exc:
-            raise ConnectionError(*exc.args) from exc
+        except OSError as e:
+            raise ConnectionError(*e.args) from e
 
-        protocol_header = ProtocolHeader()
-        self.writer.write(protocol_header.marshal())
+        try:
+            protocol_header = ProtocolHeader()
+            self.writer.write(protocol_header.marshal())
 
-        res = await self.__receive_frame()
-        _, _, frame = res   # type: spec.Connection.Start
+            res = await self.__receive_frame()
+            _, _, frame = res   # type: spec.Connection.Start
+        except EOFError as e:
+            raise exc.IncompatibleProtocolError(*e.args) from e
 
         credentials = self._credentials_class(frame)
 
@@ -226,25 +229,25 @@ class Connection(Base):
     @staticmethod
     def __exception_by_code(frame: spec.Connection.Close):
         if frame.reply_code == 501:
-            return e.ConnectionFrameError(frame.reply_text)
+            return exc.ConnectionFrameError(frame.reply_text)
         elif frame.reply_code == 502:
-            return e.ConnectionSyntaxError(frame.reply_text)
+            return exc.ConnectionSyntaxError(frame.reply_text)
         elif frame.reply_code == 503:
-            return e.ConnectionCommandInvalid(frame.reply_text)
+            return exc.ConnectionCommandInvalid(frame.reply_text)
         elif frame.reply_code == 504:
-            return e.ConnectionChannelError(frame.reply_text)
+            return exc.ConnectionChannelError(frame.reply_text)
         elif frame.reply_code == 505:
-            return e.ConnectionUnexpectedFrame(frame.reply_text)
+            return exc.ConnectionUnexpectedFrame(frame.reply_text)
         elif frame.reply_code == 506:
-            return e.ConnectionResourceError(frame.reply_text)
+            return exc.ConnectionResourceError(frame.reply_text)
         elif frame.reply_code == 530:
-            return e.ConnectionNotAllowed(frame.reply_text)
+            return exc.ConnectionNotAllowed(frame.reply_text)
         elif frame.reply_code == 540:
-            return e.ConnectionNotImplemented(frame.reply_text)
+            return exc.ConnectionNotImplemented(frame.reply_text)
         elif frame.reply_code == 541:
-            return e.ConnectionInternalError(frame.reply_text)
+            return exc.ConnectionInternalError(frame.reply_text)
         else:
-            return e.ConnectionClosed(frame.reply_code, frame.reply_text)
+            return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
 
     async def __reader(self):
         while self.writer:
@@ -268,7 +271,7 @@ class Connection(Base):
             except asyncio.CancelledError:
                 return
 
-    async def _on_close(self, exc=e.ConnectionClosed(0, 'normal closed')):
+    async def _on_close(self, exc=exc.ConnectionClosed(0, 'normal closed')):
         writer = self.writer
         self.reader = None
         self.writer = None
