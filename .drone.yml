@@ -5,12 +5,32 @@ name: default
 
 steps:
   - name: linter
+    image: snakepacker/python:pylava
+    pull: always
+    commands:
+      - pylava -o pylava.ini .
+
+  - name: prepare toxenv
     image: snakepacker/python:all
+    group: tests
+    pull: always
+    commands:
+      - tox --notest
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
+
+  - name: checkdoc
+    image: snakepacker/python:all
+    group: tests
     pull: always
     commands:
       - tox
     environment:
-      TOXENV: lint
+      TOXENV: checkdoc
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
 
   - name: python 3.5
     image: snakepacker/python:all
@@ -23,9 +43,9 @@ steps:
       TOXENV: py35
       COVERALLS_REPO_TOKEN:
         from_secret: COVERALLS_TOKEN
-    when:
-      branch:
-        - master
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
 
   - name: python 3.6
     image: snakepacker/python:all
@@ -38,9 +58,9 @@ steps:
       TOXENV: py36
       COVERALLS_REPO_TOKEN:
         from_secret: COVERALLS_TOKEN
-    when:
-      branch:
-        - master
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
 
   - name: python 3.7
     image: snakepacker/python:all
@@ -53,9 +73,9 @@ steps:
       TOXENV: py37
       COVERALLS_REPO_TOKEN:
         from_secret: COVERALLS_TOKEN
-    when:
-      branch:
-        - master
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
 
   - name: notify
     image: drillster/drone-email
@@ -73,6 +93,10 @@ steps:
           - changed
           - failure
 
+volumes:
+  - name: cache
+    temp: {}
+
 services:
   - name: rabbitmq
     image: mosquito/aiormq-rabbitmq:latest
@@ -82,6 +106,6 @@ services:
         - master
 ---
 kind: signature
-hmac: 9bd6a0156331c57ada322ef1f51b6c2614e75605bf2c881edb7f62d867ad1734
+hmac: 00f9740e9e2a98355385c4db1c370061fef21c1be3b1a2fd78d2cbe18a404ab7
 
 ...
