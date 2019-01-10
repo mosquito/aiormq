@@ -38,7 +38,8 @@ class FutureStore:
     def __on_task_done(self, future):
         def remover(*_):
             nonlocal future
-            self.futures.remove(future)
+            if future in self.futures:
+                self.futures.remove(future)
 
         return remover
 

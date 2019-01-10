@@ -1,6 +1,6 @@
 from pamqp import specification as spec
 
-from .connection import Connection
+from .connection import Connection, connect
 from .channel import Channel
 from .exceptions import (
     AMQPChannelError,
@@ -64,6 +64,7 @@ __all__ = (
     'AuthenticationError',
     'author_info',
     'BodyTooLongError',
+    'connect',
     'Channel',
     'ChannelAccessRefused',
     'ChannelClosed',

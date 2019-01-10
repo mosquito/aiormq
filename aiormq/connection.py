@@ -17,8 +17,8 @@ from .auth import AuthMechanism
 from .base import Base, task
 from .tools import censor_url
 from .types import (
-    ArgumentsType, SSLCerts
-)
+    ArgumentsType, SSLCerts,
+    URLorStr)
 from .version import __version__
 
 log = logging.getLogger(__name__)
@@ -44,10 +44,10 @@ PLATFORM = '{} {} ({} build {})'.format(
 class Connection(Base):
     FRAME_BUFFER = 10
 
-    def __init__(self, url: URL, *, loop: asyncio.get_event_loop() = None):
+    def __init__(self, url: URLorStr, *, loop: asyncio.get_event_loop() = None):
         super().__init__(loop=loop or asyncio.get_event_loop())
 
-        self.url = url
+        self.url = URL(url)
         self.vhost = self.url.path.strip("/") or "/"
         self.reader = None  # type: asyncio.StreamReader
         self.writer = None  # type: asyncio.StreamWriter
@@ -345,3 +345,10 @@ class Connection(Base):
 
     async def __aenter__(self):
         await self.connect()
+
+
+async def connect(url, *args, **kwargs) -> Connection:
+    connection = Connection(url, *args, **kwargs)
+    await connection.connect()
+
+    return connection

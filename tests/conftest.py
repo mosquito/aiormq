@@ -5,7 +5,7 @@ import pytest
 from async_generator import yield_, async_generator
 from yarl import URL
 
-from aiormq.connection import Connection
+from aiormq import Connection
 
 
 @pytest.fixture

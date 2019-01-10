@@ -3,6 +3,8 @@
 import typing
 
 from pamqp import specification as spec, ContentHeader
+from yarl import URL
+
 
 ChannelRType = typing.Tuple[int, spec.Channel.OpenOk]
 DeliveredMessage = typing.NamedTuple(
@@ -10,6 +12,7 @@ DeliveredMessage = typing.NamedTuple(
         ('delivery', spec.Basic.Deliver),
         ('header', ContentHeader),
         ('body', bytes),
+        ('channel', "aiormq.Channel")
     ]
 )
 CallbackCoro = typing.Coroutine[DeliveredMessage, None, typing.Any]
@@ -35,3 +38,6 @@ FrameReceived = typing.NamedTuple(
         ('frame', str),
     ]
 )
+
+
+URLorStr = typing.Union[URL, str]

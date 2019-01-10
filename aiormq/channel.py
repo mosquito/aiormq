@@ -116,7 +116,8 @@ class Channel(Base):
         return DeliveredMessage(
             delivery=frame,
             header=header,
-            body=body.getvalue()
+            body=body.getvalue(),
+            channel=self
         )
 
     @staticmethod
@@ -397,7 +398,7 @@ class Channel(Base):
         # noinspection PyTypeChecker
         return self.rpc(frame)
 
-    async def exchange_declare(self, *, exchange: str = None,
+    async def exchange_declare(self, exchange: str = None, *,
                                exchange_type='direct', passive=False,
                                durable=False, auto_delete=False,
                                internal=False, nowait=False,
