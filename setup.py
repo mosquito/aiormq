@@ -24,9 +24,11 @@ setup(
         'yarl',
     ],
     keywords=[
-        "amqp driver",
-        "amqp",
+        "rabbitmq",
         "asyncio",
+        "amqp",
+        "amqp 0.9.1",
+        "driver",
         "pamqp~=2.1",
     ],
     classifiers=[
