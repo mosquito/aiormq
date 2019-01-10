@@ -419,3 +419,237 @@ Emitter
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
 
+Topics
+------
+
+Publisher
+*********
+
+.. code-block:: python
+
+    import sys
+    import asyncio
+    import aiormq
+
+
+    async def main():
+        # Perform connection
+        connection = await aiormq.connect("amqp://guest:guest@localhost/")
+
+        # Creating a channel
+        channel = await connection.channel()
+
+        await channel.exchange_declare('topic_logs', exchange_type='topic')
+
+        routing_key = (
+            sys.argv[1] if len(sys.argv) > 2 else 'anonymous.info'
+        )
+
+        body = (
+            b' '.join(arg.encode() for arg in sys.argv[2:])
+            or
+            b"Hello World!"
+        )
+
+        # Sending the message
+        await channel.basic_publish(
+            body, exchange='topic_logs', routing_key=routing_key,
+            properties=aiormq.spec.Basic.Properties(
+                delivery_mode=1
+            )
+        )
+
+        print(" [x] Sent %r" % (body,))
+
+        await connection.close()
+
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
+
+Consumer
+********
+
+.. code-block:: python
+
+    import asyncio
+    import sys
+    import aiormq
+    import aiormq.types
+
+
+    async def on_message(message: aiormq.types.DeliveredMessage):
+        print(" [x] %r:%r" % (message.delivery.routing_key, message.body))
+        await message.channel.basic_ack(
+            message.delivery.delivery_tag
+        )
+
+
+    async def main():
+        # Perform connection
+        connection = await aiormq.connect(
+            "amqp://guest:guest@localhost/", loop=loop
+        )
+
+        # Creating a channel
+        channel = await connection.channel()
+        await channel.basic_qos(prefetch_count=1)
+
+        # Declare an exchange
+        await channel.exchange_declare('topic_logs', exchange_type='topic')
+
+        # Declaring queue
+        declare_ok = await channel.queue_declare('task_queue', durable=True)
+
+        binding_keys = sys.argv[1:]
+
+        if not binding_keys:
+            sys.stderr.write(
+                "Usage: %s [binding_key]...\n" % sys.argv[0]
+            )
+            sys.exit(1)
+
+        for binding_key in binding_keys:
+            await channel.queue_bind(
+                declare_ok.queue, 'topic_logs', routing_key=binding_key
+            )
+
+        # Start listening the queue with name 'task_queue'
+        await channel.basic_consume(declare_ok.queue, on_message)
+
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+
+    # we enter a never-ending loop that waits for
+    # data and runs callbacks whenever necessary.
+    print(" [*] Waiting for messages. To exit press CTRL+C")
+    loop.run_forever()
+
+Remote procedure call (RPC)
+---------------------------
+
+RPC server
+**********
+
+.. code-block:: python
+
+    import asyncio
+    import aiormq
+    import aiormq.types
+
+
+    def fib(n):
+        if n == 0:
+            return 0
+        elif n == 1:
+            return 1
+        else:
+            return fib(n-1) + fib(n-2)
+
+
+    async def on_message(message:aiormq.types.DeliveredMessage):
+        n = int(message.body.decode())
+
+        print(" [.] fib(%d)" % n)
+        response = str(fib(n)).encode()
+
+        await message.channel.basic_publish(
+            response, routing_key=message.reply_to,
+            properties=aiormq.spec.Basic.Properties(
+                correlation_id=message.correlation_id
+            ),
+
+        )
+
+        await message.channel.basic_ack(message.delivery.delivery_tag)
+        print('Request complete')
+
+
+    async def main():
+        # Perform connection
+        connection = await aiormq.connect("amqp://guest:guest@localhost/")
+
+        # Creating a channel
+        channel = await connection.channel()
+
+        # Declaring queue
+        declare_ok = await channel.queue_declare('rpc_queue')
+
+        # Start listening the queue with name 'hello'
+        await channel.basic_consume(declare_ok.queue, on_message)
+
+
+    loop = asyncio.get_event_loop()
+    loop.create_task(main(loop))
+
+    # we enter a never-ending loop that waits for data
+    # and runs callbacks whenever necessary.
+    print(" [x] Awaiting RPC requests")
+    loop.run_forever()
+
+
+RPC client
+**********
+
+.. code-block:: python
+
+    import asyncio
+    import uuid
+    import aiormq
+    import aiormq.types
+
+
+    class FibonacciRpcClient:
+        def __init__(self):
+            self.connection = None      # type: aiormq.Connection
+            self.channel = None         # type: aiormq.Channel
+            self.callback_queue = ''
+            self.futures = {}
+            self.loop = loop
+
+        async def connect(self):
+            self.connection = await aiormq.connect("amqp://guest:guest@localhost/")
+
+            self.channel = await self.connection.channel()
+            declare_ok = await self.channel.queue_declare(
+                exclusive=True, auto_delete=True
+            )
+
+            await self.channel.basic_consume(declare_ok.queue, self.on_response)
+
+            self.callback_queue = declare_ok.queue
+
+            return self
+
+        async def on_response(self, message: aiormq.types.DeliveredMessage):
+            future = self.futures.pop(message.correlation_id)
+            future.set_result(message.body)
+
+        async def call(self, n):
+            correlation_id = str(uuid.uuid4())
+            future = loop.create_future()
+
+            self.futures[correlation_id] = future
+
+            await self.channel.basic_publish(
+                str(n).encode(), routing_key='rpc_queue',
+                properties=aiormq.spec.Basic.Properties(
+                    content_type='text/plain',
+                    correlation_id=correlation_id,
+                    reply_to=self.callback_queue,
+                )
+            )
+
+            return int(await future)
+
+
+    async def main():
+        fibonacci_rpc = await FibonacciRpcClient().connect()
+        print(" [x] Requesting fib(30)")
+        response = await fibonacci_rpc.call(30)
+        print(" [.] Got %r" % response)
+
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
