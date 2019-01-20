@@ -245,8 +245,9 @@ class Channel(Base):
         ))  # type: spec.Channel.CloseOk
         return result
 
-    async def basic_get(self, queue: str = '',
-                        no_ack: bool = False) -> DeliveredMessage:
+    async def basic_get(
+        self, queue: str = '', no_ack: bool = False
+    ) -> typing.Optional[DeliveredMessage]:
 
         async with self.getter_lock:
             self.getter = self.create_future()
