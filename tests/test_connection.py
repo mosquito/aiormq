@@ -153,6 +153,11 @@ async def test_channel_closed(amqp_connection):
     with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
         await channel.basic_consume("foo", lambda x: None)
 
+    channel = await amqp_connection.channel()
+
+    with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
+        await channel.basic_consume("foo", lambda x: None)
+
     await amqp_connection.close()
 
 
