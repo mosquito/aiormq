@@ -60,6 +60,7 @@ class Channel(Base):
         self.rpc_frames = asyncio.Queue(maxsize=frame_buffer, loop=self.loop)
         self.writer = connector.writer
         self.on_return_raises = on_return_raises
+        self.on_return_callbacks = set()
 
         self.create_task(self._reader())
 
@@ -176,6 +177,12 @@ class Channel(Base):
         if self.on_return_raises:
             confirmation.set_exception(exc.DeliveryError(message, frame))
             return
+
+        for cb in self.on_return_callbacks:
+            try:
+                cb(message)
+            except Exception:
+                log.exception('Unhandled return callback exception')
 
         confirmation.set_result(message)
 
