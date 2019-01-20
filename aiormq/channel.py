@@ -30,6 +30,8 @@ class Channel(Base):
 
         super().__init__(loop=connector.loop, parent=connector)
 
+        self.connection = connector
+
         if publisher_confirms and not \
            connector.publisher_confirms:     # pragma: no cover
             raise ValueError("Server does't support publisher confirms")
