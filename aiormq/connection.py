@@ -44,8 +44,13 @@ PLATFORM = '{} {} ({} build {})'.format(
 class Connection(Base):
     FRAME_BUFFER = 10
 
-    def __init__(self, url: URLorStr, *, loop: asyncio.get_event_loop() = None):
-        super().__init__(loop=loop or asyncio.get_event_loop())
+    def __init__(self, url: URLorStr, *, parent=None,
+                 loop: asyncio.get_event_loop() = None):
+
+        super().__init__(
+            loop=loop or asyncio.get_event_loop(),
+            parent=parent
+        )
 
         self.url = URL(url)
         self.vhost = self.url.path.strip("/") or "/"
