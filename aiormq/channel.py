@@ -11,7 +11,7 @@ import pamqp.frame
 from pamqp import specification as spec, ContentHeader
 from pamqp.body import ContentBody
 
-from . import exceptions as e
+from . import exceptions as exc
 from .base import Base, task
 from .types import (
     DeliveredMessage, ConfirmationFrameType,
@@ -90,7 +90,7 @@ class Channel(Base):
                 self.rpc_frames.task_done()
 
                 if result.name not in frame.valid_responses:  # pragma: no cover
-                    raise e.InvalidFrameError(frame)
+                    raise exc.InvalidFrameError(frame)
 
                 return result
 
@@ -125,15 +125,15 @@ class Channel(Base):
     @staticmethod
     def __exception_by_code(frame: spec.Channel.Close):     # pragma: nocover
         if frame.reply_code == 403:
-            return e.ChannelAccessRefused(frame.reply_text)
+            return exc.ChannelAccessRefused(frame.reply_text)
         elif frame.reply_code == 404:
-            return e.ChannelNotFoundEntity(frame.reply_text)
+            return exc.ChannelNotFoundEntity(frame.reply_text)
         elif frame.reply_code == 405:
-            return e.ChannelLockedResource(frame.reply_text)
+            return exc.ChannelLockedResource(frame.reply_text)
         elif frame.reply_code == 406:
-            return e.ChannelPreconditionFailed(frame.reply_text)
+            return exc.ChannelPreconditionFailed(frame.reply_text)
         else:
-            return e.ChannelClosed(frame.reply_code, frame.reply_text)
+            return exc.ChannelClosed(frame.reply_code, frame.reply_text)
 
     async def _on_deliver(self, frame: spec.Basic.Deliver):
         # async with self.lock:
@@ -174,7 +174,7 @@ class Channel(Base):
             return
 
         if self.on_return_raises:
-            confirmation.set_exception(e.DeliveryError(message, frame))
+            confirmation.set_exception(exc.DeliveryError(message, frame))
             return
 
         confirmation.set_result(message)
@@ -200,7 +200,7 @@ class Channel(Base):
             return
 
         confirmation.set_exception(
-            e.DeliveryError(None, frame)
+            exc.DeliveryError(None, frame)
         )   # pragma: nocover
 
     async def _reader(self):
@@ -235,8 +235,8 @@ class Channel(Base):
                 await self.rpc_frames.put(frame)
             except asyncio.CancelledError:
                 return
-            except Exception as exc:  # pragma: nocover
-                await self._cancel_tasks(exc)
+            except Exception as e:  # pragma: nocover
+                await self._cancel_tasks(e)
                 raise
 
     async def _on_close(self, exc=None):
@@ -276,7 +276,7 @@ class Channel(Base):
         )
 
         if consumer_tag in self.consumers:
-            raise e.DuplicateConsumerTag(self.number)
+            raise exc.DuplicateConsumerTag(self.number)
 
         self.consumers[consumer_tag] = consumer_callback
 
@@ -299,6 +299,9 @@ class Channel(Base):
 
     def basic_nack(self, delivery_tag: str = None,
                    multiple: bool = False, requeue: bool = True):
+        if not self.connection.basic_nack:
+            raise exc.MethodNotImplemented
+
         self.writer.write(
             pamqp.frame.marshal(
                 spec.Basic.Nack(

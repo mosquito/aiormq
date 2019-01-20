@@ -29,11 +29,6 @@ class ProbableAuthenticationError(AMQPConnectionError):
     )
 
 
-class ProbableAccessDeniedError(AMQPConnectionError):
-    message = ('Client was disconnected at a connection stage indicating a '
-               'probable denial of access to the specified virtual host')
-
-
 class ConnectionClosed(AMQPConnectionError):
     message = 'The AMQP connection was closed (%s) %s'
 
@@ -124,72 +119,19 @@ class DuplicateConsumerTag(AMQPChannelError):
     message = 'The consumer tag specified already exists for this channel: %s'
 
 
-class ConsumerCancelled(AMQPChannelError):
-    message = 'Server cancelled consumer'
-
-
-class UnroutableError(AMQPChannelError):
-    message = '%r unroutable messages returned by broker'
-
-
-class NackError(UnroutableError):
-    pass
-
-
-class InvalidChannelNumber(AMQPError):
-    message = 'An invalid channel number has been specified: %s'
-
-
 class ProtocolSyntaxError(AMQPError):
     message = 'An unspecified protocol syntax error occurred'
-
-
-class UnexpectedFrameError(ProtocolSyntaxError):
-    message = 'Received a frame out of sequence: %r'
-
-
-class ProtocolVersionMismatch(ProtocolSyntaxError):
-    message = 'Protocol versions did not match: %r vs %r'
-
-
-class BodyTooLongError(ProtocolSyntaxError):
-    message = ('Received too many bytes for a message delivery: '
-               'Received %i, expected %i')
 
 
 class InvalidFrameError(ProtocolSyntaxError):
     message = 'Invalid frame received: %r'
 
 
-class InvalidFieldTypeException(ProtocolSyntaxError):
-    message = 'Unsupported field kind %s'
-
-
-class UnsupportedAMQPFieldException(ProtocolSyntaxError):
-    message = 'Unsupported field kind %s'
-
-
 class MethodNotImplemented(AMQPError):
     pass
 
 
-class ChannelError(AMQPError):
-    message = 'An unspecified error occurred with the Channel'
-
-
-class InvalidMinimumFrameSize(ProtocolSyntaxError):
-    message = 'AMQP Minimum Frame Size is 4096 Bytes'
-
-
-class InvalidMaximumFrameSize(ProtocolSyntaxError):
-    message = 'AMQP Maximum Frame Size is 131072 Bytes'
-
-
 class AMQPException(Exception):
-    pass
-
-
-class MessageProcessError(AMQPException):
     pass
 
 
@@ -199,11 +141,3 @@ class DeliveryError(AMQPException):
     def __init__(self, message, frame):
         self.message = message
         self.frame = frame
-
-
-class QueueEmpty(AMQPException):
-    pass
-
-
-class TransactionClosed(AMQPException):
-    pass
