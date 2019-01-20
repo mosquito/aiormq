@@ -15,7 +15,7 @@ from . import exceptions as e
 from .base import Base, task
 from .types import (
     DeliveredMessage, ConfirmationFrameType,
-    GetResultType, ConsumerCallback, ArgumentsType
+    ConsumerCallback, ArgumentsType
 )
 
 log = logging.getLogger(__name__)
@@ -244,7 +244,7 @@ class Channel(Base):
         return result
 
     async def basic_get(self, queue: str = '',
-                        no_ack: bool = False) -> GetResultType:
+                        no_ack: bool = False) -> DeliveredMessage:
 
         async with self.getter_lock:
             self.getter = self.create_future()

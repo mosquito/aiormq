@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# encoding: utf-8
 import typing
 
 from pamqp import specification as spec, ContentHeader
@@ -7,9 +5,10 @@ from yarl import URL
 
 
 ChannelRType = typing.Tuple[int, spec.Channel.OpenOk]
+GetResultType = typing.Union[spec.Basic.GetEmpty, spec.Basic.GetOk]
 DeliveredMessage = typing.NamedTuple(
     'DeliveredMessage', [
-        ('delivery', spec.Basic.Deliver),
+        ('delivery', typing.Union[spec.Basic.Deliver, GetResultType]),
         ('header', ContentHeader),
         ('body', bytes),
         ('channel', "aiormq.Channel")
@@ -20,10 +19,6 @@ ConsumerCallback = typing.Callable[[], CallbackCoro]
 ReturnCallback = typing.Callable[[], CallbackCoro]
 ArgumentsType = typing.Dict[str, typing.Union[str, int, bool]]
 ConfirmationFrameType = typing.Union[spec.Basic.Ack, spec.Basic.Nack]
-GetResultType = typing.Tuple[
-    typing.Union[spec.Basic.GetEmpty, spec.Basic.GetOk],
-    typing.Optional[DeliveredMessage]
-]
 SSLCerts = typing.NamedTuple(
     'SSLCerts', [
         ('cert', str),

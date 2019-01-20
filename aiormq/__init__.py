@@ -1,5 +1,6 @@
 from pamqp import specification as spec
 
+from . import types
 from .connection import Connection, connect
 from .channel import Channel
 from .exceptions import (
@@ -64,7 +65,6 @@ __all__ = (
     'AuthenticationError',
     'author_info',
     'BodyTooLongError',
-    'connect',
     'Channel',
     'ChannelAccessRefused',
     'ChannelClosed',
@@ -72,6 +72,7 @@ __all__ = (
     'ChannelLockedResource',
     'ChannelNotFoundEntity',
     'ChannelPreconditionFailed',
+    'connect',
     'Connection',
     'ConnectionChannelError',
     'ConnectionClosed',
@@ -105,6 +106,7 @@ __all__ = (
     'spec',
     'team_email',
     'TransactionClosed',
+    'types',
     'UnexpectedFrameError',
     'UnroutableError',
     'UnsupportedAMQPFieldException',
