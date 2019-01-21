@@ -148,15 +148,18 @@ async def test_auth_plain(amqp_connection):
 
 async def test_channel_closed(amqp_connection):
 
-    channel = await amqp_connection.channel()
+    for i in range(10):
+        channel = await amqp_connection.channel()
 
-    with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
-        await channel.basic_consume("foo", lambda x: None)
+        with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
+            await channel.basic_consume("foo", lambda x: None)
 
-    channel = await amqp_connection.channel()
+        channel = await amqp_connection.channel()
 
-    with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
-        await channel.basic_consume("foo", lambda x: None)
+        with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
+            await channel.queue_declare(
+                "foo_%s" % i, auto_delete=True, passive=True
+            )
 
     await amqp_connection.close()
 

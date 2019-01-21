@@ -90,32 +90,32 @@ class AMQPChannelError(AMQPError):
     message = 'An unspecified AMQP channel error has occurred'
 
 
-class ChannelAccessRefused(AMQPChannelError):
+class ChannelClosed(AMQPChannelError):
+    message = 'The channel was closed (%s) %s'
+
+
+class ChannelAccessRefused(ChannelClosed):
     message = ('The client attempted to work with a server entity to '
                'which it has no access due to security settings: %r')
 
 
-class ChannelNotFoundEntity(AMQPChannelError):
+class ChannelNotFoundEntity(ChannelClosed):
     message = ('The client attempted to work with a server '
                'entity that does not exist: %r')
 
 
-class ChannelLockedResource(AMQPChannelError):
+class ChannelLockedResource(ChannelClosed):
     message = ('The client attempted to work with a server entity to '
                'which it has no access because another client is working '
                'with it: %r')
 
 
-class ChannelPreconditionFailed(AMQPChannelError):
+class ChannelPreconditionFailed(ChannelClosed):
     message = ('The client requested a method that was not allowed because '
                'some precondition failed: %r')
 
 
-class ChannelClosed(AMQPChannelError):
-    message = 'The channel was closed (%s) %s'
-
-
-class DuplicateConsumerTag(AMQPChannelError):
+class DuplicateConsumerTag(ChannelClosed):
     message = 'The consumer tag specified already exists for this channel: %s'
 
 
