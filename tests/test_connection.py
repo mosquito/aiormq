@@ -118,6 +118,16 @@ async def test_open(amqp_connection):
     await amqp_connection.close()
 
 
+async def test_channel_close(amqp_connection):
+    channel = await amqp_connection.channel()
+
+    assert channel.number in amqp_connection.channels
+
+    await channel.close()
+
+    assert amqp_connection.channels[channel.number] is None
+
+
 async def test_auth_base(amqp_connection):
     with pytest.raises(NotImplementedError):
         AuthBase(amqp_connection).marshal()

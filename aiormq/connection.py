@@ -43,6 +43,7 @@ PLATFORM = '{} {} ({} build {})'.format(
 
 class Connection(Base):
     FRAME_BUFFER = 10
+    _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
     def __init__(self, url: URLorStr, *, parent=None,
                  loop: asyncio.get_event_loop() = None):
@@ -261,9 +262,7 @@ class Connection(Base):
 
                 if channel == 0:
                     if isinstance(frame, Heartbeat):
-                        self.writer.write(
-                            pamqp.frame.marshal(Heartbeat(), channel)
-                        )
+                        self.writer.write(self._HEARTBEAT)
                         continue
                     elif isinstance(frame, spec.Connection.Close):
                         return await self.close(self.__exception_by_code(frame))
@@ -271,8 +270,23 @@ class Connection(Base):
                     log.error('Unexpected frame %r', frame)
                     continue
 
-                queue = self.channels[channel].frames
-                await queue.put((weight, frame))
+                if self.channels.get(channel) is None:
+                    log.exception(
+                        "Got frame for closed channel %d: %r", channel, frame
+                    )
+                    continue
+
+                ch = self.channels[channel]
+
+                channel_close_responses = (
+                    spec.Channel.Close,
+                    spec.Channel.CloseOk
+                )
+
+                if isinstance(frame, channel_close_responses):
+                    self.channels[channel] = None
+
+                await ch.frames.put((weight, frame))
             except asyncio.CancelledError:
                 return
 
@@ -338,13 +352,8 @@ class Connection(Base):
         try:
             await channel.open()
         except Exception:
-            self.channels.pop(channel_number, None)
-            raise
-
-        def on_close(*_):
             self.channels[channel_number] = None
-
-        channel.closing.add_done_callback(on_close)
+            raise
 
         return channel
 
