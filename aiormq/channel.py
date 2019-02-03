@@ -107,9 +107,11 @@ class Channel(Base):
     async def _read_content(self, frame, header: ContentHeader):
         body = BytesIO()
 
-        content = await self._get_frame()       # type: ContentBody
+        content = None
+        if header.body_size:
+            content = await self._get_frame()       # type: ContentBody
 
-        while body.tell() < header.body_size:
+        while content and body.tell() < header.body_size:
             body.write(content.value)
 
             if body.tell() < header.body_size:
@@ -342,7 +344,7 @@ class Channel(Base):
         mandatory: bool = False, immediate: bool = False
     ) -> typing.Optional[ConfirmationFrameType]:
 
-        body_io = BytesIO(body)
+        body_io = BytesIO(body) if body else None
 
         frame = spec.Basic.Publish(
             exchange=exchange, routing_key=routing_key,
@@ -379,14 +381,15 @@ class Channel(Base):
                 pamqp.frame.marshal(content_header, self.number)
             )
 
-            chunk = body_io.read(self.max_content_size)
-            while chunk:
-                content_frame = ContentBody(chunk)
-                # noinspection PyTypeChecker
-                self.writer.write(
-                    pamqp.frame.marshal(content_frame, self.number)
-                )
+            if body_io is not None:
                 chunk = body_io.read(self.max_content_size)
+                while chunk:
+                    content_frame = ContentBody(chunk)
+                    # noinspection PyTypeChecker
+                    self.writer.write(
+                        pamqp.frame.marshal(content_frame, self.number)
+                    )
+                    chunk = body_io.read(self.max_content_size)
 
         if not self.publisher_confirms:
             return

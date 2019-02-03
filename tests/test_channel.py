@@ -35,6 +35,33 @@ async def test_simple(amqp_channel: aiormq.Channel):
     assert message.body == b'foo bar'
 
 
+async def test_blank_body(amqp_channel: aiormq.Channel):
+    await amqp_channel.basic_qos(prefetch_count=1)
+    assert amqp_channel.number
+
+    queue = asyncio.Queue()
+
+    deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
+    consume_ok = await amqp_channel.basic_consume(deaclare_ok.queue, queue.put)
+    await amqp_channel.basic_publish(
+        b'', routing_key=deaclare_ok.queue,
+        properties=aiormq.spec.Basic.Properties(message_id='123')
+    )
+
+    message = await queue.get()     # type: DeliveredMessage
+    assert message.body == b''
+
+    cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
+    assert cancel_ok.consumer_tag == consume_ok.consumer_tag
+    await amqp_channel.queue_delete(deaclare_ok.queue)
+
+    deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
+    await amqp_channel.basic_publish(b'foo bar', routing_key=deaclare_ok.queue)
+
+    message = await amqp_channel.basic_get(deaclare_ok.queue, no_ack=True)
+    assert message.body == b'foo bar'
+
+
 async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
     channel = amqp_channel      # type: aiormq.Channel
     await channel.basic_qos(prefetch_count=1)
