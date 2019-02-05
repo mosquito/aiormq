@@ -124,10 +124,10 @@ class Base:
             return
 
         with suppress(Exception):
-            await self._cancel_tasks(exc)
+            await self._on_close(exc)
 
         with suppress(Exception):
-            await self._on_close(exc)
+            await self._cancel_tasks(exc)
 
     async def close(self, exc=asyncio.CancelledError()):
         if self.is_closed:

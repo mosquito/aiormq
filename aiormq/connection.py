@@ -209,7 +209,10 @@ class Connection(Base):
     @task
     async def __receive_frame(self) -> typing.Tuple[int, int, spec.Frame]:
         async with self.lock:
-            frame_header = await self.reader.readexactly(1)
+            try:
+                frame_header = await self.reader.readexactly(1)
+            except asyncio.IncompleteReadError as e:
+                raise ConnectionError('Connection closed') from e
 
             if frame_header == b'\0x00':
                 raise spec.AMQPFrameError(await self.reader.read())
@@ -288,6 +291,9 @@ class Connection(Base):
 
                 await ch.frames.put((weight, frame))
             except asyncio.CancelledError:
+                return
+            except ConnectionError as e:
+                log.debug("Reader task exited because:", exc_info=e)
                 return
 
     async def _on_close(self, exc=exc.ConnectionClosed(0, 'normal closed')):

@@ -23,7 +23,7 @@ upload: sdist
 	twine upload dist/*$(VERSION)*
 
 quick-test:
-	TEST_QUICK='1' env/bin/pytest -x --cov=aiormq \
+	TEST_QUICK='1' env/bin/pytest -vvx --cov=aiormq \
 		--cov-report=term-missing tests
 
 test: quick-test
