@@ -41,8 +41,13 @@ PLATFORM = '{} {} ({} build {})'.format(
 )
 
 
+def parse_bool(v: str):
+    return v == '1' or v.lower() in ('true', 'yes', 'y', 'enable', 'on')
+
+
 class Connection(Base):
     FRAME_BUFFER = 10
+    HEARTBEAT_WAIT_MULTIPLIER = 3
     _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
     def __init__(self, url: URLorStr, *, parent=None,
@@ -73,6 +78,11 @@ class Connection(Base):
         self.connection_tune = None  # type: spec.Connection.TuneOk
 
         self.last_channel = 0
+
+        self.heartbeat_monitoring = parse_bool(self.url.query.get(
+            'heartbeat_monitoring', '1'
+        ))
+        self.heartbeat_last = 0
 
     @property
     def lock(self):
@@ -204,15 +214,36 @@ class Connection(Base):
         # noinspection PyAsyncCall
         self.create_task(self.__reader())
 
+        # noinspection PyAsyncCall
+        self.create_task(self.__heartbeat_checker())
+
         return True
+
+    async def __heartbeat_checker(self):
+        if not self.heartbeat_monitoring or not self.connection_tune.heartbeat:
+            return
+
+        heartbeat_wait_time = (
+            self.connection_tune.heartbeat * self.HEARTBEAT_WAIT_MULTIPLIER
+        )
+
+        while True:
+            await asyncio.sleep(heartbeat_wait_time, loop=self.loop)
+
+            last_heartbeat = self.loop.time() - self.heartbeat_last
+            if last_heartbeat > heartbeat_wait_time:
+                await self.close(
+                    ConnectionError(
+                        'Server connection probably hang, last heartbeat '
+                        'received %.3f seconds ago' % last_heartbeat
+                    )
+                )
+                return
 
     @task
     async def __receive_frame(self) -> typing.Tuple[int, int, spec.Frame]:
         async with self.lock:
-            try:
-                frame_header = await self.reader.readexactly(1)
-            except asyncio.IncompleteReadError as e:
-                raise ConnectionError('Connection closed') from e
+            frame_header = await self.reader.readexactly(1)
 
             if frame_header == b'\0x00':
                 raise spec.AMQPFrameError(await self.reader.read())
@@ -259,13 +290,14 @@ class Connection(Base):
             return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
 
     async def __reader(self):
-        while self.writer:
-            try:
+        try:
+            while self.writer:
                 weight, channel, frame = await self.__receive_frame()
 
                 if channel == 0:
                     if isinstance(frame, Heartbeat):
                         self.writer.write(self._HEARTBEAT)
+                        self.heartbeat_last = self.loop.time()
                         continue
                     elif isinstance(frame, spec.Connection.Close):
                         return await self.close(self.__exception_by_code(frame))
@@ -290,11 +322,11 @@ class Connection(Base):
                     self.channels[channel] = None
 
                 await ch.frames.put((weight, frame))
-            except asyncio.CancelledError:
-                return
-            except ConnectionError as e:
-                log.debug("Reader task exited because:", exc_info=e)
-                return
+        except asyncio.CancelledError as e:
+            log.debug("Reader task cancelled:", exc_info=e)
+        except Exception as e:
+            log.debug("Reader task exited because:", exc_info=e)
+            await self.close(e)
 
     async def _on_close(self, exc=exc.ConnectionClosed(0, 'normal closed')):
         writer = self.writer

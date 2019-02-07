@@ -88,7 +88,7 @@ class Base:
     __slots__ = 'loop', '__future_store', 'closing'
 
     def __init__(self, *, loop, parent: 'Base' = None):
-        self.loop = loop
+        self.loop = loop      # type: asyncio.AbstractEventLoop
 
         if parent:
             self.__future_store = parent._future_store_child()
