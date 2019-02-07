@@ -245,6 +245,7 @@ class Channel(Base):
             except asyncio.CancelledError:
                 return
             except Exception as e:  # pragma: nocover
+                log.debug("Channel reader exception %r", exc_info=e)
                 await self._cancel_tasks(e)
                 raise
 

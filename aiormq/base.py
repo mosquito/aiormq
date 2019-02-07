@@ -15,7 +15,7 @@ class TaskWrapper:
 
     def throw(self, exception):
         self.exception = exception
-        self.task.cancel()
+        return self.task.cancel()
 
     def __await__(self, *args, **kwargs):
         try:
@@ -23,8 +23,14 @@ class TaskWrapper:
         except asyncio.CancelledError as e:
             raise self.exception from e
 
+    def cancel(self):
+        return self.throw(asyncio.CancelledError)
+
     def __getattr__(self, item):
         return getattr(self.task, item)
+
+    def __repr__(self):
+        return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
 
 
 class FutureStore:

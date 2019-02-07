@@ -32,11 +32,12 @@ setup(
         "pamqp~=2.1",
     ],
     classifiers=[
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
         'License :: OSI Approved :: Apache Software License',
         'Topic :: Internet',
         'Topic :: Software Development',
         'Topic :: Software Development :: Libraries',
+        'Topic :: System :: Clustering',
         'Intended Audience :: Developers',
         'Natural Language :: English',
         'Operating System :: MacOS',
