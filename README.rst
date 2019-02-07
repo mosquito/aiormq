@@ -35,8 +35,7 @@ aiormq is a pure python AMQP client library.
 Status
 ======
 
-Development - BETA
-
+Production/Stable
 
 Features
 ========
