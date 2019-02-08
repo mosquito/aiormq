@@ -5,6 +5,7 @@ import typing
 from binascii import hexlify
 from collections import defaultdict
 from contextlib import suppress
+from functools import partial
 from io import BytesIO
 
 import pamqp.frame
@@ -345,8 +346,6 @@ class Channel(Base):
         mandatory: bool = False, immediate: bool = False
     ) -> typing.Optional[ConfirmationFrameType]:
 
-        body_io = BytesIO(body) if body else None
-
         frame = spec.Basic.Publish(
             exchange=exchange, routing_key=routing_key,
             mandatory=mandatory, immediate=immediate
@@ -382,15 +381,18 @@ class Channel(Base):
                 pamqp.frame.marshal(content_header, self.number)
             )
 
-            if body_io is not None:
-                chunk = body_io.read(self.max_content_size)
-                while chunk:
-                    content_frame = ContentBody(chunk)
+            with BytesIO(body) as buf:
+                read_chunk = partial(buf.read, self.max_content_size)
+                reader = iter(read_chunk, b'')
+
+                for chunk in reader:
                     # noinspection PyTypeChecker
                     self.writer.write(
-                        pamqp.frame.marshal(content_frame, self.number)
+                        pamqp.frame.marshal(
+                            ContentBody(chunk),
+                            self.number
+                        )
                     )
-                    chunk = body_io.read(self.max_content_size)
 
         if not self.publisher_confirms:
             return
