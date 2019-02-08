@@ -357,6 +357,7 @@ class Channel(Base):
         )
 
         if not content_header.properties.message_id:
+            # UUID compatible random bytes
             rnd_id = os.urandom(16)
             content_header.properties.message_id = hexlify(rnd_id).decode()
 
