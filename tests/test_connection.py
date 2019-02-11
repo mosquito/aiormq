@@ -99,6 +99,7 @@ async def test_bad_channel(amqp_connection: aiormq.Connection):
     await asyncio.sleep(0.1)
 
     assert amqp_connection.channels[channel.number] is None
+    amqp_connection.channels.pop(channel.number)
 
     with pytest.raises(aiormq.exceptions.ConnectionChannelError):
         await amqp_connection.channel(65535)
