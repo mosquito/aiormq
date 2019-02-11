@@ -377,11 +377,11 @@ class Connection(Base):
                 self.last_channel += 1
 
             channel_number = self.last_channel
+        elif channel_number in self.channels:
+            raise ValueError("Channel %d already used" % channel_number)
 
         if channel_number < 0 or channel_number > 65535:
             raise ValueError('Channel number too large')
-
-        self.last_channel = min(self.last_channel, channel_number)
 
         channel = Channel(
             self, channel_number, frame_buffer=frame_buffer,
