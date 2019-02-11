@@ -291,7 +291,7 @@ class Connection(Base):
 
     async def __reader(self):
         try:
-            while self.writer:
+            while not self.reader.at_eof():
                 weight, channel, frame = await self.__receive_frame()
 
                 if channel == 0:
@@ -325,7 +325,7 @@ class Connection(Base):
         except asyncio.CancelledError as e:
             log.debug("Reader task cancelled:", exc_info=e)
         except asyncio.IncompleteReadError as e:
-            log.debug("Reader task exited because:", exc_info=e)
+            log.debug("Can not read bytes from server:", exc_info=e)
             await self.close(ConnectionError(*e.args))
         except Exception as e:
             log.debug("Reader task exited because:", exc_info=e)
