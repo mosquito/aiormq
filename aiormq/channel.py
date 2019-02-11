@@ -189,19 +189,12 @@ class Channel(Base):
 
         confirmation.set_result(message)
 
-    async def _on_confirm(self, frame: ConfirmationFrameType):
-        if not self.publisher_confirms:     # pragma: nocover
-            return
-
-        if frame.delivery_tag not in self.confirmations:
-            log.error("Unknown %r from broker", frame)
-            return
-
-        confirmation = self.confirmations.pop(frame.delivery_tag)
-        if confirmation.done():     # pragma: nocover
+    def _confirm_delivery(self, delivery_tag, frame: ConfirmationFrameType):
+        confirmation = self.confirmations.pop(delivery_tag)
+        if confirmation.done():  # pragma: nocover
             log.error(
                 "Delivery tag %r confirmed %r was ignored",
-                frame.delivery_tag, frame
+                delivery_tag, frame
             )
             return
 
@@ -211,7 +204,25 @@ class Channel(Base):
 
         confirmation.set_exception(
             exc.DeliveryError(None, frame)
-        )   # pragma: nocover
+        )  # pragma: nocover
+
+    async def _on_confirm(self, frame: ConfirmationFrameType):
+        if not self.publisher_confirms:     # pragma: nocover
+            return
+
+        if frame.delivery_tag not in self.confirmations:
+            log.error("Unknown %r from broker", frame)
+            return
+
+        multiple = getattr(frame, 'multiple', False)
+
+        if multiple:
+            for delivery_tag in range(frame.delivery_tag, 0, -1):
+                if delivery_tag not in self.confirmations:
+                    return
+                self._confirm_delivery(delivery_tag, frame)
+        else:
+            self._confirm_delivery(frame.delivery_tag, frame)
 
     async def _reader(self):
         while True:

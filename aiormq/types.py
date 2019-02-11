@@ -18,7 +18,13 @@ CallbackCoro = typing.Coroutine[DeliveredMessage, None, typing.Any]
 ConsumerCallback = typing.Callable[[], CallbackCoro]
 ReturnCallback = typing.Callable[[], CallbackCoro]
 ArgumentsType = typing.Dict[str, typing.Union[str, int, bool]]
-ConfirmationFrameType = typing.Union[spec.Basic.Ack, spec.Basic.Nack]
+
+ConfirmationFrameType = typing.Union[
+    spec.Basic.Ack,
+    spec.Basic.Nack,
+    spec.Basic.Reject
+]
+
 SSLCerts = typing.NamedTuple(
     'SSLCerts', [
         ('cert', str),
