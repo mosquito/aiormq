@@ -63,6 +63,7 @@ setup(
             'pytest-asyncio',
             'pytest-cov',
             'tox>=2.4',
+            'uvloop',
         ],
     },
 )

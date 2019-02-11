@@ -2,15 +2,20 @@ import asyncio
 import os
 
 import pytest
+import uvloop
 from async_generator import yield_, async_generator
 from yarl import URL
 
 from aiormq import Connection
 
+POLICIES = [asyncio.DefaultEventLoopPolicy(), uvloop.EventLoopPolicy()]
 
-@pytest.fixture
-def event_loop():
+
+@pytest.fixture(params=POLICIES, ids=['asyncio', 'uvloop'])
+def event_loop(request):
     asyncio.get_event_loop().close()
+    asyncio.set_event_loop_policy(request.param)
+
     loop = asyncio.new_event_loop()     # type: asyncio.AbstractEventLoop
     loop.set_debug(True)
     asyncio.set_event_loop(loop)
@@ -45,7 +50,7 @@ amqp_urls = [
 ]
 
 
-@pytest.fixture(params=amqp_urls)
+@pytest.fixture(params=amqp_urls, ids=['amqp', 'amqps', 'amqps-client'])
 @async_generator
 async def amqp_connection(request, event_loop):
     connection = Connection(request.param, loop=event_loop)

@@ -324,6 +324,9 @@ class Connection(Base):
                 await ch.frames.put((weight, frame))
         except asyncio.CancelledError as e:
             log.debug("Reader task cancelled:", exc_info=e)
+        except asyncio.IncompleteReadError as e:
+            log.debug("Reader task exited because:", exc_info=e)
+            await self.close(ConnectionError(*e.args))
         except Exception as e:
             log.debug("Reader task exited because:", exc_info=e)
             await self.close(e)
