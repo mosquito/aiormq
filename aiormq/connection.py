@@ -294,10 +294,11 @@ class Connection(Base):
             while not self.reader.at_eof():
                 weight, channel, frame = await self.__receive_frame()
 
+                self.heartbeat_last = self.loop.time()
+
                 if channel == 0:
                     if isinstance(frame, Heartbeat):
                         self.writer.write(self._HEARTBEAT)
-                        self.heartbeat_last = self.loop.time()
                         continue
                     elif isinstance(frame, spec.Connection.Close):
                         return await self.close(self.__exception_by_code(frame))
