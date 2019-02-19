@@ -239,7 +239,8 @@ class Connection(Base):
             # Send heartbeat to server unconditionally
             self.writer.write(self._HEARTBEAT)
 
-            # Check if the server sent us something within, disconnect after grace period
+            # Check if the server sent us something
+            # within the heartbeat grace period
             if self.heartbeat_monitoring:
                 last_heartbeat = self.loop.time() - self.heartbeat_last_received
                 if last_heartbeat > heartbeat_grace_timeout:
