@@ -5,12 +5,10 @@ import uuid
 import pytest
 from binascii import hexlify
 
-from async_generator import async_generator, yield_
-
 import aiormq
-from aiormq import Connection
 from aiormq.auth import AuthBase, PlainAuth
-from .conftest import skip_when_quick_test, amqp_urls
+from .conftest import skip_when_quick_test
+
 
 pytestmark = pytest.mark.asyncio
 
