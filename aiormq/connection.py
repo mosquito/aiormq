@@ -239,18 +239,24 @@ class Connection(Base):
             # Send heartbeat to server unconditionally
             self.writer.write(self._HEARTBEAT)
 
+            if not self.heartbeat_monitoring:
+                continue
+
             # Check if the server sent us something
             # within the heartbeat grace period
-            if self.heartbeat_monitoring:
-                last_heartbeat = self.loop.time() - self.heartbeat_last_received
-                if last_heartbeat > heartbeat_grace_timeout:
-                    await self.close(
-                        ConnectionError(
-                            'Server connection probably hang, last heartbeat '
-                            'received %.3f seconds ago' % last_heartbeat
-                        )
-                    )
-                    return
+            last_heartbeat = self.loop.time() - self.heartbeat_last_received
+
+            if last_heartbeat <= heartbeat_grace_timeout:
+                continue
+
+            await self.close(
+                ConnectionError(
+                    'Server connection probably hang, last heartbeat '
+                    'received %.3f seconds ago' % last_heartbeat
+                )
+            )
+
+            return
 
     @task
     async def __receive_frame(self) -> typing.Tuple[int, int, spec.Frame]:
@@ -309,10 +315,10 @@ class Connection(Base):
                 self.heartbeat_last_received = self.loop.time()
 
                 if channel == 0:
-                    if isinstance(frame, Heartbeat):
-                        continue
-                    elif isinstance(frame, spec.Connection.Close):
+                    if isinstance(frame, spec.Connection.Close):
                         return await self.close(self.__exception_by_code(frame))
+                    elif isinstance(frame, Heartbeat):
+                        continue
 
                     log.error('Unexpected frame %r', frame)
                     continue
