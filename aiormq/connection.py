@@ -47,7 +47,10 @@ def parse_bool(v: str):
 
 class Connection(Base):
     FRAME_BUFFER = 10
-    HEARTBEAT_WAIT_MULTIPLIER = 3
+    # Interval between sending heartbeats based on the heartbeat(timeout)
+    HEARTBEAT_INTERVAL_MULTIPLIER = 0.5
+    # Allow two missed heartbeats (based on heartbeat(timeout)
+    HEARTBEAT_GRACE_MULTIPLIER = 3
     _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
     def __init__(self, url: URLorStr, *, parent=None,
@@ -82,7 +85,7 @@ class Connection(Base):
         self.heartbeat_monitoring = parse_bool(self.url.query.get(
             'heartbeat_monitoring', '1'
         ))
-        self.heartbeat_last = 0
+        self.heartbeat_received_last = 0
 
     @property
     def lock(self):
@@ -215,30 +218,45 @@ class Connection(Base):
         self.create_task(self.__reader())
 
         # noinspection PyAsyncCall
-        self.create_task(self.__heartbeat_checker())
+        self.create_task(self.__heartbeat_task())
 
         return True
 
-    async def __heartbeat_checker(self):
-        if not self.heartbeat_monitoring or not self.connection_tune.heartbeat:
+    async def __heartbeat_task(self):
+        if not self.connection_tune.heartbeat:
             return
 
-        heartbeat_wait_time = (
-            self.connection_tune.heartbeat * self.HEARTBEAT_WAIT_MULTIPLIER
+        heartbeat_interval = (
+            self.connection_tune.heartbeat * self.HEARTBEAT_INTERVAL_MULTIPLIER
+        )
+        heartbeat_grace_timeout = (
+            self.connection_tune.heartbeat * self.HEARTBEAT_GRACE_MULTIPLIER
         )
 
         while True:
-            await asyncio.sleep(heartbeat_wait_time, loop=self.loop)
+            await asyncio.sleep(heartbeat_interval, loop=self.loop)
 
-            last_heartbeat = self.loop.time() - self.heartbeat_last
-            if last_heartbeat > heartbeat_wait_time:
-                await self.close(
-                    ConnectionError(
-                        'Server connection probably hang, last heartbeat '
-                        'received %.3f seconds ago' % last_heartbeat
-                    )
+            # Send heartbeat to server unconditionally
+            self.writer.write(self._HEARTBEAT)
+
+            if not self.heartbeat_monitoring:
+                continue
+
+            # Check if the server sent us something
+            # within the heartbeat grace period
+            last_heartbeat = self.loop.time() - self.heartbeat_last_received
+
+            if last_heartbeat <= heartbeat_grace_timeout:
+                continue
+
+            await self.close(
+                ConnectionError(
+                    'Server connection probably hang, last heartbeat '
+                    'received %.3f seconds ago' % last_heartbeat
                 )
-                return
+            )
+
+            return
 
     @task
     async def __receive_frame(self) -> typing.Tuple[int, int, spec.Frame]:
@@ -294,14 +312,13 @@ class Connection(Base):
             while not self.reader.at_eof():
                 weight, channel, frame = await self.__receive_frame()
 
-                self.heartbeat_last = self.loop.time()
+                self.heartbeat_last_received = self.loop.time()
 
                 if channel == 0:
-                    if isinstance(frame, Heartbeat):
-                        self.writer.write(self._HEARTBEAT)
-                        continue
-                    elif isinstance(frame, spec.Connection.Close):
+                    if isinstance(frame, spec.Connection.Close):
                         return await self.close(self.__exception_by_code(frame))
+                    elif isinstance(frame, Heartbeat):
+                        continue
 
                     log.error('Unexpected frame %r', frame)
                     continue
