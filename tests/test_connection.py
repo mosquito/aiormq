@@ -200,35 +200,6 @@ async def test_non_publisher_confirms(amqp_connection):
     await amqp_connection.channel(publisher_confirms=False)
 
 
-class FastClosingConnection(Connection):
-    HEARTBEAT_WAIT_MULTIPLIER = 0.0000001
-
-
-@pytest.fixture(params=amqp_urls)
-@async_generator
-async def fc_connection(request, event_loop):
-    connection = FastClosingConnection(
-        request.param.update_query(heartbeat_monitoring='yes'),
-        loop=event_loop
-    )
-
-    await connection.connect()
-
-    try:
-        await yield_(connection)
-    finally:
-        await connection.close()
-
-
-async def test_heartbeat_monitoring(fc_connection: Connection, event_loop):
-    with pytest.raises(ConnectionError):
-        await asyncio.wait_for(
-            fc_connection.closing,
-            timeout=1,
-            loop=event_loop
-        )
-
-
 @skip_when_quick_test
 async def test_no_free_channels(amqp_connection):
     await asyncio.wait([
