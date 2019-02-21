@@ -226,6 +226,9 @@ class Connection(Base):
         if not self.connection_tune.heartbeat:
             return
 
+        if not hasattr(self, 'heartbeat_last_received'):
+            self.heartbeat_last_received = self.loop.time()
+
         heartbeat_interval = (
             self.connection_tune.heartbeat * self.HEARTBEAT_INTERVAL_MULTIPLIER
         )
