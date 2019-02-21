@@ -85,7 +85,7 @@ class Connection(Base):
         self.heartbeat_monitoring = parse_bool(self.url.query.get(
             'heartbeat_monitoring', '1'
         ))
-        self.heartbeat_received_last = 0
+        self.heartbeat_last_received = 0
 
     @property
     def lock(self):
@@ -193,6 +193,7 @@ class Connection(Base):
 
             res = await self.__receive_frame()
             _, _, frame = res   # type: spec.Connection.Start
+            self.heartbeat_last_received = self.loop.time()
         except EOFError as e:
             raise exc.IncompatibleProtocolError(*e.args) from e
 
