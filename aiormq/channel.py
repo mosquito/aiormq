@@ -217,10 +217,9 @@ class Channel(Base):
         multiple = getattr(frame, 'multiple', False)
 
         if multiple:
-            for delivery_tag in range(frame.delivery_tag, 0, -1):
-                if delivery_tag not in self.confirmations:
-                    return
-                self._confirm_delivery(delivery_tag, frame)
+            for delivery_tag in list(self.confirmations.keys()):
+                if frame.delivery_tag >= delivery_tag:
+                    self._confirm_delivery(delivery_tag, frame)
         else:
             self._confirm_delivery(frame.delivery_tag, frame)
 
