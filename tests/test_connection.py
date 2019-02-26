@@ -279,5 +279,5 @@ URL_VHOSTS = [
 
 
 @pytest.mark.parametrize("url,vhost", URL_VHOSTS)
-async def test_cancel_on_queue_deleted(url, vhost, event_loop):
+async def test_connection_urls_vhosts(url, vhost, event_loop):
     assert aiormq.Connection(url, loop=event_loop).vhost == vhost
