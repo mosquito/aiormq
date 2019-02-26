@@ -3,7 +3,6 @@ import gc
 import logging
 import os
 import tracemalloc
-from unittest.mock import patch
 
 import pamqp
 import pytest
