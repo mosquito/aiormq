@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 import pytest
 
@@ -124,3 +125,30 @@ async def test_ack_nack_reject(amqp_channel: aiormq.Channel, event_loop):
     message = await queue.get()
     assert message.body == b'acked'
     await channel.basic_ack(message.delivery.delivery_tag)
+
+
+async def test_confirm_multiple(amqp_channel: aiormq.Channel):
+    """
+    RabbitMQ has been observed to send confirmations in a strange pattern
+    when publishing simultaneously where only some messages are delivered
+    to a queue. It sends acks like this 1 2 4 5(multiple, confirming also 3).
+    This test is probably inconsequential without publisher_confirms
+    This is a regression for https://github.com/mosquito/aiormq/issues/10
+    """
+    channel = amqp_channel                      # type: aiormq.Channel
+    exchange = uuid.uuid4().hex
+    await channel.exchange_declare(exchange, exchange_type='topic')
+    try:
+        declare_ok = await channel.queue_declare(exclusive=True)
+        await channel.queue_bind(declare_ok.queue, exchange,
+                                 routing_key='test.5')
+
+        for i in range(10):
+            messages = [channel.basic_publish(b'test', exchange=exchange,
+                                              routing_key='test.{}'.format(i))
+                        for i in range(10)]
+            _, pending = await asyncio.wait(messages, timeout=0.2)
+            assert not pending, 'not all publishes were completed (confirmed)'
+            await asyncio.sleep(0.05)
+    finally:
+        await channel.exchange_delete(exchange)
