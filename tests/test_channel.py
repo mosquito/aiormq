@@ -152,3 +152,21 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
             await asyncio.sleep(0.05)
     finally:
         await channel.exchange_delete(exchange)
+
+
+async def test_exclusive_queue_locked(amqp_connection):
+    channel0 = await amqp_connection.channel()
+    channel1 = await amqp_connection.channel()
+
+    qname = str(uuid.uuid4())
+
+    await channel0.queue_declare(qname, exclusive=True)
+
+    try:
+        await channel0.basic_consume(qname, print, exclusive=True)
+
+        with pytest.raises(aiormq.exceptions.ChannelLockedResource):
+            await channel1.queue_declare(qname)
+            await channel1.basic_consume(qname, print, exclusive=True)
+    finally:
+        await channel0.queue_delete(qname)
