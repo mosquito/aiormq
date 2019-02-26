@@ -62,7 +62,12 @@ class Connection(Base):
         )
 
         self.url = URL(url)
-        self.vhost = self.url.path.strip("/") or "/"
+
+        if self.url.path[0] == '/':
+            self.vhost = self.url.path[1:]
+        elif not self.url.path:
+            self.vhost = '/'
+
         self.reader = None  # type: asyncio.StreamReader
         self.writer = None  # type: asyncio.StreamWriter
         self.ssl_certs = SSLCerts(
