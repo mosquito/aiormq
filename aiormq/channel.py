@@ -3,7 +3,7 @@ import logging
 import os
 import typing
 from binascii import hexlify
-from collections import defaultdict
+from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
@@ -38,7 +38,7 @@ class Channel(Base):
             raise ValueError("Server does't support publisher confirms")
 
         self.consumers = {}
-        self.confirmations = defaultdict(self.create_future)
+        self.confirmations = OrderedDict()
         self.message_id_delivery_tag = dict()
 
         self.delivery_tag = 0
@@ -191,6 +191,7 @@ class Channel(Base):
 
     def _confirm_delivery(self, delivery_tag, frame: ConfirmationFrameType):
         confirmation = self.confirmations.pop(delivery_tag)
+
         if confirmation.done():  # pragma: nocover
             log.error(
                 "Delivery tag %r confirmed %r was ignored",
@@ -217,9 +218,12 @@ class Channel(Base):
         multiple = getattr(frame, 'multiple', False)
 
         if multiple:
-            for delivery_tag in list(self.confirmations.keys()):
+            for delivery_tag in self.confirmations.keys():
                 if frame.delivery_tag >= delivery_tag:
-                    self._confirm_delivery(delivery_tag, frame)
+                    # Should be called later to avoid keys copying
+                    self.loop.call_soon(
+                        self._confirm_delivery, delivery_tag, frame
+                    )
         else:
             self._confirm_delivery(frame.delivery_tag, frame)
 
@@ -378,7 +382,12 @@ class Channel(Base):
 
             if self.publisher_confirms:
                 message_id = content_header.properties.message_id
+
+                if self.delivery_tag not in self.confirmations:
+                    self.confirmations[self.delivery_tag] = self.create_future()
+
                 confirmation = self.confirmations[self.delivery_tag]
+
                 self.message_id_delivery_tag[message_id] = self.delivery_tag
 
                 confirmation.add_done_callback(
