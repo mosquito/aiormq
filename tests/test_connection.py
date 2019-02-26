@@ -139,7 +139,7 @@ async def test_auth_base(amqp_connection):
         AuthBase(amqp_connection).marshal()
 
 
-async def test_auth_plain(amqp_connection):
+async def test_auth_plain(amqp_connection, event_loop):
     auth = PlainAuth(amqp_connection).marshal()
 
     assert auth == PlainAuth(amqp_connection).marshal()
@@ -148,7 +148,8 @@ async def test_auth_plain(amqp_connection):
     assert auth_parts == [b'', b'guest', b'guest']
 
     connection = aiormq.Connection(
-        amqp_connection.url.with_user('foo').with_password('bar')
+        amqp_connection.url.with_user('foo').with_password('bar'),
+        loop=event_loop
     )
 
     auth = PlainAuth(connection).marshal()
@@ -180,9 +181,10 @@ async def test_channel_closed(amqp_connection):
     await amqp_connection.close()
 
 
-async def test_bad_credentials(amqp_connection):
+async def test_bad_credentials(amqp_connection, event_loop):
     connection = aiormq.Connection(
         amqp_connection.url.with_password(uuid.uuid4().hex),
+        loop=event_loop
     )
 
     with pytest.raises(aiormq.exceptions.ProbableAuthenticationError):

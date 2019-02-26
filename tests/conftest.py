@@ -116,7 +116,6 @@ def memory_tracer():
         tracemalloc.Filter(True, aiormq.__file__),
         tracemalloc.Filter(True, pamqp.__file__),
         tracemalloc.Filter(True, asyncio.__file__),
-        tracemalloc.Filter(True, uvloop.__file__),
     )
 
     snapshot_before = tracemalloc.take_snapshot().filter_traces(filters)
