@@ -126,7 +126,7 @@ Simple publisher
 
     async def main():
         # Perform connection
-        connection = await aiormq.connect("amqp://guest:guest@localhost/")
+        connection = await aiormq.connect("amqp://guest:guest@localhost//")
 
         # Creating a channel
         channel = await connection.channel()

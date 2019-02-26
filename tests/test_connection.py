@@ -262,3 +262,22 @@ async def test_cancel_on_queue_deleted(amqp_connection, event_loop):
     await asyncio.sleep(0.1, loop=event_loop)
 
     assert consume_ok.consumer_tag not in channel.consumers
+
+
+URL_VHOSTS = [
+    ("amqp:///", "/"),
+    ("amqp:////", "/"),
+    ("amqp:///test", "test"),
+    ("amqp:////test", "/test"),
+    ("amqp://localhost/test", "test"),
+    ("amqp://localhost//test", "/test"),
+    ("amqps://localhost:5678//test", "/test"),
+    ("amqps://localhost:5678/-test", "-test"),
+    ("amqp://guest:guest@localhost/@test", "@test"),
+    ("amqp://guest:guest@localhost//@test", "/@test"),
+]
+
+
+@pytest.mark.parametrize("url,vhost", URL_VHOSTS)
+async def test_cancel_on_queue_deleted(url, vhost, event_loop):
+    assert aiormq.Connection(url, loop=event_loop).vhost == vhost

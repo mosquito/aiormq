@@ -63,10 +63,10 @@ class Connection(Base):
 
         self.url = URL(url)
 
-        if self.url.path[0] == '/':
-            self.vhost = self.url.path[1:]
-        elif not self.url.path:
+        if self.url.path == '/' or not self.url.path:
             self.vhost = '/'
+        else:
+            self.vhost = self.url.path[1:]
 
         self.reader = None  # type: asyncio.StreamReader
         self.writer = None  # type: asyncio.StreamWriter
