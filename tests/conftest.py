@@ -1,28 +1,48 @@
 import asyncio
+import gc
+import logging
 import os
+import tracemalloc
 
+import pamqp
 import pytest
 import uvloop
 from async_generator import yield_, async_generator
 from yarl import URL
 
+import aiormq
 from aiormq import Connection
 
-POLICIES = [asyncio.DefaultEventLoopPolicy(), uvloop.EventLoopPolicy()]
+POLICIES = [asyncio.DefaultEventLoopPolicy, uvloop.EventLoopPolicy]
 
 
 @pytest.fixture(params=POLICIES, ids=['asyncio', 'uvloop'])
 def event_loop(request):
+    policy = request.param()
+
     asyncio.get_event_loop().close()
-    asyncio.set_event_loop_policy(request.param)
+    asyncio.set_event_loop_policy(policy)
 
     loop = asyncio.new_event_loop()     # type: asyncio.AbstractEventLoop
     loop.set_debug(True)
     asyncio.set_event_loop(loop)
+
+    original = asyncio.get_event_loop
+
+    def getter_mock():
+        raise RuntimeError('asyncio.get_event_loop() call forbidden')
+
+    asyncio.get_event_loop = getter_mock
+
     try:
         yield loop
     finally:
+        asyncio.get_event_loop = original
+        asyncio.set_event_loop_policy(None)
+        del policy
+
         loop.close()
+        del loop
 
 
 def cert_path(*args):
@@ -84,3 +104,54 @@ skip_when_quick_test = pytest.mark.skipif(
     os.getenv("TEST_QUICK") is not None,
     reason='quick test'
 )
+
+
+@pytest.fixture(autouse=True)
+def memory_tracer():
+    tracemalloc.start()
+    tracemalloc.clear_traces()
+
+    filters = (
+        tracemalloc.Filter(True, aiormq.__file__),
+        tracemalloc.Filter(True, pamqp.__file__),
+        tracemalloc.Filter(True, asyncio.__file__),
+    )
+
+    snapshot_before = tracemalloc.take_snapshot().filter_traces(filters)
+
+    def format_stat(stats):
+        items = [
+            "TOP STATS:",
+            "%-90s %6s %6s %6s" % ("Traceback", "line", "size", "count")
+        ]
+
+        for stat in stats:
+            fname = stat.traceback[0].filename
+            lineno = stat.traceback[0].lineno
+            items.append(
+                "%-90s %6s %6s %6s" % (
+                    fname,
+                    lineno,
+                    stat.size_diff,
+                    stat.count_diff
+                )
+            )
+
+        return "\n".join(items)
+
+    try:
+        yield
+
+        gc.collect()
+
+        snapshot_after = tracemalloc.take_snapshot().filter_traces(filters)
+
+        top_stats = snapshot_after.compare_to(
+            snapshot_before, 'lineno', cumulative=True
+        )
+
+        if top_stats:
+            logging.error(format_stat(top_stats))
+            raise AssertionError("Possible memory leak")
+    finally:
+        tracemalloc.stop()
