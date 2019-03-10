@@ -5,6 +5,9 @@ from contextlib import suppress
 from functools import wraps
 from typing import TypeVar, Type, Union
 
+from .tools import shield
+
+
 T = TypeVar('T')
 
 
@@ -59,6 +62,7 @@ class FutureStore:
         if self.parent:
             self.parent.add(future)
 
+    @shield
     async def reject_all(self, exception: Exception):
         tasks = []
 
