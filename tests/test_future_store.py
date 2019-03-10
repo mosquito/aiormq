@@ -29,7 +29,7 @@ def child_store(event_loop, root_store):
 
 @pytest.mark.asyncio
 async def test_reject_all(event_loop, root_store: FutureStore,
-                      child_store: FutureStore):
+                          child_store: FutureStore):
 
     future1 = root_store.create_future()
     future2 = child_store.create_future()
