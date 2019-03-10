@@ -17,11 +17,14 @@ class TaskWrapper:
         self.exception = exception
         return self.task.cancel()
 
-    def __await__(self, *args, **kwargs):
+    async def __inner(self):
         try:
-            return (yield from self.task.__await__(*args, **kwargs))
+            return await self.task
         except asyncio.CancelledError as e:
             raise self.exception from e
+
+    def __await__(self, *args, **kwargs):
+        return self.__inner().__await__()
 
     def cancel(self):
         return self.throw(asyncio.CancelledError)
