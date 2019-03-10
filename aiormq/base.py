@@ -72,7 +72,10 @@ class FutureStore:
                 future.set_exception(exception)
 
         if tasks:
-            await asyncio.wait(tasks, loop=self.loop)
+            await asyncio.gather(
+                *tasks, loop=self.loop,
+                return_exceptions=True
+            )
 
     def create_task(self, coro: T) -> T:
         task = TaskWrapper(self.loop.create_task(coro))
