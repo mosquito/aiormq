@@ -44,7 +44,7 @@ class LazyCoroutine:
         )
 
     def __call__(self):
-        if self.__instanse is None:
+        if self.__instance is None:
             self.__instance = self.__func(*self.__args, **self.__kwargs)
 
         return self.__instance
