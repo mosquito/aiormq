@@ -29,7 +29,9 @@ SSLCerts = typing.NamedTuple(
     'SSLCerts', [
         ('cert', str),
         ('key', str),
-        ('ca', str),
+        ('capath', str),
+        ('cafile', str),
+        ('cadata', bytes),
         ('verify', bool),
     ]
 )
