@@ -3,6 +3,7 @@ import logging
 import platform
 import ssl
 import typing
+from base64 import b64decode
 from contextlib import suppress
 
 import pamqp.frame
@@ -53,6 +54,10 @@ class Connection(Base):
     HEARTBEAT_GRACE_MULTIPLIER = 3
     _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
+    @staticmethod
+    def _parse_ca_data(data):
+        return b64decode(data) if data else data
+
     def __init__(self, url: URLorStr, *, parent=None,
                  loop: asyncio.get_event_loop() = None):
 
@@ -71,7 +76,9 @@ class Connection(Base):
         self.reader = None  # type: asyncio.StreamReader
         self.writer = None  # type: asyncio.StreamWriter
         self.ssl_certs = SSLCerts(
-            ca=self.url.query.get('cafile'),
+            cafile=self.url.query.get('cafile'),
+            capath=self.url.query.get('capath'),
+            cadata=self._parse_ca_data(self.url.query.get('cadata')),
             key=self.url.query.get('keyfile'),
             cert=self.url.query.get('certfile'),
             verify=self.url.query.get('no_verify_ssl', '0') == '0'
@@ -118,7 +125,9 @@ class Connection(Base):
                 if self.ssl_certs.key
                 else ssl.Purpose.CLIENT_AUTH
             ),
-            capath=self.ssl_certs.ca,
+            capath=self.ssl_certs.capath,
+            cafile=self.ssl_certs.cafile,
+            cadata=self.ssl_certs.cadata,
         )
 
         if self.ssl_certs.key:

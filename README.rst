@@ -59,7 +59,13 @@ Features
 
 * Tracking unroutable messages
   (Use **connection.channel(on_return_raises=False)** for disabling)
-* Full SSL/TLS support
+* Full SSL/TLS support with url query parameters:
+    * ``cafile=`` - string contains path to ca certificate file
+    * ``capath=`` - string contains path to ca certificates
+    * ``cadata=`` - base64 encoded ca certificate data
+    * ``keyfile=`` - string contains path to key file
+    * ``certfile=`` - string contains path to certificate file
+    * ``no_verify_ssl`` - boolean disables certificates validation
 * Python `type hints`_
 * Uses `pamqp`_ as an AMQP 0.9.1 frame encoder/decoder
 
