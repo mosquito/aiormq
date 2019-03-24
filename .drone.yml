@@ -20,6 +20,18 @@ steps:
       - name: cache
         path: /drone/src/.tox
 
+  - name: mypy
+    image: snakepacker/python:all
+    group: tests
+    pull: always
+    commands:
+      - tox
+    environment:
+      TOXENV: mypy
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
+
   - name: checkdoc
     image: snakepacker/python:all
     group: tests
@@ -104,6 +116,6 @@ services:
 
 ---
 kind: signature
-hmac: 603510663ed17398ab9ba541f56fe9b717a5babf1496006f7ff3576b11deec6d
+hmac: d7cdfebc007637a2d14892f9d06735518800f5461709d3d4ccefcb9ad7949e2b
 
 ...
