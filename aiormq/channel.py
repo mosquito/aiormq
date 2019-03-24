@@ -12,6 +12,7 @@ import pamqp.frame
 from pamqp import specification as spec, ContentHeader
 from pamqp.body import ContentBody
 
+from aiormq.tools import LazyCoroutine
 from . import exceptions as exc
 from .base import Base, task
 from .types import (
@@ -321,7 +322,7 @@ class Channel(Base):
             ), self.number)
         )
 
-        return self.writer.drain()
+        return LazyCoroutine(self.writer.drain)
 
     def basic_nack(self, delivery_tag: str = None,
                    multiple: bool = False, requeue: bool = True):
@@ -339,7 +340,7 @@ class Channel(Base):
             )
         )
 
-        return self.writer.drain()
+        return LazyCoroutine(self.writer.drain)
 
     def basic_reject(self, delivery_tag, *, requeue=True):
         self.writer.write(
@@ -352,7 +353,7 @@ class Channel(Base):
             )
         )
 
-        return self.writer.drain()
+        return LazyCoroutine(self.writer.drain)
 
     async def basic_publish(
         self, body: bytes, *, exchange: str = '', routing_key: str = '',
