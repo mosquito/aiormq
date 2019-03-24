@@ -17,7 +17,7 @@ from . import exceptions as exc
 from .base import Base, task
 from .types import (
     DeliveredMessage, ConfirmationFrameType,
-    ConsumerCallback, ArgumentsType
+    ConsumerCallback, ArgumentsType, DrainResult
 )
 
 log = logging.getLogger(__name__)
@@ -314,7 +314,7 @@ class Channel(Base):
             arguments=arguments
         ))
 
-    def basic_ack(self, delivery_tag, multiple=False):
+    def basic_ack(self, delivery_tag, multiple=False) -> DrainResult:
         self.writer.write(
             pamqp.frame.marshal(spec.Basic.Ack(
                 delivery_tag=delivery_tag,
@@ -324,8 +324,8 @@ class Channel(Base):
 
         return LazyCoroutine(self.writer.drain)
 
-    def basic_nack(self, delivery_tag: str = None,
-                   multiple: bool = False, requeue: bool = True):
+    def basic_nack(self, delivery_tag: str = None, multiple: bool = False,
+                   requeue: bool = True) -> DrainResult:
         if not self.connection.basic_nack:
             raise exc.MethodNotImplemented
 
@@ -342,7 +342,7 @@ class Channel(Base):
 
         return LazyCoroutine(self.writer.drain)
 
-    def basic_reject(self, delivery_tag, *, requeue=True):
+    def basic_reject(self, delivery_tag, *, requeue=True) -> DrainResult:
         self.writer.write(
             pamqp.frame.marshal(
                 spec.Basic.Reject(
