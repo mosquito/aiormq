@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from functools import wraps
 
 from yarl import URL
@@ -35,6 +36,12 @@ class LazyCoroutine:
             self.__args, self.__kwargs
         )
 
-    def __await__(self):
-        coro = self.__func(*self.__args, **self.__kwargs)
-        return (yield from coro.__await__())
+    def __call__(self):
+        return self.__func(*self.__args, **self.__kwargs)
+
+    def __iter__(self):
+        return (yield from self().__iter__())
+
+    if sys.version_info >= (3, 7):
+        def __await__(self):
+            return (yield from self().__await__())
