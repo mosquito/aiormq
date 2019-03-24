@@ -36,4 +36,5 @@ class LazyCoroutine:
         )
 
     def __await__(self):
-        return (yield from self.__func(*self.__args, **self.__kwargs))
+        coro = self.__func(*self.__args, **self.__kwargs)
+        return (yield from coro.__await__())
