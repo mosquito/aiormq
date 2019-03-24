@@ -6,6 +6,10 @@ class AMQPError(Exception):
         return "<%s: %s>" % (self.__class__.__name__, self.message % self.args)
 
 
+# Backward compatibility
+AMQPException = AMQPError
+
+
 class AMQPConnectionError(AMQPError):
     message = 'Connection can not be opened'
 
@@ -131,13 +135,10 @@ class MethodNotImplemented(AMQPError):
     pass
 
 
-class AMQPException(Exception):
-    pass
-
-
-class DeliveryError(AMQPException):
+class DeliveryError(AMQPError):
     __slots__ = 'message', 'frame'
 
     def __init__(self, message, frame):
         self.message = message
         self.frame = frame
+        super().__init__()
