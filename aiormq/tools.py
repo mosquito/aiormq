@@ -45,3 +45,6 @@ class LazyCoroutine:
     if sys.version_info >= (3, 7):
         def __await__(self):
             return (yield from self().__await__())
+    else:
+        def __await__(self):
+            return (yield from self().__iter__())
