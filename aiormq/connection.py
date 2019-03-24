@@ -79,6 +79,7 @@ class Connection(Base):
 
         self.started = False
         self.__lock = asyncio.Lock(loop=self.loop)
+        self.__drain_lock = asyncio.Lock(loop=self.loop)
 
         self.channels = {}  # type: typing.Dict[int, typing.Optional[Channel]]
 
@@ -98,6 +99,10 @@ class Connection(Base):
             raise RuntimeError('%r closed' % self)
 
         return self.__lock
+
+    async def drain(self):
+        async with self.__drain_lock:
+            return await self.writer.drain()
 
     @property
     def is_opened(self):
