@@ -43,8 +43,21 @@ def event_loop(request):
 
     asyncio.get_event_loop = getter_mock
 
+    nocatch_marker = any(
+        marker.name == 'no_catch_loop_exceptions'
+        for marker in request.node.own_markers
+    )
+
+    exceptions = list()
+    if not nocatch_marker:
+        loop.set_exception_handler(lambda l, c: exceptions.append(c))
+
     try:
         yield loop
+
+        if exceptions:
+            raise RuntimeError(exceptions)
+
     finally:
         asyncio.get_event_loop = original
         asyncio.set_event_loop_policy(None)
