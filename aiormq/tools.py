@@ -22,6 +22,8 @@ def shield(func):
 
 
 class LazyCoroutine:
+    __slots__ = '__func', '__args', '__kwargs'
+
     def __init__(self, func, *args, **kwargs):
         self.__func = func
         self.__args = args
