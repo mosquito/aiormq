@@ -56,6 +56,7 @@ class Channel(Base):
         )
 
         self.__lock = asyncio.Lock(loop=connector.loop)
+        self.__drain_lock = asyncio.Lock(loop=connector.loop)
         self.number = number
         self.publisher_confirms = publisher_confirms
         self.publisher_confirms = publisher_confirms
@@ -271,6 +272,10 @@ class Channel(Base):
         ))  # type: spec.Channel.CloseOk
         return result
 
+    async def _drain(self):
+        async with self.__drain_lock:
+            return await self.writer.drain()
+
     async def basic_get(
         self, queue: str = '', no_ack: bool = False
     ) -> typing.Optional[DeliveredMessage]:
@@ -322,7 +327,7 @@ class Channel(Base):
             ), self.number)
         )
 
-        return LazyCoroutine(self.writer.drain)
+        return LazyCoroutine(self._drain)
 
     def basic_nack(self, delivery_tag: str = None, multiple: bool = False,
                    requeue: bool = True) -> DrainResult:
@@ -340,7 +345,7 @@ class Channel(Base):
             )
         )
 
-        return LazyCoroutine(self.writer.drain)
+        return LazyCoroutine(self._drain)
 
     def basic_reject(self, delivery_tag, *, requeue=True) -> DrainResult:
         self.writer.write(
@@ -353,7 +358,7 @@ class Channel(Base):
             )
         )
 
-        return LazyCoroutine(self.writer.drain)
+        return LazyCoroutine(self._drain)
 
     async def basic_publish(
         self, body: bytes, *, exchange: str = '', routing_key: str = '',
