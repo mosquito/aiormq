@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 class Channel(Base):
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b''), 0))
+    Returning = object()
 
     def __init__(self, connector, number,
                  publisher_confirms=True, frame_buffer=None,
@@ -179,6 +180,8 @@ class Channel(Base):
         if confirmation is None:        # pragma: nocover
             return
 
+        self.confirmations[delivery_tag] = self.Returning
+
         if self.on_return_raises:
             confirmation.set_exception(exc.DeliveryError(message, frame))
             return
@@ -194,14 +197,15 @@ class Channel(Base):
     def _confirm_delivery(self, delivery_tag, frame: ConfirmationFrameType):
         confirmation = self.confirmations.pop(delivery_tag)
 
-        if confirmation.done():  # pragma: nocover
-            log.error(
+        if confirmation is self.Returning:
+            return
+        elif confirmation.done():  # pragma: nocover
+            log.warn(
                 "Delivery tag %r confirmed %r was ignored",
                 delivery_tag, frame
             )
             return
-
-        if isinstance(frame, spec.Basic.Ack):
+        elif isinstance(frame, spec.Basic.Ack):
             confirmation.set_result(frame)
             return
 
