@@ -32,7 +32,7 @@ steps:
       - name: cache
         path: /drone/src/.tox
 
-  - name: python 3.5
+  - name: python 3.7
     image: snakepacker/python:all
     pull: always
     commands:
@@ -40,7 +40,7 @@ steps:
       - tox
     environment:
       AMQP_URL: amqp://guest:guest@rabbitmq
-      TOXENV: py35
+      TOXENV: py37
       COVERALLS_REPO_TOKEN:
         from_secret: COVERALLS_TOKEN
     volumes:
@@ -62,7 +62,7 @@ steps:
       - name: cache
         path: /drone/src/.tox
 
-  - name: python 3.7
+  - name: python 3.5
     image: snakepacker/python:all
     pull: always
     commands:
@@ -70,7 +70,7 @@ steps:
       - tox
     environment:
       AMQP_URL: amqp://guest:guest@rabbitmq
-      TOXENV: py37
+      TOXENV: py35
       COVERALLS_REPO_TOKEN:
         from_secret: COVERALLS_TOKEN
     volumes:
@@ -104,6 +104,6 @@ services:
 
 ---
 kind: signature
-hmac: 9281d7c0af84aa37e580d7921aa9034e912fe045ca06eb32f53c2dea9a82a19f
+hmac: 603510663ed17398ab9ba541f56fe9b717a5babf1496006f7ff3576b11deec6d
 
 ...
