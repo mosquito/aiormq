@@ -181,6 +181,9 @@ class Channel(Base):
 
         self.confirmations[delivery_tag] = self.Returning
 
+        # Prevent memory leaks
+        self.loop.call_later(1, self.confirmations.pop, delivery_tag, None)
+
         if self.on_return_raises:
             confirmation.set_exception(exc.DeliveryError(message, frame))
             return
