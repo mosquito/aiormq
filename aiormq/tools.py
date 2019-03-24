@@ -1,5 +1,4 @@
 import asyncio
-import sys
 from functools import wraps
 
 from yarl import URL
@@ -22,13 +21,21 @@ def shield(func):
     return wrap
 
 
+async def _test():
+    pass
+
+
+HAS_AWAIT_METHOD = hasattr(_test(), '__await__')
+
+
 class LazyCoroutine:
-    __slots__ = '__func', '__args', '__kwargs'
+    __slots__ = '__func', '__args', '__kwargs', '__instance'
 
     def __init__(self, func, *args, **kwargs):
         self.__func = func
         self.__args = args
         self.__kwargs = kwargs
+        self.__instance = None
 
     def __repr__(self):
         return "<%s: %s(args: %r, kwargs: %r)>" % (
@@ -37,12 +44,15 @@ class LazyCoroutine:
         )
 
     def __call__(self):
-        return self.__func(*self.__args, **self.__kwargs)
+        if self.__instanse is None:
+            self.__instance = self.__func(*self.__args, **self.__kwargs)
+
+        return self.__instance
 
     def __iter__(self):
         return (yield from self().__iter__())
 
-    if sys.version_info >= (3, 7):
+    if HAS_AWAIT_METHOD:
         def __await__(self):
             return (yield from self().__await__())
     else:
