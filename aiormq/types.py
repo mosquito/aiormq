@@ -42,3 +42,4 @@ FrameReceived = typing.NamedTuple(
 
 
 URLorStr = typing.Union[URL, str]
+DrainResult = typing.Awaitable[None]

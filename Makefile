@@ -7,7 +7,7 @@ RABBITMQ_IMAGE:=mosquito/aiormq-rabbitmq
 
 rabbitmq:
 	docker pull $(RABBITMQ_IMAGE)
-	docker kill $(RABBITMQ_CONTAINER_NAME)
+	docker kill $(RABBITMQ_CONTAINER_NAME) || true
 	docker run --rm -d \
 		--name $(RABBITMQ_CONTAINER_NAME) \
 		-p 5671:5671 \

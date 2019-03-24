@@ -6,17 +6,26 @@ import tracemalloc
 
 import pamqp
 import pytest
-import uvloop
+
 from async_generator import yield_, async_generator
 from yarl import URL
 
 import aiormq
 from aiormq import Connection
 
-POLICIES = [asyncio.DefaultEventLoopPolicy, uvloop.EventLoopPolicy]
+
+POLICIES = [asyncio.DefaultEventLoopPolicy]
+POLICY_IDS = ['asyncio']
+
+try:
+    import uvloop
+    POLICIES.append(uvloop.EventLoopPolicy)
+    POLICY_IDS.append('uvloop')
+except ImportError:
+    pass
 
 
-@pytest.fixture(params=POLICIES, ids=['asyncio', 'uvloop'])
+@pytest.fixture(params=POLICIES, ids=POLICY_IDS)
 def event_loop(request):
     policy = request.param()
 
@@ -34,8 +43,21 @@ def event_loop(request):
 
     asyncio.get_event_loop = getter_mock
 
+    nocatch_marker = any(
+        marker.name == 'no_catch_loop_exceptions'
+        for marker in request.node.own_markers
+    )
+
+    exceptions = list()
+    if not nocatch_marker:
+        loop.set_exception_handler(lambda l, c: exceptions.append(c))
+
     try:
         yield loop
+
+        if exceptions:
+            raise RuntimeError(exceptions)
+
     finally:
         asyncio.get_event_loop = original
         asyncio.set_event_loop_policy(None)
