@@ -6,17 +6,26 @@ import tracemalloc
 
 import pamqp
 import pytest
-import uvloop
+
 from async_generator import yield_, async_generator
 from yarl import URL
 
 import aiormq
 from aiormq import Connection
 
-POLICIES = [asyncio.DefaultEventLoopPolicy, uvloop.EventLoopPolicy]
+
+POLICIES = [asyncio.DefaultEventLoopPolicy]
+POLICY_IDS = ['asyncio']
+
+try:
+    import uvloop
+    POLICIES.append(uvloop.EventLoopPolicy)
+    POLICY_IDS.append('uvloop')
+except ImportError:
+    pass
 
 
-@pytest.fixture(params=POLICIES, ids=['asyncio', 'uvloop'])
+@pytest.fixture(params=POLICIES, ids=POLICY_IDS)
 def event_loop(request):
     policy = request.param()
 
