@@ -21,11 +21,21 @@ def shield(func):
     return wrap
 
 
-async def _test():
-    pass
+def _inspect_await_method():
+    async def _test():
+        pass
+
+    coro = _test()
+    method_await = getattr(coro, '__await__', None)
+    method_iter = getattr(coro, '__iter__', None)
+
+    for _ in (method_await or method_iter)():
+        pass
+
+    return bool(method_await)
 
 
-HAS_AWAIT_METHOD = hasattr(_test(), '__await__')
+HAS_AWAIT_METHOD = _inspect_await_method()
 
 
 class LazyCoroutine:
