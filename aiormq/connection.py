@@ -99,6 +99,7 @@ class Connection(Base):
             'heartbeat_monitoring', '1'
         ))
         self.heartbeat_last_received = 0
+        self.last_channel_lock = asyncio.Lock(loop=self.loop)
 
     @property
     def lock(self):
@@ -409,18 +410,19 @@ class Connection(Base):
             raise ValueError("Server doesn't support publisher_confirms")
 
         if channel_number is None:
-            self.last_channel += 1
-
-            while self.last_channel in self.channels.keys():
+            async with self.last_channel_lock:
                 self.last_channel += 1
 
-                if self.last_channel > 65535:
-                    log.warning("Resetting channel number for %r", self)
-                    self.last_channel = 1
-                    # switching context for prevent blocking event-loop
-                    await asyncio.sleep(0, loop=self.loop)
+                while self.last_channel in self.channels.keys():
+                    self.last_channel += 1
 
-            channel_number = self.last_channel
+                    if self.last_channel > 65535:
+                        log.warning("Resetting channel number for %r", self)
+                        self.last_channel = 1
+                        # switching context for prevent blocking event-loop
+                        await asyncio.sleep(0, loop=self.loop)
+
+                channel_number = self.last_channel
         elif channel_number in self.channels:
             raise ValueError("Channel %d already used" % channel_number)
 
