@@ -79,6 +79,20 @@ async def test_simple(amqp_connection: aiormq.Connection):
     assert amqp_connection.writer is None
 
 
+async def test_channel_reuse(amqp_connection: aiormq.Connection):
+    for _ in range(10):
+        channel = await amqp_connection.channel(channel_number=1)
+        await channel.basic_qos(prefetch_count=1)
+        await channel.close()
+
+
+async def test_channel_closed_reuse(amqp_connection: aiormq.Connection):
+    for _ in range(10):
+        channel = await amqp_connection.channel(channel_number=1)
+        with pytest.raises(aiormq.ChannelAccessRefused):
+            await channel.exchange_declare("", passive=True, auto_delete=True)
+
+
 async def test_bad_channel(amqp_connection: aiormq.Connection):
     with pytest.raises(ValueError):
         await amqp_connection.channel(65536)
@@ -93,19 +107,6 @@ async def test_bad_channel(amqp_connection: aiormq.Connection):
             uuid.uuid4().hex,
             uuid.uuid4().hex
         )
-
-    await asyncio.sleep(0.1)
-
-    assert amqp_connection.channels[channel.number] is None
-
-    with pytest.raises(ValueError):
-        await amqp_connection.channel(65535)
-
-    # WARN: Hack for avoid ValueError
-    amqp_connection.channels.pop(channel.number)
-
-    with pytest.raises(aiormq.exceptions.ConnectionChannelError):
-        await amqp_connection.channel(65535)
 
 
 async def test_properties(amqp_connection):
@@ -131,7 +132,7 @@ async def test_channel_close(amqp_connection):
 
     await channel.close()
 
-    assert amqp_connection.channels[channel.number] is None
+    assert channel.number not in amqp_connection.channels
 
 
 async def test_auth_base(amqp_connection):
@@ -201,6 +202,7 @@ async def test_non_publisher_confirms(amqp_connection):
 
 
 @skip_when_quick_test
+@pytest.mark.no_catch_loop_exceptions
 async def test_no_free_channels(amqp_connection):
     await asyncio.wait([
         amqp_connection.channel(n + 1)

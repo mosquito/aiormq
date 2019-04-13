@@ -262,6 +262,14 @@ class Channel(Base):
                     continue
                 elif isinstance(frame, spec.Channel.Close):
                     exc = self.__exception_by_code(frame)
+                    self.writer.write(
+                        pamqp.frame.marshal(
+                            spec.Channel.CloseOk(),
+                            self.number
+                        )
+                    )
+
+                    self.connection.channels.pop(self.number, None)
                     return await self._cancel_tasks(exc)
 
                 await self.rpc_frames.put(frame)
@@ -276,6 +284,8 @@ class Channel(Base):
         result = await self.rpc(spec.Channel.Close(
             reply_code=spec.REPLY_SUCCESS,
         ))  # type: spec.Channel.CloseOk
+
+        self.connection.channels.pop(self.number, None)
         return result
 
     async def basic_get(
