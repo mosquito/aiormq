@@ -414,6 +414,12 @@ class Connection(Base):
             while self.last_channel in self.channels.keys():
                 self.last_channel += 1
 
+                if self.last_channel > 65535:
+                    log.warning("Resetting channel number for %r", self)
+                    self.last_channel = 1
+                    # switching context for prevent blocking event-loop
+                    await asyncio.sleep(0, loop=self.loop)
+
             channel_number = self.last_channel
         elif channel_number in self.channels:
             raise ValueError("Channel %d already used" % channel_number)
