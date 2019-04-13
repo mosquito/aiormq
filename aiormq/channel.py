@@ -262,6 +262,12 @@ class Channel(Base):
                     continue
                 elif isinstance(frame, spec.Channel.Close):
                     exc = self.__exception_by_code(frame)
+                    self.writer.write(
+                        pamqp.frame.marshal(
+                            spec.Channel.CloseOk(),
+                            self.number
+                        )
+                    )
                     return await self._cancel_tasks(exc)
 
                 await self.rpc_frames.put(frame)
