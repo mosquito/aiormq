@@ -268,6 +268,8 @@ class Channel(Base):
                             self.number
                         )
                     )
+
+                    self.connection.channels.pop(self.number, None)
                     return await self._cancel_tasks(exc)
 
                 await self.rpc_frames.put(frame)

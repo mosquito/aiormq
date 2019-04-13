@@ -94,19 +94,6 @@ async def test_bad_channel(amqp_connection: aiormq.Connection):
             uuid.uuid4().hex
         )
 
-    await asyncio.sleep(0.1)
-
-    assert amqp_connection.channels[channel.number] is None
-
-    with pytest.raises(ValueError):
-        await amqp_connection.channel(65535)
-
-    # WARN: Hack for avoid ValueError
-    amqp_connection.channels.pop(channel.number)
-
-    with pytest.raises(aiormq.exceptions.ConnectionChannelError):
-        await amqp_connection.channel(65535)
-
 
 async def test_properties(amqp_connection):
     assert amqp_connection.connection_tune.channel_max > 0
