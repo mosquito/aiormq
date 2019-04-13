@@ -201,6 +201,7 @@ async def test_non_publisher_confirms(amqp_connection):
 
 
 @skip_when_quick_test
+@pytest.mark.no_catch_loop_exceptions
 async def test_no_free_channels(amqp_connection):
     await asyncio.wait([
         amqp_connection.channel(n + 1)
