@@ -284,6 +284,8 @@ class Channel(Base):
         result = await self.rpc(spec.Channel.Close(
             reply_code=spec.REPLY_SUCCESS,
         ))  # type: spec.Channel.CloseOk
+
+        self.connection.channels.pop(self.number, None)
         return result
 
     async def basic_get(

@@ -79,6 +79,20 @@ async def test_simple(amqp_connection: aiormq.Connection):
     assert amqp_connection.writer is None
 
 
+async def test_channel_reuse(amqp_connection: aiormq.Connection):
+    for _ in range(10):
+        channel = await amqp_connection.channel(channel_number=1)
+        await channel.basic_qos(prefetch_count=1)
+        await channel.close()
+
+
+async def test_channel_closed_reuse(amqp_connection: aiormq.Connection):
+    for _ in range(10):
+        channel = await amqp_connection.channel(channel_number=1)
+        with pytest.raises(aiormq.ChannelAccessRefused):
+            await channel.exchange_declare("", passive=True, auto_delete=True)
+
+
 async def test_bad_channel(amqp_connection: aiormq.Connection):
     with pytest.raises(ValueError):
         await amqp_connection.channel(65536)
