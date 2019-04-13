@@ -132,7 +132,7 @@ async def test_channel_close(amqp_connection):
 
     await channel.close()
 
-    assert amqp_connection.channels[channel.number] is None
+    assert channel.number not in amqp_connection.channels
 
 
 async def test_auth_base(amqp_connection):
