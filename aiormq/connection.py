@@ -100,6 +100,7 @@ class Connection(Base):
         ))
         self.heartbeat_last_received = 0
         self.last_channel_lock = asyncio.Lock(loop=self.loop)
+        self.connected = asyncio.Event(loop=self.loop)
 
     @property
     def lock(self):
@@ -221,6 +222,7 @@ class Connection(Base):
 
         self.server_properties = frame.server_properties
 
+        # noinspection PyTypeChecker
         self.connection_tune = await self.__rpc(spec.Connection.StartOk(
             client_properties=self._client_capabilities(),
             mechanism=credentials.name,
@@ -240,6 +242,7 @@ class Connection(Base):
 
         # noinspection PyAsyncCall
         self.create_task(self.__heartbeat_task())
+        self.loop.call_soon(self.connected.set)
 
         return True
 
@@ -403,6 +406,8 @@ class Connection(Base):
                       publisher_confirms=True,
                       frame_buffer=FRAME_BUFFER, **kwargs) -> Channel:
 
+        await self.connected.wait()
+
         if self.is_closed:
             raise RuntimeError('%r closed' % self)
 
@@ -450,6 +455,11 @@ class Connection(Base):
 
 async def connect(url, *args, **kwargs) -> Connection:
     connection = Connection(url, *args, **kwargs)
-    await connection.connect()
+
+    try:
+        await connection.connect()
+    except Exception as e:
+        await connection.close(e)
+        raise
 
     return connection
