@@ -20,7 +20,7 @@ setup(
     author=module.__author__,
     author_email=module.team_email,
     install_requires=[
-        'pamqp',
+        'pamqp~=2.1.0',
         'yarl',
     ],
     keywords=[
@@ -29,7 +29,7 @@ setup(
         "amqp",
         "amqp 0.9.1",
         "driver",
-        "pamqp~=2.1",
+        "pamqp",
     ],
     classifiers=[
         'Development Status :: 5 - Production/Stable',
