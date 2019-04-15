@@ -135,6 +135,22 @@ async def test_channel_close(amqp_connection):
     assert channel.number not in amqp_connection.channels
 
 
+async def test_conncetion_reject(event_loop):
+    with pytest.raises(ConnectionError):
+        await aiormq.connect(
+            "amqp://guest:guest@127.0.0.1:59999/",
+            loop=event_loop
+        )
+
+    connection = aiormq.Connection(
+        "amqp://guest:guest@127.0.0.1:59999/",
+        loop=event_loop
+    )
+
+    with pytest.raises(ConnectionError):
+        await event_loop.create_task(connection.connect())
+
+
 async def test_auth_base(amqp_connection):
     with pytest.raises(NotImplementedError):
         AuthBase(amqp_connection).marshal()
