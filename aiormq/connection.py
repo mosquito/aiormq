@@ -297,8 +297,7 @@ class Connection(Base):
             else:
                 self.started = True
 
-            # noinspection PyProtectedMember
-            frame_type, _, frame_length = pamqp.frame._frame_parts(
+            frame_type, _, frame_length = pamqp.frame.frame_parts(
                 frame_header
             )
 

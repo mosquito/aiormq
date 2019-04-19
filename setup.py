@@ -20,7 +20,7 @@ setup(
     author=module.__author__,
     author_email=module.team_email,
     install_requires=[
-        'pamqp==2.1.0',
+        'pamqp==2.3.0',
         'yarl',
     ],
     keywords=[
