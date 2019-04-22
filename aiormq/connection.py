@@ -105,7 +105,7 @@ class Connection(Base):
         self.heartbeat_monitoring = parse_bool(self.url.query.get(
             'heartbeat_monitoring', '1'
         ))
-        self.heartbeat_interval = parse_int(self.url.query.get(
+        self.heartbeat_timeout = parse_int(self.url.query.get(
             'heartbeat', '0'
         ))
         self.heartbeat_last_received = 0
@@ -239,8 +239,8 @@ class Connection(Base):
             response=credentials.value(self).marshal()
         ))      # type: spec.Connection.Tune
 
-        if self.heartbeat_interval > 0:
-            self.connection_tune.heartbeat = self.heartbeat_interval
+        if self.heartbeat_timeout > 0:
+            self.connection_tune.heartbeat = self.heartbeat_timeout
 
         await self.__rpc(spec.Connection.TuneOk(
             channel_max=self.connection_tune.channel_max,
