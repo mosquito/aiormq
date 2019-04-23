@@ -46,6 +46,13 @@ def parse_bool(v: str):
     return v == '1' or v.lower() in ('true', 'yes', 'y', 'enable', 'on')
 
 
+def parse_int(v: str):
+    try:
+        return int(v)
+    except ValueError:
+        return 0
+
+
 class Connection(Base):
     FRAME_BUFFER = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
@@ -97,6 +104,9 @@ class Connection(Base):
 
         self.heartbeat_monitoring = parse_bool(self.url.query.get(
             'heartbeat_monitoring', '1'
+        ))
+        self.heartbeat_timeout = parse_int(self.url.query.get(
+            'heartbeat', '0'
         ))
         self.heartbeat_last_received = 0
         self.last_channel_lock = asyncio.Lock(loop=self.loop)
@@ -228,6 +238,9 @@ class Connection(Base):
             mechanism=credentials.name,
             response=credentials.value(self).marshal()
         ))      # type: spec.Connection.Tune
+
+        if self.heartbeat_timeout > 0:
+            self.connection_tune.heartbeat = self.heartbeat_timeout
 
         await self.__rpc(spec.Connection.TuneOk(
             channel_max=self.connection_tune.channel_max,
