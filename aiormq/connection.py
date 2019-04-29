@@ -66,7 +66,7 @@ class Connection(Base):
         return b64decode(data) if data else data
 
     def __init__(self, url: URLorStr, *, parent=None,
-                 loop: asyncio.get_event_loop() = None):
+                 loop: asyncio.AbstractEventLoop = None):
 
         super().__init__(
             loop=loop or asyncio.get_event_loop(),
