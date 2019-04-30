@@ -100,7 +100,7 @@ class Connection(Base):
         self.server_properties = None   # type: spec.Connection.OpenOk
         self.connection_tune = None  # type: spec.Connection.TuneOk
 
-        self.last_channel = 0
+        self.last_channel = 1
 
         self.heartbeat_monitoring = parse_bool(self.url.query.get(
             'heartbeat_monitoring', '1'
@@ -428,8 +428,6 @@ class Connection(Base):
 
         if channel_number is None:
             async with self.last_channel_lock:
-                self.last_channel += 1
-
                 while self.last_channel in self.channels.keys():
                     self.last_channel += 1
 
