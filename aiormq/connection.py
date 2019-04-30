@@ -428,8 +428,6 @@ class Connection(Base):
 
         if channel_number is None:
             async with self.last_channel_lock:
-                self.last_channel += 1
-
                 while self.last_channel in self.channels.keys():
                     self.last_channel += 1
 
