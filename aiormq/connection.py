@@ -318,7 +318,7 @@ class Connection(Base):
                 frame_length + 1
             )
 
-            return pamqp.frame.unmarshal(frame_header + frame_payload)
+        return pamqp.frame.unmarshal(frame_header + frame_payload)
 
     @staticmethod
     def __exception_by_code(frame: spec.Connection.Close):
