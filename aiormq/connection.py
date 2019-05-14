@@ -12,14 +12,15 @@ from pamqp import specification as spec
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
-from aiormq.channel import Channel
 from . import exceptions as exc
 from .auth import AuthMechanism
 from .base import Base, task
+from .channel import Channel
 from .tools import censor_url
 from .types import (
     ArgumentsType, SSLCerts,
-    URLorStr)
+    URLorStr
+)
 from .version import __version__
 
 log = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class Connection(Base):
     _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
     @staticmethod
-    def _parse_ca_data(data):
+    def _parse_ca_data(data) -> typing.Optional[bytes]:
         return b64decode(data) if data else data
 
     def __init__(self, url: URLorStr, *, parent=None,
@@ -295,7 +296,6 @@ class Connection(Base):
 
             return
 
-    @task
     async def __receive_frame(self) -> typing.Tuple[int, int, spec.Frame]:
         async with self.lock:
             frame_header = await self.reader.readexactly(1)
@@ -318,7 +318,7 @@ class Connection(Base):
                 frame_length + 1
             )
 
-            return pamqp.frame.unmarshal(frame_header + frame_payload)
+        return pamqp.frame.unmarshal(frame_header + frame_payload)
 
     @staticmethod
     def __exception_by_code(frame: spec.Connection.Close):
@@ -343,6 +343,7 @@ class Connection(Base):
         else:
             return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
 
+    @task
     async def __reader(self):
         try:
             while not self.reader.at_eof():
