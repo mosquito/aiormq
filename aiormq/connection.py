@@ -63,7 +63,7 @@ class Connection(Base):
     _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
     @staticmethod
-    def _parse_ca_data(data):
+    def _parse_ca_data(data) -> typing.Optional[bytes]:
         return b64decode(data) if data else data
 
     def __init__(self, url: URLorStr, *, parent=None,
