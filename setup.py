@@ -12,7 +12,7 @@ module = SourceFileLoader(
 setup(
     name='aiormq',
     version=module.__version__,
-    packages=find_packages(exclude='tests'),
+    packages=find_packages(exclude=['tests', ]),
     license=module.package_license,
     description=module.package_info,
     long_description=open("README.rst").read(),
