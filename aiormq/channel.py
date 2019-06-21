@@ -197,15 +197,15 @@ class Channel(Base):
         confirmation.set_result(message)
 
     def _confirm_delivery(self, delivery_tag, frame: ConfirmationFrameType):
-        confirmation = self.confirmations.pop(delivery_tag)
+        confirmation = self.confirmations.pop(delivery_tag, None)
 
-        if confirmation is self.Returning:
-            return
-        elif confirmation.done():  # pragma: nocover
+        if confirmation is None or confirmation.done():  # pragma: nocover
             log.warn(
                 "Delivery tag %r confirmed %r was ignored",
                 delivery_tag, frame
             )
+            return
+        elif confirmation is self.Returning:
             return
         elif isinstance(frame, spec.Basic.Ack):
             confirmation.set_result(frame)
