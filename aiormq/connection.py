@@ -121,6 +121,9 @@ class Connection(Base):
         return self.__lock
 
     async def drain(self):
+        if not self.writer:
+            raise RuntimeError("Writer is %r" % self.writer)
+
         async with self.__drain_lock:
             return await self.writer.drain()
 
@@ -272,7 +275,7 @@ class Connection(Base):
         )
 
         while True:
-            await asyncio.sleep(heartbeat_interval, loop=self.loop)
+            await asyncio.sleep(heartbeat_interval)
 
             # Send heartbeat to server unconditionally
             self.writer.write(self._HEARTBEAT)
@@ -436,7 +439,7 @@ class Connection(Base):
                         log.warning("Resetting channel number for %r", self)
                         self.last_channel = 1
                         # switching context for prevent blocking event-loop
-                        await asyncio.sleep(0, loop=self.loop)
+                        await asyncio.sleep(0)
 
                 channel_number = self.last_channel
         elif channel_number in self.channels:

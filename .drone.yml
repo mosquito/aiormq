@@ -44,6 +44,21 @@ steps:
       - name: cache
         path: /drone/src/.tox
 
+  - name: python 3.8
+    image: snakepacker/python:all
+    pull: always
+    commands:
+      - wait-for-port rabbitmq:5672 rabbitmq:5671
+      - tox
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq
+      TOXENV: py38
+      COVERALLS_REPO_TOKEN:
+        from_secret: COVERALLS_TOKEN
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
+
   - name: python 3.7
     image: snakepacker/python:all
     pull: always
@@ -116,6 +131,6 @@ services:
 
 ---
 kind: signature
-hmac: d7cdfebc007637a2d14892f9d06735518800f5461709d3d4ccefcb9ad7949e2b
+hmac: 891c5ca84e3130da12accac8377ca9492c7e74362082e381aaa1d005622cfd97
 
 ...
