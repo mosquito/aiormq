@@ -19,8 +19,8 @@ POLICY_IDS = ['asyncio']
 
 try:
     import uvloop
-    POLICIES.append(uvloop.EventLoopPolicy)
-    POLICY_IDS.append('uvloop')
+    POLICIES = [uvloop.EventLoopPolicy]
+    POLICY_IDS = ['uvloop']
 except ImportError:
     pass
 
