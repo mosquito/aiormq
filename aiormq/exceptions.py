@@ -1,6 +1,6 @@
 
 class AMQPError(Exception):
-    message = 'An unspecified AMQP error has occurred'
+    message = 'An unspecified AMQP error has occurred: %s'
 
     def __repr__(self):
         return "<%s: %s>" % (self.__class__.__name__, self.message % self.args)
