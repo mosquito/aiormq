@@ -9,7 +9,7 @@ from aiormq.tools import LazyCoroutine
 class TestLazyCoroutine:
     async def test_coro(self, event_loop):
         async def foo():
-            await asyncio.sleep(0, loop=event_loop)
+            await asyncio.sleep(0)
             return 42
 
         bar = LazyCoroutine(foo)
@@ -29,7 +29,7 @@ class TestLazyCoroutine:
     async def test_task(self, event_loop):
         def foo():
             async def inner():
-                await asyncio.sleep(0, loop=event_loop)
+                await asyncio.sleep(0)
                 return 42
 
             return event_loop.create_task(inner())

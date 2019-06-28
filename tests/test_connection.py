@@ -279,7 +279,7 @@ async def test_cancel_on_queue_deleted(amqp_connection, event_loop):
 
     await channel.queue_delete(deaclare_ok.queue)
 
-    await asyncio.sleep(0.1, loop=event_loop)
+    await asyncio.sleep(0.1)
 
     assert consume_ok.consumer_tag not in channel.consumers
 
