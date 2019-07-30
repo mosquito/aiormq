@@ -393,11 +393,21 @@ class Connection(Base):
             log.debug("Reader task exited because:", exc_info=e)
             await self.close(e)
 
-    async def _on_close(self, exc=exc.ConnectionClosed(0, 'normal closed')):
-        async def close():
-            await self.__rpc(spec.Connection.Close(), wait_response=False)
-            await self._reader_task
-        await asyncio.wait_for(close(), timeout=Connection.CLOSE_TIMEOUT)
+    async def _on_close(self, ex=exc.ConnectionClosed(0, 'normal closed')):
+        frame = (
+            spec.Connection.CloseOk()
+            if isinstance(ex, exc.ConnectionClosed)
+            else spec.Connection.Close()
+        )
+        done, pending = await asyncio.wait(
+            {self.__rpc(frame, wait_response=False), self._reader_task},
+            timeout=Connection.CLOSE_TIMEOUT
+        )
+        for pending_task in pending:
+            pending_task.cancel()
+        for done_task in done:
+            await done_task
+
         writer = self.writer
         self.reader = None
         self.writer = None
