@@ -59,7 +59,6 @@ class Channel(Base):
         self.__lock = asyncio.Lock(loop=connector.loop)
         self.number = number
         self.publisher_confirms = publisher_confirms
-        self.publisher_confirms = publisher_confirms
         self.rpc_frames = asyncio.Queue(maxsize=frame_buffer, loop=self.loop)
         self.writer = connector.writer
         self.on_return_raises = on_return_raises
