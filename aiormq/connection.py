@@ -397,10 +397,11 @@ class Connection(Base):
         async def close():
             await self.__rpc(spec.Connection.Close(), wait_response=False)
             await self._reader_task
-        await asyncio.wait_for(await close(), timeout=Connection.CLOSE_TIMEOUT)
+        await asyncio.wait_for(close(), timeout=Connection.CLOSE_TIMEOUT)
         writer = self.writer
         self.reader = None
         self.writer = None
+        self._reader_task = None
 
         # noinspection PyShadowingNames
         writer.close()
