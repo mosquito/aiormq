@@ -276,11 +276,11 @@ class Connection(Base):
             self.connection_tune.heartbeat * self.HEARTBEAT_GRACE_MULTIPLIER
         )
 
-        while True:
-            await asyncio.sleep(heartbeat_interval)
-
+        while self.writer:
             # Send heartbeat to server unconditionally
             self.writer.write(self._HEARTBEAT)
+
+            await asyncio.sleep(heartbeat_interval)
 
             if not self.heartbeat_monitoring:
                 continue
@@ -402,7 +402,10 @@ class Connection(Base):
 
         await asyncio.wait(
             {
-                self.create_task(self.__rpc(frame, wait_response=False)),
+                asyncio.gather(
+                    self.__rpc(frame, wait_response=False),
+                    return_exceptions=True
+                ),
                 self._reader_task
             },
             timeout=Connection.CLOSE_TIMEOUT,
