@@ -399,14 +399,15 @@ class Connection(Base):
             if isinstance(ex, exc.ConnectionClosed)
             else spec.Connection.Close()
         )
-        done, pending = await asyncio.wait(
-            {self.__rpc(frame, wait_response=False), self._reader_task},
-            timeout=Connection.CLOSE_TIMEOUT
+
+        await asyncio.wait(
+            {
+                self.create_task(self.__rpc(frame, wait_response=False)),
+                self._reader_task
+            },
+            timeout=Connection.CLOSE_TIMEOUT,
+            return_when=asyncio.ALL_COMPLETED,
         )
-        for pending_task in pending:
-            pending_task.cancel()
-        for done_task in done:
-            await done_task
 
         writer = self.writer
         self.reader = None
