@@ -55,6 +55,7 @@ def parse_int(v: str):
 
 
 class Connection(Base):
+    CLOSE_TIMEOUT = 1.0
     FRAME_BUFFER = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
     HEARTBEAT_INTERVAL_MULTIPLIER = 0.5
@@ -81,6 +82,7 @@ class Connection(Base):
         else:
             self.vhost = self.url.path[1:]
 
+        self._reader_task = None  # type: asyncio.Task
         self.reader = None  # type: asyncio.StreamReader
         self.writer = None  # type: asyncio.StreamWriter
         self.ssl_certs = SSLCerts(
@@ -255,7 +257,7 @@ class Connection(Base):
         await self.__rpc(spec.Connection.Open(virtual_host=self.vhost))
 
         # noinspection PyAsyncCall
-        self.create_task(self.__reader())
+        self._reader_task = self.create_task(self.__reader())
 
         # noinspection PyAsyncCall
         self.create_task(self.__heartbeat_task())
@@ -274,11 +276,11 @@ class Connection(Base):
             self.connection_tune.heartbeat * self.HEARTBEAT_GRACE_MULTIPLIER
         )
 
-        while True:
-            await asyncio.sleep(heartbeat_interval)
-
+        while self.writer:
             # Send heartbeat to server unconditionally
             self.writer.write(self._HEARTBEAT)
+
+            await asyncio.sleep(heartbeat_interval)
 
             if not self.heartbeat_monitoring:
                 continue
@@ -355,6 +357,8 @@ class Connection(Base):
                 self.heartbeat_last_received = self.loop.time()
 
                 if channel == 0:
+                    if isinstance(frame, spec.Connection.CloseOk):
+                        return
                     if isinstance(frame, spec.Connection.Close):
                         return await self.close(self.__exception_by_code(frame))
                     elif isinstance(frame, Heartbeat):
@@ -389,10 +393,29 @@ class Connection(Base):
             log.debug("Reader task exited because:", exc_info=e)
             await self.close(e)
 
-    async def _on_close(self, exc=exc.ConnectionClosed(0, 'normal closed')):
+    async def _on_close(self, ex=exc.ConnectionClosed(0, 'normal closed')):
+        frame = (
+            spec.Connection.CloseOk()
+            if isinstance(ex, exc.ConnectionClosed)
+            else spec.Connection.Close()
+        )
+
+        await asyncio.wait(
+            {
+                asyncio.gather(
+                    self.__rpc(frame, wait_response=False),
+                    return_exceptions=True
+                ),
+                self._reader_task
+            },
+            timeout=Connection.CLOSE_TIMEOUT,
+            return_when=asyncio.ALL_COMPLETED,
+        )
+
         writer = self.writer
         self.reader = None
         self.writer = None
+        self._reader_task = None
 
         # noinspection PyShadowingNames
         writer.close()
