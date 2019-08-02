@@ -27,6 +27,7 @@ async def test_simple(amqp_channel: aiormq.Channel):
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
     assert cancel_ok.consumer_tag == consume_ok.consumer_tag
+    assert cancel_ok.consumer_tag not in amqp_channel.consumers
     await amqp_channel.queue_delete(deaclare_ok.queue)
 
     deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
@@ -54,6 +55,7 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
     assert cancel_ok.consumer_tag == consume_ok.consumer_tag
+    assert cancel_ok.consumer_tag not in amqp_channel.consumers
     await amqp_channel.queue_delete(deaclare_ok.queue)
 
     deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
