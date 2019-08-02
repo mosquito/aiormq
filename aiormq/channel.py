@@ -250,6 +250,8 @@ class Channel(Base):
                 elif isinstance(frame, spec.Basic.Cancel):
                     self.consumers.pop(frame.consumer_tag, None)
                     continue
+                elif isinstance(frame, spec.Basic.CancelOk):
+                    self.consumers.pop(frame.consumer_tag, None)
                 elif isinstance(frame, (spec.Basic.Ack,
                                         spec.Basic.Nack,
                                         spec.Basic.Reject)):
