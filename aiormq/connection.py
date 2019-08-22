@@ -196,7 +196,7 @@ class Connection(Base):
         _, _, frame = await self.__receive_frame()
 
         if request.synchronous and frame.name not in request.valid_responses:
-            raise spec.AMQPInternalError(frame, frame)
+            raise spec.AMQPInternalError(frame, dict(frame))
         elif isinstance(frame, spec.Connection.Close):
             if frame.reply_code == 403:
                 raise exc.ProbableAuthenticationError(frame.reply_text)
