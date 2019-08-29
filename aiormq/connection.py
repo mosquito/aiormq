@@ -260,10 +260,17 @@ class Connection(Base):
         self._reader_task = self.create_task(self.__reader())
 
         # noinspection PyAsyncCall
-        self.create_task(self.__heartbeat_task())
+        heartbeat_task = self.create_task(self.__heartbeat_task())
+        heartbeat_task.add_done_callback(self._on_heartbeat_done)
         self.loop.call_soon(self.connected.set)
 
         return True
+
+    def _on_heartbeat_done(self, future):
+        if not future.cancelled() and future.exception():
+            self.create_task(self.close(
+                ConnectionError('heartbeat task was failed.'))
+            )
 
     async def __heartbeat_task(self):
         if not self.connection_tune.heartbeat:
