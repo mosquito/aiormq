@@ -400,6 +400,16 @@ class Connection(Base):
             log.debug("Reader task exited because:", exc_info=e)
             await self.close(e)
 
+    @staticmethod
+    async def __close_writer(writer: asyncio.StreamWriter):
+        writer.close()
+
+        wait_closed = getattr(writer, 'wait_closed', None)
+        if not wait_closed:
+            return
+
+        return await wait_closed()
+
     async def _on_close(self, ex=exc.ConnectionClosed(0, 'normal closed')):
         frame = (
             spec.Connection.CloseOk()
@@ -424,9 +434,7 @@ class Connection(Base):
         self.writer = None
         self._reader_task = None
 
-        # noinspection PyShadowingNames
-        writer.close()
-        return await writer.wait_closed()
+        await self.__close_writer(writer)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
