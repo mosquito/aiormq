@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 
 class Channel(Base):
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b''), 0))
+    REJECT_CANCELLED_FRAME_TIMEOUT = 1
     Returning = object()
 
     def __init__(self, connector, number,
@@ -88,7 +89,10 @@ class Channel(Base):
                 pamqp.frame.marshal(frame, self.number)
             )
 
-            if frame.synchronous or getattr(frame, 'nowait', False):
+            if not (frame.synchronous or getattr(frame, 'nowait', False)):
+                return
+
+            try:
                 result = await self.rpc_frames.get()
                 self.rpc_frames.task_done()
 
@@ -96,6 +100,19 @@ class Channel(Base):
                     raise exc.InvalidFrameError(frame)
 
                 return result
+            except asyncio.CancelledError as e:
+                try:
+                    result = await asyncio.wait_for(
+                        self.rpc_frames.get(),
+                        self.REJECT_CANCELLED_FRAME_TIMEOUT
+                    )
+                    log.warning(
+                        "Frame %r was rejected because task cancelled", result
+                    )
+                except asyncio.TimeoutError:
+                    await self.close(e)
+
+                raise
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
