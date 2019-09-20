@@ -16,7 +16,7 @@ from . import exceptions as exc
 from .auth import AuthMechanism
 from .base import Base, task
 from .channel import Channel
-from .tools import censor_url
+from .tools import censor_url, shield
 from .types import (
     ArgumentsType, SSLCerts,
     URLorStr
@@ -187,6 +187,7 @@ class Connection(Base):
             [m.name for m in AuthMechanism]
         )
 
+    @shield
     async def __rpc(self, request: spec.Frame, wait_response=True):
         self.writer.write(pamqp.frame.marshal(request, 0))
 
