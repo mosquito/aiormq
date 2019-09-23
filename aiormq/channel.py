@@ -98,7 +98,7 @@ class Channel(Base):
 
             try:
                 result = await self.rpc_frames.get()
-            except asyncio.CancelledError as e:
+            except asyncio.CancelledError:
                 # channel already closed
                 if self.is_closed:
                     raise
@@ -112,7 +112,7 @@ class Channel(Base):
                     log.warning(
                         "Frame %r was rejected because task cancelled", result
                     )
-                except asyncio.TimeoutError:
+                except asyncio.TimeoutError as e:
                     await self.close(e)
 
                 raise
