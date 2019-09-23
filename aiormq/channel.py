@@ -99,6 +99,9 @@ class Channel(Base):
             try:
                 result = await self.rpc_frames.get()
             except asyncio.CancelledError as e:
+                if self.is_closed:
+                    raise
+
                 try:
                     result = await asyncio.wait_for(
                         self.rpc_frames.get(),
