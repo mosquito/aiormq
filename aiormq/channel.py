@@ -99,10 +99,12 @@ class Channel(Base):
             try:
                 result = await self.rpc_frames.get()
             except asyncio.CancelledError as e:
+                # channel already closed
                 if self.is_closed:
                     raise
 
                 try:
+                    # user cancel rpc call trying to wait result
                     result = await asyncio.wait_for(
                         self.rpc_frames.get(),
                         self.REJECT_CANCELLED_FRAME_TIMEOUT
