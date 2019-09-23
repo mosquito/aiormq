@@ -25,7 +25,11 @@ log = logging.getLogger(__name__)
 
 class Channel(Base):
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b''), 0))
-    REJECT_CANCELLED_FRAME_TIMEOUT = 1
+
+    # Prevent stuck channel when connection hangs.
+    # When Channel RPC response does not received after this timeout
+    # in case cancelling of current rpc operation channel will be closed.
+    REJECT_CANCELLED_FRAME_TIMEOUT = 10
     Returning = object()
 
     def __init__(self, connector, number,
@@ -94,12 +98,6 @@ class Channel(Base):
 
             try:
                 result = await self.rpc_frames.get()
-                self.rpc_frames.task_done()
-
-                if result.name not in frame.valid_responses:  # pragma: no cover
-                    raise exc.InvalidFrameError(frame)
-
-                return result
             except asyncio.CancelledError as e:
                 try:
                     result = await asyncio.wait_for(
@@ -113,6 +111,13 @@ class Channel(Base):
                     await self.close(e)
 
                 raise
+
+            self.rpc_frames.task_done()
+
+            if result.name not in frame.valid_responses:  # pragma: no cover
+                raise exc.InvalidFrameError(frame)
+
+            return result
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
