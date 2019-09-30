@@ -1,3 +1,6 @@
+from pamqp import specification as spec
+from .types import DeliveredMessage
+
 
 class AMQPError(Exception):
     message = 'An unspecified AMQP error has occurred: %s'
@@ -138,7 +141,23 @@ class MethodNotImplemented(AMQPError):
 class DeliveryError(AMQPError):
     __slots__ = 'message', 'frame'
 
-    def __init__(self, message, frame):
-        self.message = message
+    def __init__(self, message: str, frame: spec.Frame):
+        self.message = message if message else '%s: %s'
         self.frame = frame
-        super().__init__()
+        info = frame.delivery_tag
+        super().__init__(frame.name, info)
+
+
+class PublishError(DeliveryError):
+    __slots__ = 'message', 'frame', 'returned_message'
+
+    def __init__(self, message: str, frame: spec.Frame,
+                 returned_message: DeliveredMessage):
+        self.message = message if message else '%s: %s'
+        self.frame = frame
+        self.returned_message = returned_message
+
+        d = returned_message.delivery
+        assert isinstance(d, spec.Basic.Return)
+        info = '{} for routing key "{}"'.format(d.reply_text, d.routing_key)
+        super().__init__(frame.name, info)

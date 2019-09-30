@@ -46,16 +46,17 @@ async def test_simple(amqp_connection: aiormq.Connection):
     message = await queue.get()     # type: DeliveredMessage
     assert message.body == b'foo'
 
-    with pytest.raises(aiormq.exceptions.DeliveryError) as e:
+    with pytest.raises(aiormq.exceptions.PublishError) as e:
         await channel.basic_publish(
             b'bar', routing_key=deaclare_ok.queue + 'foo',
             mandatory=True,
         )
 
-    message = e.value.message
+    message = e.value.returned_message
 
     assert message.delivery.routing_key == deaclare_ok.queue + 'foo'
     assert message.body == b'bar'
+    assert 'Basic.Return: NO_ROUTE for routing key' in repr(e.value)
 
     cancel_ok = await channel.basic_cancel(consume_ok.consumer_tag)
     assert cancel_ok.consumer_tag == consume_ok.consumer_tag
