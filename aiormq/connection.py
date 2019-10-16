@@ -161,8 +161,8 @@ class Connection(Base):
         return context
 
     @staticmethod
-    def _client_capabilities():
-        return {
+    def _client_capabilities(**kwargs):
+        properties = {
             'platform': PLATFORM,
             'version': __version__,
             'product': PRODUCT,
@@ -175,6 +175,10 @@ class Connection(Base):
             },
             'information': 'See https://github.com/mosquito/aiormq/',
         }
+
+        properties.update(kwargs)
+
+        return properties
 
     @staticmethod
     def _credentials_class(start_frame: spec.Connection.Start):
@@ -206,7 +210,7 @@ class Connection(Base):
         return frame
 
     @task
-    async def connect(self):
+    async def connect(self, client_capabilities: dict = None):
         if self.writer is not None:
             raise RuntimeError("Already connected")
 
@@ -240,11 +244,15 @@ class Connection(Base):
         self.server_properties = frame.server_properties
 
         # noinspection PyTypeChecker
-        self.connection_tune = await self.__rpc(spec.Connection.StartOk(
-            client_properties=self._client_capabilities(),
-            mechanism=credentials.name,
-            response=credentials.value(self).marshal()
-        ))      # type: spec.Connection.Tune
+        self.connection_tune = await self.__rpc(
+            spec.Connection.StartOk(
+                client_properties=self._client_capabilities(
+                    **(client_capabilities or {})
+                ),
+                mechanism=credentials.name,
+                response=credentials.value(self).marshal()
+            )
+        )   # type: spec.Connection.Tune
 
         if self.heartbeat_timeout > 0:
             self.connection_tune.heartbeat = self.heartbeat_timeout
