@@ -514,11 +514,11 @@ class Connection(Base):
         await self.connect()
 
 
-async def connect(url, *args, **kwargs) -> Connection:
+async def connect(url, *args, client_properties=None, **kwargs) -> Connection:
     connection = Connection(url, *args, **kwargs)
 
     try:
-        await connection.connect()
+        await connection.connect(client_properties or {})
     except Exception as e:
         await connection.close(e)
         raise
