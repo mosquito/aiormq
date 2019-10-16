@@ -161,7 +161,7 @@ class Connection(Base):
         return context
 
     @staticmethod
-    def _client_capabilities(**kwargs):
+    def _client_properties(**kwargs):
         properties = {
             'platform': PLATFORM,
             'version': __version__,
@@ -210,7 +210,7 @@ class Connection(Base):
         return frame
 
     @task
-    async def connect(self, client_capabilities: dict = None):
+    async def connect(self, client_properties: dict = None):
         if self.writer is not None:
             raise RuntimeError("Already connected")
 
@@ -246,8 +246,8 @@ class Connection(Base):
         # noinspection PyTypeChecker
         self.connection_tune = await self.__rpc(
             spec.Connection.StartOk(
-                client_properties=self._client_capabilities(
-                    **(client_capabilities or {})
+                client_properties=self._client_properties(
+                    **(client_properties or {})
                 ),
                 mechanism=credentials.name,
                 response=credentials.value(self).marshal()
