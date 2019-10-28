@@ -208,7 +208,7 @@ class Channel(Base):
         self.confirmations[delivery_tag] = self.Returning
 
         if self.on_return_raises:
-            confirmation.set_exception(exc.PublishError(None, frame, message))
+            confirmation.set_exception(exc.PublishError(message, frame))
             return
 
         for cb in self.on_return_callbacks:
