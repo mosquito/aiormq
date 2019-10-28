@@ -52,7 +52,7 @@ async def test_simple(amqp_connection: aiormq.Connection):
             mandatory=True,
         )
 
-    message = e.value.returned_message
+    message = e.value.message
 
     assert message.delivery.routing_key == deaclare_ok.queue + 'foo'
     assert message.body == b'bar'
