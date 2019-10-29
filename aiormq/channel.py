@@ -466,11 +466,13 @@ class Channel(Base):
         return await confirmation
 
     async def basic_qos(self, *, prefetch_size: int = None,
-                        prefetch_count: int = None) -> spec.Basic.QosOk:
+                        prefetch_count: int = None,
+                        global_: bool = False) -> spec.Basic.QosOk:
         # noinspection PyTypeChecker
         return await self.rpc(spec.Basic.Qos(
-            prefetch_count=prefetch_count or 0,
             prefetch_size=prefetch_size or 0,
+            prefetch_count=prefetch_count or 0,
+            global_=global_,
         ))
 
     async def basic_recover(self, *, nowait: bool = False,
