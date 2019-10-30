@@ -153,13 +153,14 @@ class DeliveryError(AMQPError):
 class PublishError(DeliveryError):
     reason = "%r for routing key %r"
 
-    def __init__(self, message: DeliveredMessage, frame: spec.Frame):
+    def __init__(self, message: DeliveredMessage, frame: spec.Frame, *args):
+        assert isinstance(message.delivery, spec.Basic.Return)
+
         self.message = message
         self.frame = frame
 
-        assert isinstance(message.delivery, spec.Basic.Return)
-
-        super().__init__(
+        super(DeliveryError, self).__init__(
             message.delivery.reply_text,
             message.delivery.routing_key,
+            *args
         )

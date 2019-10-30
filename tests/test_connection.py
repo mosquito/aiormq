@@ -56,7 +56,7 @@ async def test_simple(amqp_connection: aiormq.Connection):
 
     assert message.delivery.routing_key == deaclare_ok.queue + 'foo'
     assert message.body == b'bar'
-    assert 'Basic.Return: NO_ROUTE for routing key' in repr(e.value)
+    assert '\'NO_ROUTE\' for routing key' in repr(e.value)
 
     cancel_ok = await channel.basic_cancel(consume_ok.consumer_tag)
     assert cancel_ok.consumer_tag == consume_ok.consumer_tag
