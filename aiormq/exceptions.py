@@ -164,3 +164,7 @@ class PublishError(DeliveryError):
             message.delivery.routing_key,
             *args
         )
+
+
+class ChannelInvalidStateError(RuntimeError):
+    pass

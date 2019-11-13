@@ -74,7 +74,7 @@ class Channel(Base):
     @property
     def lock(self):
         if self.is_closed:
-            raise RuntimeError('%r closed' % self)
+            raise exc.ChannelInvalidStateError('%r closed' % self)
 
         return self.__lock
 
