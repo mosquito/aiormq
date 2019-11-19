@@ -80,8 +80,7 @@ class FutureStore:
 
         if tasks:
             await asyncio.gather(
-                *tasks, loop=self.loop,
-                return_exceptions=True
+                *tasks, return_exceptions=True
             )
 
     def create_task(self, coro: T) -> T:

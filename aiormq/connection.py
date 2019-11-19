@@ -95,8 +95,8 @@ class Connection(Base):
         )
 
         self.started = False
-        self.__lock = asyncio.Lock(loop=self.loop)
-        self.__drain_lock = asyncio.Lock(loop=self.loop)
+        self.__lock = asyncio.Lock()
+        self.__drain_lock = asyncio.Lock()
 
         self.channels = {}  # type: typing.Dict[int, typing.Optional[Channel]]
 
@@ -112,8 +112,8 @@ class Connection(Base):
             'heartbeat', '0'
         ))
         self.heartbeat_last_received = 0
-        self.last_channel_lock = asyncio.Lock(loop=self.loop)
-        self.connected = asyncio.Event(loop=self.loop)
+        self.last_channel_lock = asyncio.Lock()
+        self.connected = asyncio.Event()
 
     @property
     def lock(self):
@@ -224,7 +224,6 @@ class Connection(Base):
         try:
             self.reader, self.writer = await asyncio.open_connection(
                 self.url.host, self.url.port, ssl=ssl_context,
-                loop=self.loop
             )
         except OSError as e:
             raise ConnectionError(*e.args) from e
