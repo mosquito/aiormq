@@ -73,25 +73,30 @@ def cert_path(*args):
     )
 
 
-amqp_urls = [
-    URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/")),
-    URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
-    .with_scheme("amqps")
-    .with_query({"cafile": cert_path("ca.pem"), "no_verify_ssl": 1}),
-    URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
-    .with_scheme("amqps")
-    .with_query(
-        {
-            "cafile": cert_path("ca.pem"),
-            "keyfile": cert_path("client.key"),
-            "certfile": cert_path("client.pem"),
-            "no_verify_ssl": 1,
-        }
-    ),
-]
+AMQP_URL = URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
+
+amqp_urls = {
+    "amqp": AMQP_URL,
+    "amqps": AMQP_URL.with_scheme("amqps").with_query({
+        "cafile": cert_path("ca.pem"), "no_verify_ssl": 1
+    }),
+    "amqps-client": AMQP_URL.with_scheme("amqps").with_query({
+        "cafile": cert_path("ca.pem"),
+        "keyfile": cert_path("client.key"),
+        "certfile": cert_path("client.pem"),
+        "no_verify_ssl": 1,
+    }),
+}
 
 
-@pytest.fixture(params=amqp_urls, ids=["amqp", "amqps", "amqps-client"])
+amqp_url_list, amqp_url_ids = [], []
+
+for name, url in amqp_urls.items():
+    amqp_url_list.append(url)
+    amqp_url_ids.append(name)
+
+
+@pytest.fixture(params=amqp_url_list, ids=amqp_url_ids)
 @async_generator
 async def amqp_connection(request, event_loop):
     connection = Connection(request.param, loop=event_loop)
