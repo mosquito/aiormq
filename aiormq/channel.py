@@ -51,20 +51,18 @@ class Channel(Base):
         self.delivery_tag = 0
 
         self.getter = None      # type: asyncio.Future
-        self.getter_lock = asyncio.Lock(loop=self.loop)
+        self.getter_lock = asyncio.Lock()
 
-        self.frames = asyncio.Queue(
-            maxsize=frame_buffer, loop=self.loop
-        )
+        self.frames = asyncio.Queue(maxsize=frame_buffer)
 
         self.max_content_size = (
             connector.connection_tune.frame_max - self.CONTENT_FRAME_SIZE
         )
 
-        self.__lock = asyncio.Lock(loop=connector.loop)
+        self.__lock = asyncio.Lock()
         self.number = number
         self.publisher_confirms = publisher_confirms
-        self.rpc_frames = asyncio.Queue(maxsize=frame_buffer, loop=self.loop)
+        self.rpc_frames = asyncio.Queue(maxsize=frame_buffer)
         self.writer = connector.writer
         self.on_return_raises = on_return_raises
         self.on_return_callbacks = set()
