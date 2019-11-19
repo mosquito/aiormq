@@ -28,8 +28,9 @@ def child_store(event_loop, root_store):
 
 
 @pytest.mark.asyncio
-async def test_reject_all(event_loop, root_store: FutureStore,
-                          child_store: FutureStore):
+async def test_reject_all(
+    event_loop, root_store: FutureStore, child_store: FutureStore
+):
 
     future1 = root_store.create_future()
     future2 = child_store.create_future()
@@ -47,20 +48,20 @@ async def test_reject_all(event_loop, root_store: FutureStore,
 
 
 @pytest.mark.asyncio
-async def test_result(event_loop, root_store: FutureStore,
-                      child_store: FutureStore):
-
+async def test_result(
+    event_loop, root_store: FutureStore, child_store: FutureStore
+):
     async def result():
         await asyncio.sleep(0.1)
-        return 'result'
+        return "result"
 
-    assert await child_store.create_task(result()) == 'result'
+    assert await child_store.create_task(result()) == "result"
 
 
 @pytest.mark.asyncio
-async def test_siblings(event_loop, root_store: FutureStore,
-                        child_store: FutureStore):
-
+async def test_siblings(
+    event_loop, root_store: FutureStore, child_store: FutureStore
+):
     async def coro(store):
         await asyncio.sleep(0.1)
         await store.reject_all(RuntimeError)

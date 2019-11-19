@@ -20,8 +20,10 @@ class AuthBase:
 class PlainAuth(AuthBase):
     def encode(self) -> bytes:
         return (
-            b"\x00" + (self.connector.url.user or 'guest').encode() +
-            b"\x00" + (self.connector.url.password or 'guest').encode()
+            b"\x00"
+            + (self.connector.url.user or "guest").encode()
+            + b"\x00"
+            + (self.connector.url.password or "guest").encode()
         )
 
 

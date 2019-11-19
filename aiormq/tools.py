@@ -6,7 +6,7 @@ from yarl import URL
 
 def censor_url(url: URL):
     if url.password is not None:
-        return url.with_password('******')
+        return url.with_password("******")
     return url
 
 
@@ -26,8 +26,8 @@ def _inspect_await_method():
         pass
 
     coro = _test()
-    method_await = getattr(coro, '__await__', None)
-    method_iter = getattr(coro, '__iter__', None)
+    method_await = getattr(coro, "__await__", None)
+    method_iter = getattr(coro, "__iter__", None)
 
     for _ in (method_await or method_iter)():
         pass
@@ -39,7 +39,7 @@ HAS_AWAIT_METHOD = _inspect_await_method()
 
 
 class LazyCoroutine:
-    __slots__ = '__func', '__args', '__kwargs', '__instance'
+    __slots__ = "__func", "__args", "__kwargs", "__instance"
 
     def __init__(self, func, *args, **kwargs):
         self.__func = func
@@ -49,8 +49,10 @@ class LazyCoroutine:
 
     def __repr__(self):
         return "<%s: %s(args: %r, kwargs: %r)>" % (
-            self.__class__.__name__, self.__func.__name__,
-            self.__args, self.__kwargs
+            self.__class__.__name__,
+            self.__func.__name__,
+            self.__args,
+            self.__kwargs,
         )
 
     def __call__(self):
@@ -63,8 +65,11 @@ class LazyCoroutine:
         return (yield from self().__iter__())
 
     if HAS_AWAIT_METHOD:
+
         def __await__(self):
             return (yield from self().__await__())
+
     else:
+
         def __await__(self):
             return (yield from self().__iter__())

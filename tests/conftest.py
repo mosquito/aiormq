@@ -77,16 +77,18 @@ AMQP_URL = URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
 
 amqp_urls = {
     "amqp": AMQP_URL,
-    "amqp-named": AMQP_URL.update_query(name='pytest'),
-    "amqps": AMQP_URL.with_scheme("amqps").with_query({
-        "cafile": cert_path("ca.pem"), "no_verify_ssl": 1
-    }),
-    "amqps-client": AMQP_URL.with_scheme("amqps").with_query({
-        "cafile": cert_path("ca.pem"),
-        "keyfile": cert_path("client.key"),
-        "certfile": cert_path("client.pem"),
-        "no_verify_ssl": 1,
-    }),
+    "amqp-named": AMQP_URL.update_query(name="pytest"),
+    "amqps": AMQP_URL.with_scheme("amqps").with_query(
+        {"cafile": cert_path("ca.pem"), "no_verify_ssl": 1}
+    ),
+    "amqps-client": AMQP_URL.with_scheme("amqps").with_query(
+        {
+            "cafile": cert_path("ca.pem"),
+            "keyfile": cert_path("client.key"),
+            "certfile": cert_path("client.pem"),
+            "no_verify_ssl": 1,
+        }
+    ),
 }
 
 

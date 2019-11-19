@@ -1,11 +1,9 @@
-author_info = (
-    ('Dmitry Orlov', 'me@mosquito.su'),
-)
+author_info = (("Dmitry Orlov", "me@mosquito.su"),)
 
 package_info = "Pure python AMQP asynchronous client library"
 package_license = "Apache Software License"
 
-team_email = 'me@mosquito.su'
+team_email = "me@mosquito.su"
 
 version_info = (3, 1, 1)
 

@@ -8,7 +8,7 @@ from typing import TypeVar, Type, Union
 from .tools import shield
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class TaskWrapper:
@@ -79,9 +79,7 @@ class FutureStore:
                 future.set_exception(exception)
 
         if tasks:
-            await asyncio.gather(
-                *tasks, return_exceptions=True
-            )
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def create_task(self, coro: T) -> T:
         task = TaskWrapper(self.loop.create_task(coro))
@@ -100,10 +98,10 @@ class FutureStore:
 
 
 class Base:
-    __slots__ = 'loop', '__future_store', 'closing'
+    __slots__ = "loop", "__future_store", "closing"
 
-    def __init__(self, *, loop, parent: 'Base' = None):
-        self.loop = loop      # type: asyncio.AbstractEventLoop
+    def __init__(self, *, loop, parent: "Base" = None):
+        self.loop = loop  # type: asyncio.AbstractEventLoop
 
         if parent:
             self.__future_store = parent._future_store_child()

@@ -16,15 +16,18 @@ from aiormq.tools import LazyCoroutine
 from . import exceptions as exc
 from .base import Base, task
 from .types import (
-    DeliveredMessage, ConfirmationFrameType,
-    ConsumerCallback, ArgumentsType, DrainResult
+    DeliveredMessage,
+    ConfirmationFrameType,
+    ConsumerCallback,
+    ArgumentsType,
+    DrainResult,
 )
 
 log = logging.getLogger(__name__)
 
 
 class Channel(Base):
-    CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b''), 0))
+    CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
 
     # Prevent stuck channel when connection hangs.
     # When Channel RPC response does not received after this timeout
@@ -32,16 +35,22 @@ class Channel(Base):
     REJECT_CANCELLED_FRAME_TIMEOUT = 10
     Returning = object()
 
-    def __init__(self, connector, number,
-                 publisher_confirms=True, frame_buffer=None,
-                 on_return_raises=True):
+    def __init__(
+        self,
+        connector,
+        number,
+        publisher_confirms=True,
+        frame_buffer=None,
+        on_return_raises=True,
+    ):
 
         super().__init__(loop=connector.loop, parent=connector)
 
         self.connection = connector
 
-        if publisher_confirms and not \
-           connector.publisher_confirms:     # pragma: no cover
+        if (
+            publisher_confirms and not connector.publisher_confirms
+        ):  # pragma: no cover
             raise ValueError("Server does't support publisher confirms")
 
         self.consumers = {}
@@ -50,7 +59,7 @@ class Channel(Base):
 
         self.delivery_tag = 0
 
-        self.getter = None      # type: asyncio.Future
+        self.getter = None  # type: asyncio.Future
         self.getter_lock = asyncio.Lock()
 
         self.frames = asyncio.Queue(maxsize=frame_buffer)
@@ -72,7 +81,7 @@ class Channel(Base):
     @property
     def lock(self):
         if self.is_closed:
-            raise exc.ChannelInvalidStateError('%r closed' % self)
+            raise exc.ChannelInvalidStateError("%r closed" % self)
 
         return self.__lock
 
@@ -87,11 +96,9 @@ class Channel(Base):
     @task
     async def rpc(self, frame: spec.Frame) -> typing.Optional[spec.Frame]:
         async with self.lock:
-            self.writer.write(
-                pamqp.frame.marshal(frame, self.number)
-            )
+            self.writer.write(pamqp.frame.marshal(frame, self.number))
 
-            if not (frame.synchronous or getattr(frame, 'nowait', False)):
+            if not (frame.synchronous or getattr(frame, "nowait", False)):
                 return
 
             try:
@@ -105,7 +112,7 @@ class Channel(Base):
                     # user cancel rpc call trying to wait result
                     result = await asyncio.wait_for(
                         self.rpc_frames.get(),
-                        self.REJECT_CANCELLED_FRAME_TIMEOUT
+                        self.REJECT_CANCELLED_FRAME_TIMEOUT,
                     )
                     log.warning(
                         "Frame %r was rejected because task cancelled", result
@@ -128,7 +135,7 @@ class Channel(Base):
         if self.publisher_confirms:
             await self.rpc(spec.Confirm.Select())
 
-        if frame is None:   # pragma: no cover
+        if frame is None:  # pragma: no cover
             raise spec.AMQPFrameError(frame)
 
     async def _read_content(self, frame, header: ContentHeader):
@@ -136,7 +143,7 @@ class Channel(Base):
 
         content = None
         if header.body_size:
-            content = await self._get_frame()       # type: ContentBody
+            content = await self._get_frame()  # type: ContentBody
 
         while content and body.tell() < header.body_size:
             body.write(content.value)
@@ -146,14 +153,11 @@ class Channel(Base):
 
         # noinspection PyTypeChecker
         return DeliveredMessage(
-            delivery=frame,
-            header=header,
-            body=body.getvalue(),
-            channel=self
+            delivery=frame, header=header, body=body.getvalue(), channel=self
         )
 
     @staticmethod
-    def __exception_by_code(frame: spec.Channel.Close):     # pragma: nocover
+    def __exception_by_code(frame: spec.Channel.Close):  # pragma: nocover
         if frame.reply_code == 403:
             return exc.ChannelAccessRefused(frame.reply_text)
         elif frame.reply_code == 404:
@@ -167,7 +171,7 @@ class Channel(Base):
 
     async def _on_deliver(self, frame: spec.Basic.Deliver):
         # async with self.lock:
-        header = await self._get_frame()    # type: ContentHeader
+        header = await self._get_frame()  # type: ContentHeader
         message = await self._read_content(frame, header)
 
         consumer = self.consumers.get(frame.consumer_tag)
@@ -179,28 +183,28 @@ class Channel(Base):
     ):
         message = None
         if isinstance(frame, spec.Basic.GetOk):
-            header = await self._get_frame()    # type: ContentHeader
+            header = await self._get_frame()  # type: ContentHeader
             message = await self._read_content(frame, header)
 
-        if self.getter.done():          # pragma: nocover
-            log.error('Got message but no active getter')
+        if self.getter.done():  # pragma: nocover
+            log.error("Got message but no active getter")
             return
 
         return self.getter.set_result((frame, message))
 
     async def _on_return(self, frame: spec.Basic.Return):
-        header = await self._get_frame()    # type: ContentHeader
+        header = await self._get_frame()  # type: ContentHeader
         message = await self._read_content(frame, header)
         message_id = message.header.properties.message_id
 
         delivery_tag = self.message_id_delivery_tag.get(message_id)
 
-        if delivery_tag is None:        # pragma: nocover
+        if delivery_tag is None:  # pragma: nocover
             log.error("Unhandled message %r returning", message)
             return
 
         confirmation = self.confirmations.pop(delivery_tag, None)
-        if confirmation is None:        # pragma: nocover
+        if confirmation is None:  # pragma: nocover
             return
 
         self.confirmations[delivery_tag] = self.Returning
@@ -213,7 +217,7 @@ class Channel(Base):
             try:
                 cb(message)
             except Exception:
-                log.exception('Unhandled return callback exception')
+                log.exception("Unhandled return callback exception")
 
         confirmation.set_result(message)
 
@@ -227,8 +231,7 @@ class Channel(Base):
             return
         elif confirmation.done():  # pragma: nocover
             log.warn(
-                "Delivery tag %r confirmed %r was ignored",
-                delivery_tag, frame
+                "Delivery tag %r confirmed %r was ignored", delivery_tag, frame
             )
             return
         elif isinstance(frame, spec.Basic.Ack):
@@ -240,14 +243,14 @@ class Channel(Base):
         )  # pragma: nocover
 
     async def _on_confirm(self, frame: ConfirmationFrameType):
-        if not self.publisher_confirms:     # pragma: nocover
+        if not self.publisher_confirms:  # pragma: nocover
             return
 
         if frame.delivery_tag not in self.confirmations:
             log.error("Unknown %r from broker", frame)
             return
 
-        multiple = getattr(frame, 'multiple', False)
+        multiple = getattr(frame, "multiple", False)
 
         if multiple:
             for delivery_tag in self.confirmations.keys():
@@ -268,7 +271,9 @@ class Channel(Base):
                     with suppress(Exception):
                         await self._on_deliver(frame)
                     continue
-                elif isinstance(frame, (spec.Basic.GetOk, spec.Basic.GetEmpty)):
+                elif isinstance(
+                    frame, (spec.Basic.GetOk, spec.Basic.GetEmpty)
+                ):
                     with suppress(Exception):
                         await self._on_get(frame)
                 elif isinstance(frame, spec.Basic.Return):
@@ -280,9 +285,9 @@ class Channel(Base):
                     continue
                 elif isinstance(frame, spec.Basic.CancelOk):
                     self.consumers.pop(frame.consumer_tag, None)
-                elif isinstance(frame, (spec.Basic.Ack,
-                                        spec.Basic.Nack,
-                                        spec.Basic.Reject)):
+                elif isinstance(
+                    frame, (spec.Basic.Ack, spec.Basic.Nack, spec.Basic.Reject)
+                ):
                     with suppress(Exception):
                         await self._on_confirm(frame)
                     continue
@@ -290,8 +295,7 @@ class Channel(Base):
                     exc = self.__exception_by_code(frame)
                     self.writer.write(
                         pamqp.frame.marshal(
-                            spec.Channel.CloseOk(),
-                            self.number
+                            spec.Channel.CloseOk(), self.number
                         )
                     )
 
@@ -307,15 +311,15 @@ class Channel(Base):
                 raise
 
     async def _on_close(self, exc=None):
-        result = await self.rpc(spec.Channel.Close(
-            reply_code=spec.REPLY_SUCCESS,
-        ))  # type: spec.Channel.CloseOk
+        result = await self.rpc(
+            spec.Channel.Close(reply_code=spec.REPLY_SUCCESS)
+        )  # type: spec.Channel.CloseOk
 
         self.connection.channels.pop(self.number, None)
         return result
 
     async def basic_get(
-        self, queue: str = '', no_ack: bool = False
+        self, queue: str = "", no_ack: bool = False
     ) -> typing.Optional[DeliveredMessage]:
 
         async with self.getter_lock:
@@ -326,23 +330,28 @@ class Channel(Base):
 
         return message
 
-    async def basic_cancel(self, consumer_tag, *,
-                           nowait=False) -> spec.Basic.CancelOk:
+    async def basic_cancel(
+        self, consumer_tag, *, nowait=False
+    ) -> spec.Basic.CancelOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Basic.Cancel(
-            consumer_tag=consumer_tag,
-            nowait=nowait,
-        ))
+        return await self.rpc(
+            spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait)
+        )
 
-    async def basic_consume(self, queue: str,
-                            consumer_callback: ConsumerCallback, *,
+    async def basic_consume(
+        self,
+        queue: str,
+        consumer_callback: ConsumerCallback,
+        *,
+        no_ack: bool = False,
+        exclusive: bool = False,
+        arguments: ArgumentsType = None,
+        consumer_tag: str = None
+    ) -> spec.Basic.ConsumeOk:
 
-                            no_ack: bool = False, exclusive: bool = False,
-                            arguments: ArgumentsType = None,
-                            consumer_tag: str = None) -> spec.Basic.ConsumeOk:
-
-        consumer_tag = consumer_tag or 'ctag%i.%s' % (
-            self.number, hexlify(os.urandom(16)).decode()
+        consumer_tag = consumer_tag or "ctag%i.%s" % (
+            self.number,
+            hexlify(os.urandom(16)).decode(),
         )
 
         if consumer_tag in self.consumers:
@@ -351,24 +360,32 @@ class Channel(Base):
         self.consumers[consumer_tag] = consumer_callback
 
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Basic.Consume(
-            queue=queue, no_ack=no_ack,
-            exclusive=exclusive, consumer_tag=consumer_tag,
-            arguments=arguments
-        ))
+        return await self.rpc(
+            spec.Basic.Consume(
+                queue=queue,
+                no_ack=no_ack,
+                exclusive=exclusive,
+                consumer_tag=consumer_tag,
+                arguments=arguments,
+            )
+        )
 
     def basic_ack(self, delivery_tag, multiple=False) -> DrainResult:
         self.writer.write(
-            pamqp.frame.marshal(spec.Basic.Ack(
-                delivery_tag=delivery_tag,
-                multiple=multiple,
-            ), self.number)
+            pamqp.frame.marshal(
+                spec.Basic.Ack(delivery_tag=delivery_tag, multiple=multiple),
+                self.number,
+            )
         )
 
         return LazyCoroutine(self.connection.drain)
 
-    def basic_nack(self, delivery_tag: str = None, multiple: bool = False,
-                   requeue: bool = True) -> DrainResult:
+    def basic_nack(
+        self,
+        delivery_tag: str = None,
+        multiple: bool = False,
+        requeue: bool = True,
+    ) -> DrainResult:
         if not self.connection.basic_nack:
             raise exc.MethodNotImplemented
 
@@ -377,9 +394,9 @@ class Channel(Base):
                 spec.Basic.Nack(
                     delivery_tag=delivery_tag,
                     multiple=multiple,
-                    requeue=requeue
+                    requeue=requeue,
                 ),
-                self.number
+                self.number,
             )
         )
 
@@ -388,30 +405,34 @@ class Channel(Base):
     def basic_reject(self, delivery_tag, *, requeue=True) -> DrainResult:
         self.writer.write(
             pamqp.frame.marshal(
-                spec.Basic.Reject(
-                    delivery_tag=delivery_tag,
-                    requeue=requeue,
-                ),
-                self.number
+                spec.Basic.Reject(delivery_tag=delivery_tag, requeue=requeue),
+                self.number,
             )
         )
 
         return LazyCoroutine(self.connection.drain)
 
     async def basic_publish(
-        self, body: bytes, *, exchange: str = '', routing_key: str = '',
+        self,
+        body: bytes,
+        *,
+        exchange: str = "",
+        routing_key: str = "",
         properties: spec.Basic.Properties = None,
-        mandatory: bool = False, immediate: bool = False
+        mandatory: bool = False,
+        immediate: bool = False
     ) -> typing.Optional[ConfirmationFrameType]:
 
         frame = spec.Basic.Publish(
-            exchange=exchange, routing_key=routing_key,
-            mandatory=mandatory, immediate=immediate
+            exchange=exchange,
+            routing_key=routing_key,
+            mandatory=mandatory,
+            immediate=immediate,
         )
 
         content_header = ContentHeader(
             properties=properties or spec.Basic.Properties(delivery_mode=1),
-            body_size=len(body)
+            body_size=len(body),
         )
 
         if not content_header.properties.message_id:
@@ -428,34 +449,33 @@ class Channel(Base):
                 message_id = content_header.properties.message_id
 
                 if self.delivery_tag not in self.confirmations:
-                    self.confirmations[self.delivery_tag] = self.create_future()
+                    self.confirmations[
+                        self.delivery_tag
+                    ] = self.create_future()
 
                 confirmation = self.confirmations[self.delivery_tag]
 
                 self.message_id_delivery_tag[message_id] = self.delivery_tag
 
                 confirmation.add_done_callback(
-                    lambda _: self.message_id_delivery_tag.pop(message_id, None)
+                    lambda _: self.message_id_delivery_tag.pop(
+                        message_id, None
+                    )
                 )
 
             self.writer.write(pamqp.frame.marshal(frame, self.number))
 
             # noinspection PyTypeChecker
-            self.writer.write(
-                pamqp.frame.marshal(content_header, self.number)
-            )
+            self.writer.write(pamqp.frame.marshal(content_header, self.number))
 
             with BytesIO(body) as buf:
                 read_chunk = partial(buf.read, self.max_content_size)
-                reader = iter(read_chunk, b'')
+                reader = iter(read_chunk, b"")
 
                 for chunk in reader:
                     # noinspection PyTypeChecker
                     self.writer.write(
-                        pamqp.frame.marshal(
-                            ContentBody(chunk),
-                            self.number
-                        )
+                        pamqp.frame.marshal(ContentBody(chunk), self.number)
                     )
 
         if not self.publisher_confirms:
@@ -463,18 +483,25 @@ class Channel(Base):
 
         return await confirmation
 
-    async def basic_qos(self, *, prefetch_size: int = None,
-                        prefetch_count: int = None,
-                        global_: bool = False) -> spec.Basic.QosOk:
+    async def basic_qos(
+        self,
+        *,
+        prefetch_size: int = None,
+        prefetch_count: int = None,
+        global_: bool = False
+    ) -> spec.Basic.QosOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Basic.Qos(
-            prefetch_size=prefetch_size or 0,
-            prefetch_count=prefetch_count or 0,
-            global_=global_,
-        ))
+        return await self.rpc(
+            spec.Basic.Qos(
+                prefetch_size=prefetch_size or 0,
+                prefetch_count=prefetch_count or 0,
+                global_=global_,
+            )
+        )
 
-    async def basic_recover(self, *, nowait: bool = False,
-                            requeue=False) -> spec.Basic.RecoverOk:
+    async def basic_recover(
+        self, *, nowait: bool = False, requeue=False
+    ) -> spec.Basic.RecoverOk:
 
         if nowait:
             frame = spec.Basic.RecoverAsync(requeue=requeue)
@@ -483,106 +510,172 @@ class Channel(Base):
         # noinspection PyTypeChecker
         return self.rpc(frame)
 
-    async def exchange_declare(self, exchange: str = None, *,
-                               exchange_type='direct', passive=False,
-                               durable=False, auto_delete=False,
-                               internal=False, nowait=False,
-                               arguments=None) -> spec.Exchange.DeclareOk:
+    async def exchange_declare(
+        self,
+        exchange: str = None,
+        *,
+        exchange_type="direct",
+        passive=False,
+        durable=False,
+        auto_delete=False,
+        internal=False,
+        nowait=False,
+        arguments=None
+    ) -> spec.Exchange.DeclareOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Exchange.Declare(
-            exchange=str(exchange), exchange_type=str(exchange_type),
-            passive=bool(passive), durable=bool(durable),
-            auto_delete=bool(auto_delete),
-            internal=bool(internal), nowait=bool(nowait), arguments=arguments
-        ))
+        return await self.rpc(
+            spec.Exchange.Declare(
+                exchange=str(exchange),
+                exchange_type=str(exchange_type),
+                passive=bool(passive),
+                durable=bool(durable),
+                auto_delete=bool(auto_delete),
+                internal=bool(internal),
+                nowait=bool(nowait),
+                arguments=arguments,
+            )
+        )
 
-    def exchange_delete(self, exchange: str = None, *,
-                        if_unused: bool = False,
-                        nowait: bool = False) -> spec.Exchange.DeleteOk:
+    def exchange_delete(
+        self,
+        exchange: str = None,
+        *,
+        if_unused: bool = False,
+        nowait: bool = False
+    ) -> spec.Exchange.DeleteOk:
         # noinspection PyTypeChecker
-        return self.rpc(spec.Exchange.Delete(
-            exchange=exchange, nowait=nowait, if_unused=if_unused,
-        ))
+        return self.rpc(
+            spec.Exchange.Delete(
+                exchange=exchange, nowait=nowait, if_unused=if_unused
+            )
+        )
 
-    async def exchange_bind(self, destination: str = None,
-                            source: str = None,
-                            routing_key: str = '', *,
-                            nowait: bool = False,
-                            arguments: dict = None) -> spec.Exchange.BindOk:
+    async def exchange_bind(
+        self,
+        destination: str = None,
+        source: str = None,
+        routing_key: str = "",
+        *,
+        nowait: bool = False,
+        arguments: dict = None
+    ) -> spec.Exchange.BindOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Exchange.Bind(
-            destination=destination, source=source, routing_key=routing_key,
-            nowait=nowait, arguments=arguments
-        ))
+        return await self.rpc(
+            spec.Exchange.Bind(
+                destination=destination,
+                source=source,
+                routing_key=routing_key,
+                nowait=nowait,
+                arguments=arguments,
+            )
+        )
 
-    async def exchange_unbind(self, destination: str = None,
-                              source: str = None,
-                              routing_key: str = '', *,
-                              nowait: bool = False,
-                              arguments: dict = None) -> spec.Exchange.UnbindOk:
+    async def exchange_unbind(
+        self,
+        destination: str = None,
+        source: str = None,
+        routing_key: str = "",
+        *,
+        nowait: bool = False,
+        arguments: dict = None
+    ) -> spec.Exchange.UnbindOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Exchange.Unbind(
-            destination=destination, source=source, routing_key=routing_key,
-            nowait=nowait, arguments=arguments
-        ))
+        return await self.rpc(
+            spec.Exchange.Unbind(
+                destination=destination,
+                source=source,
+                routing_key=routing_key,
+                nowait=nowait,
+                arguments=arguments,
+            )
+        )
 
     async def flow(self, active: bool) -> spec.Channel.FlowOk:
         # noinspection PyTypeChecker
         return await self.rpc(spec.Channel.Flow(active=active))
 
-    async def queue_bind(self, queue: str,
-                         exchange: str,
-                         routing_key: str = '',
-                         nowait: bool = False,
-                         arguments: dict = None) -> spec.Queue.BindOk:
+    async def queue_bind(
+        self,
+        queue: str,
+        exchange: str,
+        routing_key: str = "",
+        nowait: bool = False,
+        arguments: dict = None,
+    ) -> spec.Queue.BindOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Queue.Bind(
-            queue=queue, exchange=exchange, routing_key=routing_key,
-            nowait=nowait, arguments=arguments
-        ))
+        return await self.rpc(
+            spec.Queue.Bind(
+                queue=queue,
+                exchange=exchange,
+                routing_key=routing_key,
+                nowait=nowait,
+                arguments=arguments,
+            )
+        )
 
-    async def queue_declare(self, queue: str = '', *,
-                            passive: bool = False,
-                            durable: bool = False,
-                            exclusive: bool = False,
-                            auto_delete: bool = False,
-                            nowait: bool = False,
-                            arguments: dict = None) -> spec.Queue.DeclareOk:
+    async def queue_declare(
+        self,
+        queue: str = "",
+        *,
+        passive: bool = False,
+        durable: bool = False,
+        exclusive: bool = False,
+        auto_delete: bool = False,
+        nowait: bool = False,
+        arguments: dict = None
+    ) -> spec.Queue.DeclareOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Queue.Declare(
-            queue=queue,
-            passive=bool(passive),
-            durable=bool(durable),
-            exclusive=bool(exclusive),
-            auto_delete=bool(auto_delete),
-            nowait=bool(nowait),
-            arguments=arguments,
-        ))
+        return await self.rpc(
+            spec.Queue.Declare(
+                queue=queue,
+                passive=bool(passive),
+                durable=bool(durable),
+                exclusive=bool(exclusive),
+                auto_delete=bool(auto_delete),
+                nowait=bool(nowait),
+                arguments=arguments,
+            )
+        )
 
-    async def queue_delete(self, queue: str = '',
-                           if_unused: bool = False, if_empty: bool = False,
-                           nowait=False) -> spec.Queue.DeleteOk:
+    async def queue_delete(
+        self,
+        queue: str = "",
+        if_unused: bool = False,
+        if_empty: bool = False,
+        nowait=False,
+    ) -> spec.Queue.DeleteOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Queue.Delete(
-            queue=queue, if_unused=if_unused, if_empty=if_empty,
-            nowait=nowait
-        ))
+        return await self.rpc(
+            spec.Queue.Delete(
+                queue=queue,
+                if_unused=if_unused,
+                if_empty=if_empty,
+                nowait=nowait,
+            )
+        )
 
-    async def queue_purge(self, queue: str = '',
-                          nowait: bool = False) -> spec.Queue.PurgeOk:
+    async def queue_purge(
+        self, queue: str = "", nowait: bool = False
+    ) -> spec.Queue.PurgeOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Queue.Purge(
-            queue=queue, nowait=nowait
-        ))
+        return await self.rpc(spec.Queue.Purge(queue=queue, nowait=nowait))
 
-    async def queue_unbind(self, queue: str = '',
-                           exchange: str = None, routing_key: str = None,
-                           arguments: dict = None) -> spec.Queue.UnbindOk:
+    async def queue_unbind(
+        self,
+        queue: str = "",
+        exchange: str = None,
+        routing_key: str = None,
+        arguments: dict = None,
+    ) -> spec.Queue.UnbindOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Queue.Unbind(
-            routing_key=routing_key, arguments=arguments,
-            queue=queue, exchange=exchange,
-        ))
+        return await self.rpc(
+            spec.Queue.Unbind(
+                routing_key=routing_key,
+                arguments=arguments,
+                queue=queue,
+                exchange=exchange,
+            )
+        )
 
     async def tx_commit(self) -> spec.Tx.CommitOk:
         # noinspection PyTypeChecker
