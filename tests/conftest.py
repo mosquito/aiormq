@@ -75,11 +75,6 @@ def cert_path(*args):
 
 amqp_urls = [
     URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/")),
-    URL(
-        os.getenv(
-            "AMQP_URL", "amqp://guest:guest@localhost/?name=test+connection"
-        )
-    ),
     URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
     .with_scheme("amqps")
     .with_query({"cafile": cert_path("ca.pem"), "no_verify_ssl": 1}),
