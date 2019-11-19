@@ -130,10 +130,9 @@ class Connection(Base):
         return self.__lock
 
     async def drain(self):
-        if not self.writer:
-            raise RuntimeError("Writer is %r" % self.writer)
-
         async with self.__drain_lock:
+            if not self.writer:
+                raise RuntimeError("Writer is %r" % self.writer)
             return await self.writer.drain()
 
     @property
