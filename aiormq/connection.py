@@ -17,10 +17,7 @@ from .auth import AuthMechanism
 from .base import Base, task
 from .channel import Channel
 from .tools import censor_url, shield
-from .types import (
-    ArgumentsType, SSLCerts,
-    URLorStr
-)
+from .types import ArgumentsType, SSLCerts, URLorStr
 from .version import __version__
 
 log = logging.getLogger(__name__)
@@ -29,14 +26,14 @@ log = logging.getLogger(__name__)
 try:
     from yarl import DEFAULT_PORTS
 
-    DEFAULT_PORTS['amqp'] = 5672
-    DEFAULT_PORTS['amqps'] = 5671
+    DEFAULT_PORTS["amqp"] = 5672
+    DEFAULT_PORTS["amqps"] = 5671
 except ImportError:
     pass
 
 
-PRODUCT = 'aiormq'
-PLATFORM = '{} {} ({} build {})'.format(
+PRODUCT = "aiormq"
+PLATFORM = "{} {} ({} build {})".format(
     platform.python_implementation(),
     platform.python_version(),
     *platform.python_build()
@@ -44,7 +41,7 @@ PLATFORM = '{} {} ({} build {})'.format(
 
 
 def parse_bool(v: str):
-    return v == '1' or v.lower() in ('true', 'yes', 'y', 'enable', 'on')
+    return v == "1" or v.lower() in ("true", "yes", "y", "enable", "on")
 
 
 def parse_int(v: str):
@@ -52,6 +49,13 @@ def parse_int(v: str):
         return int(v)
     except ValueError:
         return 0
+
+
+def parse_connection_name(conn_name: str):
+    if not conn_name or not isinstance(conn_name, str):
+        return {}
+
+    return {"connection_name": conn_name}
 
 
 class Connection(Base):
@@ -67,18 +71,20 @@ class Connection(Base):
     def _parse_ca_data(data) -> typing.Optional[bytes]:
         return b64decode(data) if data else data
 
-    def __init__(self, url: URLorStr, *, parent=None,
-                 loop: asyncio.AbstractEventLoop = None):
+    def __init__(
+        self,
+        url: URLorStr,
+        *,
+        parent=None,
+        loop: asyncio.AbstractEventLoop = None
+    ):
 
-        super().__init__(
-            loop=loop or asyncio.get_event_loop(),
-            parent=parent
-        )
+        super().__init__(loop=loop or asyncio.get_event_loop(), parent=parent)
 
         self.url = URL(url)
 
-        if self.url.path == '/' or not self.url.path:
-            self.vhost = '/'
+        if self.url.path == "/" or not self.url.path:
+            self.vhost = "/"
         else:
             self.vhost = self.url.path[1:]
 
@@ -86,12 +92,12 @@ class Connection(Base):
         self.reader = None  # type: asyncio.StreamReader
         self.writer = None  # type: asyncio.StreamWriter
         self.ssl_certs = SSLCerts(
-            cafile=self.url.query.get('cafile'),
-            capath=self.url.query.get('capath'),
-            cadata=self._parse_ca_data(self.url.query.get('cadata')),
-            key=self.url.query.get('keyfile'),
-            cert=self.url.query.get('certfile'),
-            verify=self.url.query.get('no_verify_ssl', '0') == '0'
+            cafile=self.url.query.get("cafile"),
+            capath=self.url.query.get("capath"),
+            cadata=self._parse_ca_data(self.url.query.get("cadata")),
+            key=self.url.query.get("keyfile"),
+            cert=self.url.query.get("certfile"),
+            verify=self.url.query.get("no_verify_ssl", "0") == "0",
         )
 
         self.started = False
@@ -100,25 +106,26 @@ class Connection(Base):
 
         self.channels = {}  # type: typing.Dict[int, typing.Optional[Channel]]
 
-        self.server_properties = None   # type: spec.Connection.OpenOk
+        self.server_properties = None  # type: spec.Connection.OpenOk
         self.connection_tune = None  # type: spec.Connection.TuneOk
 
         self.last_channel = 1
 
-        self.heartbeat_monitoring = parse_bool(self.url.query.get(
-            'heartbeat_monitoring', '1'
-        ))
-        self.heartbeat_timeout = parse_int(self.url.query.get(
-            'heartbeat', '0'
-        ))
+        self.heartbeat_monitoring = parse_bool(
+            self.url.query.get("heartbeat_monitoring", "1")
+        )
+        self.heartbeat_timeout = parse_int(
+            self.url.query.get("heartbeat", "0")
+        )
         self.heartbeat_last_received = 0
         self.last_channel_lock = asyncio.Lock()
         self.connected = asyncio.Event()
+        self.connection_name = self.url.query.get("name")
 
     @property
     def lock(self):
         if self.is_closed:
-            raise RuntimeError('%r closed' % self)
+            raise RuntimeError("%r closed" % self)
 
         return self.__lock
 
@@ -149,10 +156,7 @@ class Connection(Base):
         )
 
         if self.ssl_certs.key:
-            context.load_cert_chain(
-                self.ssl_certs.cert,
-                self.ssl_certs.key,
-            )
+            context.load_cert_chain(self.ssl_certs.cert, self.ssl_certs.key)
 
         if not self.ssl_certs.verify:
             context.check_hostname = False
@@ -160,23 +164,29 @@ class Connection(Base):
 
         return context
 
-    @staticmethod
-    def _client_properties(**kwargs):
+    def _client_properties(self, **kwargs):
         properties = {
-            'platform': PLATFORM,
-            'version': __version__,
-            'product': PRODUCT,
-            'capabilities': {
-                'authentication_failure_close': True,
-                'basic.nack': True,
-                'connection.blocked': False,
-                'consumer_cancel_notify': True,
-                'publisher_confirms': True
+            "platform": PLATFORM,
+            "version": __version__,
+            "product": PRODUCT,
+            "capabilities": {
+                "authentication_failure_close": True,
+                "basic.nack": True,
+                "connection.blocked": False,
+                "consumer_cancel_notify": True,
+                "publisher_confirms": True,
             },
-            'information': 'See https://github.com/mosquito/aiormq/',
+            "information": "See https://github.com/mosquito/aiormq/",
+            "client_properties": {},
         }
 
-        properties.update(kwargs)
+        properties["client_properties"].update(
+            parse_connection_name(self.connection_name)
+        )
+
+        properties["client_properties"].update(
+            kwargs.get("client_properties", {})
+        )
 
         return properties
 
@@ -187,8 +197,7 @@ class Connection(Base):
                 return AuthMechanism[mechanism]
 
         raise exc.AuthenticationError(
-            start_frame.mechanisms,
-            [m.name for m in AuthMechanism]
+            start_frame.mechanisms, [m.name for m in AuthMechanism]
         )
 
     @shield
@@ -216,14 +225,14 @@ class Connection(Base):
 
         ssl_context = None
 
-        if self.url.scheme == 'amqps':
+        if self.url.scheme == "amqps":
             ssl_context = await self.loop.run_in_executor(
                 None, self._get_ssl_context
             )
 
         try:
             self.reader, self.writer = await asyncio.open_connection(
-                self.url.host, self.url.port, ssl=ssl_context,
+                self.url.host, self.url.port, ssl=ssl_context
             )
         except OSError as e:
             raise ConnectionError(*e.args) from e
@@ -233,7 +242,7 @@ class Connection(Base):
             self.writer.write(protocol_header.marshal())
 
             res = await self.__receive_frame()
-            _, _, frame = res   # type: spec.Connection.Start
+            _, _, frame = res  # type: spec.Connection.Start
             self.heartbeat_last_received = self.loop.time()
         except EOFError as e:
             raise exc.IncompatibleProtocolError(*e.args) from e
@@ -249,18 +258,21 @@ class Connection(Base):
                     **(client_properties or {})
                 ),
                 mechanism=credentials.name,
-                response=credentials.value(self).marshal()
+                response=credentials.value(self).marshal(),
             )
-        )   # type: spec.Connection.Tune
+        )  # type: spec.Connection.Tune
 
         if self.heartbeat_timeout > 0:
             self.connection_tune.heartbeat = self.heartbeat_timeout
 
-        await self.__rpc(spec.Connection.TuneOk(
-            channel_max=self.connection_tune.channel_max,
-            frame_max=self.connection_tune.frame_max,
-            heartbeat=self.connection_tune.heartbeat,
-        ), wait_response=False)
+        await self.__rpc(
+            spec.Connection.TuneOk(
+                channel_max=self.connection_tune.channel_max,
+                frame_max=self.connection_tune.frame_max,
+                heartbeat=self.connection_tune.heartbeat,
+            ),
+            wait_response=False,
+        )
 
         await self.__rpc(spec.Connection.Open(virtual_host=self.vhost))
 
@@ -276,8 +288,8 @@ class Connection(Base):
 
     def _on_heartbeat_done(self, future):
         if not future.cancelled() and future.exception():
-            self.create_task(self.close(
-                ConnectionError('heartbeat task was failed.'))
+            self.create_task(
+                self.close(ConnectionError("heartbeat task was failed."))
             )
 
     async def __heartbeat_task(self):
@@ -309,8 +321,8 @@ class Connection(Base):
 
             await self.close(
                 ConnectionError(
-                    'Server connection probably hang, last heartbeat '
-                    'received %.3f seconds ago' % last_heartbeat
+                    "Server connection probably hang, last heartbeat "
+                    "received %.3f seconds ago" % last_heartbeat
                 )
             )
 
@@ -320,23 +332,19 @@ class Connection(Base):
         async with self.lock:
             frame_header = await self.reader.readexactly(1)
 
-            if frame_header == b'\0x00':
+            if frame_header == b"\0x00":
                 raise spec.AMQPFrameError(await self.reader.read())
 
             frame_header += await self.reader.readexactly(6)
 
-            if not self.started and frame_header.startswith(b'AMQP'):
+            if not self.started and frame_header.startswith(b"AMQP"):
                 raise spec.AMQPSyntaxError
             else:
                 self.started = True
 
-            frame_type, _, frame_length = pamqp.frame.frame_parts(
-                frame_header
-            )
+            frame_type, _, frame_length = pamqp.frame.frame_parts(frame_header)
 
-            frame_payload = await self.reader.readexactly(
-                frame_length + 1
-            )
+            frame_payload = await self.reader.readexactly(frame_length + 1)
 
         return pamqp.frame.unmarshal(frame_header + frame_payload)
 
@@ -375,11 +383,13 @@ class Connection(Base):
                     if isinstance(frame, spec.Connection.CloseOk):
                         return
                     if isinstance(frame, spec.Connection.Close):
-                        return await self.close(self.__exception_by_code(frame))
+                        return await self.close(
+                            self.__exception_by_code(frame)
+                        )
                     elif isinstance(frame, Heartbeat):
                         continue
 
-                    log.error('Unexpected frame %r', frame)
+                    log.error("Unexpected frame %r", frame)
                     continue
 
                 if self.channels.get(channel) is None:
@@ -392,7 +402,7 @@ class Connection(Base):
 
                 channel_close_responses = (
                     spec.Channel.Close,
-                    spec.Channel.CloseOk
+                    spec.Channel.CloseOk,
                 )
 
                 if isinstance(frame, channel_close_responses):
@@ -412,13 +422,13 @@ class Connection(Base):
     async def __close_writer(writer: asyncio.StreamWriter):
         writer.close()
 
-        wait_closed = getattr(writer, 'wait_closed', None)
+        wait_closed = getattr(writer, "wait_closed", None)
         if not wait_closed:
             return
 
         return await wait_closed()
 
-    async def _on_close(self, ex=exc.ConnectionClosed(0, 'normal closed')):
+    async def _on_close(self, ex=exc.ConnectionClosed(0, "normal closed")):
         frame = (
             spec.Connection.CloseOk()
             if isinstance(ex, exc.ConnectionClosed)
@@ -429,9 +439,9 @@ class Connection(Base):
             {
                 asyncio.gather(
                     self.__rpc(frame, wait_response=False),
-                    return_exceptions=True
+                    return_exceptions=True,
                 ),
-                self._reader_task
+                self._reader_task,
             },
             timeout=Connection.CLOSE_TIMEOUT,
             return_when=asyncio.ALL_COMPLETED,
@@ -446,32 +456,36 @@ class Connection(Base):
 
     @property
     def server_capabilities(self) -> ArgumentsType:
-        return self.server_properties['capabilities']
+        return self.server_properties["capabilities"]
 
     @property
     def basic_nack(self) -> bool:
-        return self.server_capabilities.get('basic.nack')
+        return self.server_capabilities.get("basic.nack")
 
     @property
     def consumer_cancel_notify(self) -> bool:
-        return self.server_capabilities.get('consumer_cancel_notify')
+        return self.server_capabilities.get("consumer_cancel_notify")
 
     @property
     def exchange_exchange_bindings(self) -> bool:
-        return self.server_capabilities.get('exchange_exchange_bindings')
+        return self.server_capabilities.get("exchange_exchange_bindings")
 
     @property
     def publisher_confirms(self):
-        return self.server_capabilities.get('publisher_confirms')
+        return self.server_capabilities.get("publisher_confirms")
 
-    async def channel(self, channel_number: int = None,
-                      publisher_confirms=True,
-                      frame_buffer=FRAME_BUFFER, **kwargs) -> Channel:
+    async def channel(
+        self,
+        channel_number: int = None,
+        publisher_confirms=True,
+        frame_buffer=FRAME_BUFFER,
+        **kwargs
+    ) -> Channel:
 
         await self.connected.wait()
 
         if self.is_closed:
-            raise RuntimeError('%r closed' % self)
+            raise RuntimeError("%r closed" % self)
 
         if not self.publisher_confirms and publisher_confirms:
             raise ValueError("Server doesn't support publisher_confirms")
@@ -492,11 +506,14 @@ class Connection(Base):
             raise ValueError("Channel %d already used" % channel_number)
 
         if channel_number < 0 or channel_number > 65535:
-            raise ValueError('Channel number too large')
+            raise ValueError("Channel number too large")
 
         channel = Channel(
-            self, channel_number, frame_buffer=frame_buffer,
-            publisher_confirms=publisher_confirms, **kwargs
+            self,
+            channel_number,
+            frame_buffer=frame_buffer,
+            publisher_confirms=publisher_confirms,
+            **kwargs
         )
 
         self.channels[channel_number] = channel

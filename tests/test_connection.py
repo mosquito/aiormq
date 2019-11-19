@@ -10,6 +10,8 @@ from aiormq.auth import AuthBase, PlainAuth
 from .conftest import skip_when_quick_test
 
 
+pytestmark = pytest.mark.asyncio
+
 CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
 
 
