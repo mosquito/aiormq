@@ -18,12 +18,13 @@ async def test_simple(amqp_channel: aiormq.Channel):
     deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
     consume_ok = await amqp_channel.basic_consume(deaclare_ok.queue, queue.put)
     await amqp_channel.basic_publish(
-        b'foo', routing_key=deaclare_ok.queue,
-        properties=aiormq.spec.Basic.Properties(message_id='123')
+        b"foo",
+        routing_key=deaclare_ok.queue,
+        properties=aiormq.spec.Basic.Properties(message_id="123"),
     )
 
-    message = await queue.get()     # type: DeliveredMessage
-    assert message.body == b'foo'
+    message = await queue.get()  # type: DeliveredMessage
+    assert message.body == b"foo"
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
     assert cancel_ok.consumer_tag == consume_ok.consumer_tag
@@ -31,10 +32,10 @@ async def test_simple(amqp_channel: aiormq.Channel):
     await amqp_channel.queue_delete(deaclare_ok.queue)
 
     deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
-    await amqp_channel.basic_publish(b'foo bar', routing_key=deaclare_ok.queue)
+    await amqp_channel.basic_publish(b"foo bar", routing_key=deaclare_ok.queue)
 
     message = await amqp_channel.basic_get(deaclare_ok.queue, no_ack=True)
-    assert message.body == b'foo bar'
+    assert message.body == b"foo bar"
 
 
 async def test_blank_body(amqp_channel: aiormq.Channel):
@@ -46,12 +47,13 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
     deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
     consume_ok = await amqp_channel.basic_consume(deaclare_ok.queue, queue.put)
     await amqp_channel.basic_publish(
-        b'', routing_key=deaclare_ok.queue,
-        properties=aiormq.spec.Basic.Properties(message_id='123')
+        b"",
+        routing_key=deaclare_ok.queue,
+        properties=aiormq.spec.Basic.Properties(message_id="123"),
     )
 
-    message = await queue.get()     # type: DeliveredMessage
-    assert message.body == b''
+    message = await queue.get()  # type: DeliveredMessage
+    assert message.body == b""
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
     assert cancel_ok.consumer_tag == consume_ok.consumer_tag
@@ -59,22 +61,22 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
     await amqp_channel.queue_delete(deaclare_ok.queue)
 
     deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
-    await amqp_channel.basic_publish(b'foo bar', routing_key=deaclare_ok.queue)
+    await amqp_channel.basic_publish(b"foo bar", routing_key=deaclare_ok.queue)
 
     message = await amqp_channel.basic_get(deaclare_ok.queue, no_ack=True)
-    assert message.body == b'foo bar'
+    assert message.body == b"foo bar"
 
 
 @pytest.mark.no_catch_loop_exceptions
 async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
-    channel = amqp_channel      # type: aiormq.Channel
+    channel = amqp_channel  # type: aiormq.Channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare()
 
     future = event_loop.create_future()
 
-    await channel.basic_publish(b'urgent', routing_key=declare_ok.queue)
+    await channel.basic_publish(b"urgent", routing_key=declare_ok.queue)
 
     consumer_tag = event_loop.create_future()
 
@@ -91,7 +93,7 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
 
     message = await future
     await channel.basic_reject(message.delivery.delivery_tag, requeue=True)
-    assert message.body == b'urgent'
+    assert message.body == b"urgent"
 
     future = event_loop.create_future()
 
@@ -101,12 +103,12 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
 
     message = await future
 
-    assert message.body == b'urgent'
+    assert message.body == b"urgent"
     await channel.basic_ack(message.delivery.delivery_tag)
 
 
 async def test_ack_nack_reject(amqp_channel: aiormq.Channel, event_loop):
-    channel = amqp_channel                      # type: aiormq.Channel
+    channel = amqp_channel  # type: aiormq.Channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare(auto_delete=True)
@@ -114,19 +116,19 @@ async def test_ack_nack_reject(amqp_channel: aiormq.Channel, event_loop):
 
     await channel.basic_consume(declare_ok.queue, queue.put, no_ack=False)
 
-    await channel.basic_publish(b'rejected', routing_key=declare_ok.queue)
+    await channel.basic_publish(b"rejected", routing_key=declare_ok.queue)
     message = await queue.get()
-    assert message.body == b'rejected'
+    assert message.body == b"rejected"
     await channel.basic_reject(message.delivery.delivery_tag, requeue=False)
 
-    await channel.basic_publish(b'nacked', routing_key=declare_ok.queue)
+    await channel.basic_publish(b"nacked", routing_key=declare_ok.queue)
     message = await queue.get()
-    assert message.body == b'nacked'
+    assert message.body == b"nacked"
     await channel.basic_nack(message.delivery.delivery_tag, requeue=False)
 
-    await channel.basic_publish(b'acked', routing_key=declare_ok.queue)
+    await channel.basic_publish(b"acked", routing_key=declare_ok.queue)
     message = await queue.get()
-    assert message.body == b'acked'
+    assert message.body == b"acked"
     await channel.basic_ack(message.delivery.delivery_tag)
 
 
@@ -138,20 +140,24 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
     This test is probably inconsequential without publisher_confirms
     This is a regression for https://github.com/mosquito/aiormq/issues/10
     """
-    channel = amqp_channel                      # type: aiormq.Channel
+    channel = amqp_channel  # type: aiormq.Channel
     exchange = uuid.uuid4().hex
-    await channel.exchange_declare(exchange, exchange_type='topic')
+    await channel.exchange_declare(exchange, exchange_type="topic")
     try:
         declare_ok = await channel.queue_declare(exclusive=True)
-        await channel.queue_bind(declare_ok.queue, exchange,
-                                 routing_key='test.5')
+        await channel.queue_bind(
+            declare_ok.queue, exchange, routing_key="test.5"
+        )
 
         for i in range(10):
-            messages = [channel.basic_publish(b'test', exchange=exchange,
-                                              routing_key='test.{}'.format(i))
-                        for i in range(10)]
+            messages = [
+                channel.basic_publish(
+                    b"test", exchange=exchange, routing_key="test.{}".format(i)
+                )
+                for i in range(10)
+            ]
             _, pending = await asyncio.wait(messages, timeout=0.2)
-            assert not pending, 'not all publishes were completed (confirmed)'
+            assert not pending, "not all publishes were completed (confirmed)"
             await asyncio.sleep(0.05)
     finally:
         await channel.exchange_delete(exchange)
