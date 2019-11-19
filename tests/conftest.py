@@ -15,12 +15,13 @@ from aiormq import Connection
 
 
 POLICIES = [asyncio.DefaultEventLoopPolicy]
-POLICY_IDS = ['asyncio']
+POLICY_IDS = ["asyncio"]
 
 try:
     import uvloop
+
     POLICIES = [uvloop.EventLoopPolicy]
-    POLICY_IDS = ['uvloop']
+    POLICY_IDS = ["uvloop"]
 except ImportError:
     pass
 
@@ -32,19 +33,19 @@ def event_loop(request):
     asyncio.get_event_loop().close()
     asyncio.set_event_loop_policy(policy)
 
-    loop = asyncio.new_event_loop()     # type: asyncio.AbstractEventLoop
+    loop = asyncio.new_event_loop()  # type: asyncio.AbstractEventLoop
     loop.set_debug(True)
     asyncio.set_event_loop(loop)
 
     original = asyncio.get_event_loop
 
     def getter_mock():
-        raise RuntimeError('asyncio.get_event_loop() call forbidden')
+        raise RuntimeError("asyncio.get_event_loop() call forbidden")
 
     asyncio.get_event_loop = getter_mock
 
     nocatch_marker = request.node.get_closest_marker(
-        'no_catch_loop_exceptions'
+        "no_catch_loop_exceptions"
     )
 
     exceptions = list()
@@ -68,33 +69,34 @@ def event_loop(request):
 
 def cert_path(*args):
     return os.path.join(
-        os.path.abspath(os.path.dirname(__file__)), 'certs', *args
+        os.path.abspath(os.path.dirname(__file__)), "certs", *args
     )
 
 
 amqp_urls = [
-    URL(os.getenv('AMQP_URL', 'amqp://guest:guest@localhost/')),
-    URL(os.getenv(
-        'AMQP_URL', 'amqp://guest:guest@localhost/?name=test+connection')
+    URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/")),
+    URL(
+        os.getenv(
+            "AMQP_URL", "amqp://guest:guest@localhost/?name=test+connection"
+        )
     ),
-    URL(os.getenv(
-        'AMQP_URL', 'amqp://guest:guest@localhost/'
-    )).with_scheme('amqps').with_query({
-        "cafile": cert_path('ca.pem'),
-        "no_verify_ssl": 1,
-    }),
-    URL(os.getenv(
-        'AMQP_URL', 'amqp://guest:guest@localhost/'
-    )).with_scheme('amqps').with_query({
-        "cafile": cert_path('ca.pem'),
-        "keyfile": cert_path('client.key'),
-        "certfile": cert_path('client.pem'),
-        "no_verify_ssl": 1,
-    })
+    URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
+    .with_scheme("amqps")
+    .with_query({"cafile": cert_path("ca.pem"), "no_verify_ssl": 1}),
+    URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
+    .with_scheme("amqps")
+    .with_query(
+        {
+            "cafile": cert_path("ca.pem"),
+            "keyfile": cert_path("client.key"),
+            "certfile": cert_path("client.pem"),
+            "no_verify_ssl": 1,
+        }
+    ),
 ]
 
 
-@pytest.fixture(params=amqp_urls, ids=['amqp', 'amqps', 'amqps-client'])
+@pytest.fixture(params=amqp_urls, ids=["amqp", "amqps", "amqps-client"])
 @async_generator
 async def amqp_connection(request, event_loop):
     connection = Connection(request.param, loop=event_loop)
@@ -125,8 +127,7 @@ async def amqp_channel(request, amqp_connection):
 
 
 skip_when_quick_test = pytest.mark.skipif(
-    os.getenv("TEST_QUICK") is not None,
-    reason='quick test'
+    os.getenv("TEST_QUICK") is not None, reason="quick test"
 )
 
 
@@ -146,19 +147,15 @@ def memory_tracer():
     def format_stat(stats):
         items = [
             "TOP STATS:",
-            "%-90s %6s %6s %6s" % ("Traceback", "line", "size", "count")
+            "%-90s %6s %6s %6s" % ("Traceback", "line", "size", "count"),
         ]
 
         for stat in stats:
             fname = stat.traceback[0].filename
             lineno = stat.traceback[0].lineno
             items.append(
-                "%-90s %6s %6s %6s" % (
-                    fname,
-                    lineno,
-                    stat.size_diff,
-                    stat.count_diff
-                )
+                "%-90s %6s %6s %6s"
+                % (fname, lineno, stat.size_diff, stat.count_diff)
             )
 
         return "\n".join(items)
@@ -171,7 +168,7 @@ def memory_tracer():
         snapshot_after = tracemalloc.take_snapshot().filter_traces(filters)
 
         top_stats = snapshot_after.compare_to(
-            snapshot_before, 'lineno', cumulative=True
+            snapshot_before, "lineno", cumulative=True
         )
 
         if top_stats:
