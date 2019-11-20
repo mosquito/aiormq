@@ -11,12 +11,28 @@ def censor_url(url: URL):
 
 
 def shield(func):
-    async def awaiter(future):
-        return await future
-
     @wraps(func)
     def wrap(*args, **kwargs):
-        return wraps(func)(awaiter)(asyncio.shield(func(*args, **kwargs)))
+        return asyncio.shield(awaitable(func)(*args, **kwargs))
+
+    return wrap
+
+
+def awaitable(func):
+    # Avoid python 3.8+ warning
+    if asyncio.iscoroutinefunction(func):
+        return func
+
+    @wraps(func)
+    async def wrap(*args, **kwargs):
+        result = func(*args, **kwargs)
+
+        if hasattr(result, "__await__"):
+            return await result
+        if asyncio.iscoroutine(result) or asyncio.isfuture(result):
+            return await result
+
+        return result
 
     return wrap
 
