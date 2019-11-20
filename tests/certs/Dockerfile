@@ -1,6 +1,6 @@
-FROM rabbitmq:3-management-alpine
+FROM rabbitmq:3.8-management-alpine
 
-RUN mkdir -p /certs
+RUN mkdir -p /certs/
 
 COPY tests/certs/ca.pem /certs/
 COPY tests/certs/server.key /certs/
