@@ -177,17 +177,10 @@ class Connection(Base):
                 "publisher_confirms": True,
             },
             "information": "See https://github.com/mosquito/aiormq/",
-            "client_properties": {},
         }
 
-        properties["client_properties"].update(
-            parse_connection_name(self.connection_name)
-        )
-
-        properties["client_properties"].update(
-            kwargs.get("client_properties", {})
-        )
-
+        properties.update(parse_connection_name(self.connection_name))
+        properties.update(kwargs.get("client_properties", {}))
         return properties
 
     @staticmethod
