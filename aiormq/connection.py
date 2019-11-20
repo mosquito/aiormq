@@ -16,12 +16,14 @@ from . import exceptions as exc
 from .auth import AuthMechanism
 from .base import Base, task
 from .channel import Channel
-from .tools import censor_url, shield
+from .tools import censor_url
 from .types import ArgumentsType, SSLCerts, URLorStr
 from .version import __version__
 
 log = logging.getLogger(__name__)
 
+
+CHANNEL_CLOSE_RESPONSES = (spec.Channel.Close, spec.Channel.CloseOk)
 
 try:
     from yarl import DEFAULT_PORTS
@@ -59,7 +61,6 @@ def parse_connection_name(conn_name: str):
 
 
 class Connection(Base):
-    CLOSE_TIMEOUT = 1.0
     FRAME_BUFFER = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
     HEARTBEAT_INTERVAL_MULTIPLIER = 0.5
@@ -199,7 +200,6 @@ class Connection(Base):
             start_frame.mechanisms, [m.name for m in AuthMechanism]
         )
 
-    @shield
     async def __rpc(self, request: spec.Frame, wait_response=True):
         self.writer.write(pamqp.frame.marshal(request, 0))
 
@@ -212,9 +212,13 @@ class Connection(Base):
             raise spec.AMQPInternalError(frame, dict(frame))
         elif isinstance(frame, spec.Connection.Close):
             if frame.reply_code == 403:
-                raise exc.ProbableAuthenticationError(frame.reply_text)
+                err = exc.ProbableAuthenticationError(frame.reply_text)
+            else:
+                err = exc.ConnectionClosed(frame.reply_code, frame.reply_text)
 
-            raise exc.ConnectionClosed(frame.reply_code, frame.reply_text)
+            await self.close(err)
+
+            raise err
         return frame
 
     @task
@@ -334,6 +338,9 @@ class Connection(Base):
             if frame_header == b"\0x00":
                 raise spec.AMQPFrameError(await self.reader.read())
 
+            if self.reader is None:
+                raise ConnectionError
+
             frame_header += await self.reader.readexactly(6)
 
             if not self.started and frame_header.startswith(b"AMQP"):
@@ -399,12 +406,7 @@ class Connection(Base):
 
                 ch = self.channels[channel]
 
-                channel_close_responses = (
-                    spec.Channel.Close,
-                    spec.Channel.CloseOk,
-                )
-
-                if isinstance(frame, channel_close_responses):
+                if isinstance(frame, CHANNEL_CLOSE_RESPONSES):
                     self.channels[channel] = None
 
                 await ch.frames.put((weight, frame))
@@ -419,13 +421,13 @@ class Connection(Base):
 
     @staticmethod
     async def __close_writer(writer: asyncio.StreamWriter):
-        writer.close()
-
-        wait_closed = getattr(writer, "wait_closed", None)
-        if not wait_closed:
+        if writer is None:
             return
 
-        return await wait_closed()
+        writer.close()
+
+        if hasattr(writer, "wait_closed"):
+            await writer.wait_closed()
 
     async def _on_close(self, ex=exc.ConnectionClosed(0, "normal closed")):
         frame = (
@@ -434,16 +436,8 @@ class Connection(Base):
             else spec.Connection.Close()
         )
 
-        await asyncio.wait(
-            {
-                asyncio.gather(
-                    self.__rpc(frame, wait_response=False),
-                    return_exceptions=True,
-                ),
-                self._reader_task,
-            },
-            timeout=Connection.CLOSE_TIMEOUT,
-            return_when=asyncio.ALL_COMPLETED,
+        await asyncio.gather(
+            self.__rpc(frame, wait_response=False), return_exceptions=True
         )
 
         writer = self.writer
@@ -451,7 +445,11 @@ class Connection(Base):
         self.writer = None
         self._reader_task = None
 
-        await self.__close_writer(writer)
+        await asyncio.gather(
+            self.__close_writer(writer), return_exceptions=True
+        )
+
+        await asyncio.gather(self._reader_task, return_exceptions=True)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
@@ -491,6 +489,9 @@ class Connection(Base):
 
         if channel_number is None:
             async with self.last_channel_lock:
+                if self.channels:
+                    self.last_channel = max(self.channels.keys())
+
                 while self.last_channel in self.channels.keys():
                     self.last_channel += 1
 

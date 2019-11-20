@@ -208,16 +208,19 @@ async def test_non_publisher_confirms(amqp_connection):
 
 @skip_when_quick_test
 @pytest.mark.no_catch_loop_exceptions
-async def test_no_free_channels(amqp_connection):
-    await asyncio.wait(
-        [
-            amqp_connection.channel(n + 1)
-            for n in range(amqp_connection.connection_tune.channel_max)
-        ]
+async def test_no_free_channels(amqp_connection: aiormq.Connection):
+    await asyncio.wait_for(
+        asyncio.wait(
+            [
+                amqp_connection.channel(n + 1)
+                for n in range(amqp_connection.connection_tune.channel_max)
+            ]
+        ),
+        timeout=60,
     )
 
     with pytest.raises(aiormq.exceptions.ConnectionNotAllowed):
-        await amqp_connection.channel()
+        await asyncio.wait_for(amqp_connection.channel(), timeout=5)
 
 
 async def test_huge_message(amqp_connection: aiormq.Connection):

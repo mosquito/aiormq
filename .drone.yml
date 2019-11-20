@@ -44,6 +44,21 @@ steps:
       - name: cache
         path: /drone/src/.tox
 
+  - name: python 3.8
+    image: snakepacker/python:all
+    pull: always
+    commands:
+      - wait-for-port rabbitmq:5672 rabbitmq:5671
+      - tox
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq
+      TOXENV: py38
+      COVERALLS_REPO_TOKEN:
+        from_secret: COVERALLS_TOKEN
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
+
   - name: python 3.7
     image: snakepacker/python:all
     pull: always
@@ -83,6 +98,21 @@ steps:
     environment:
       AMQP_URL: amqp://guest:guest@rabbitmq
       TOXENV: py35
+      COVERALLS_REPO_TOKEN:
+        from_secret: COVERALLS_TOKEN
+    volumes:
+      - name: cache
+        path: /drone/src/.tox
+
+  - name: python 3.8 uvloop
+    image: snakepacker/python:all
+    pull: always
+    commands:
+      - wait-for-port rabbitmq:5672 rabbitmq:5671
+      - tox
+    environment:
+      AMQP_URL: amqp://guest:guest@rabbitmq
+      TOXENV: py38-uvloop
       COVERALLS_REPO_TOKEN:
         from_secret: COVERALLS_TOKEN
     volumes:
@@ -161,6 +191,6 @@ services:
 
 ---
 kind: signature
-hmac: 65654309225351bc649874b6b007fb576e6d0c10cb5e5b79584305ad931b0268
+hmac: db78b836fb377a913c4eed3e22177b502268738102c19982dd2c3302510cd7f1
 
 ...

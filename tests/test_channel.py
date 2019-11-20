@@ -112,7 +112,7 @@ async def test_ack_nack_reject(amqp_channel: aiormq.Channel, event_loop):
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare(auto_delete=True)
-    queue = asyncio.Queue(loop=event_loop)
+    queue = asyncio.Queue()
 
     await channel.basic_consume(declare_ok.queue, queue.put, no_ack=False)
 

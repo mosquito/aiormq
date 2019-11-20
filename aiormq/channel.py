@@ -12,7 +12,7 @@ import pamqp.frame
 from pamqp import specification as spec, ContentHeader
 from pamqp.body import ContentBody
 
-from aiormq.tools import LazyCoroutine
+from aiormq.tools import LazyCoroutine, awaitable
 from . import exceptions as exc
 from .base import Base, task
 from .types import (
@@ -357,7 +357,7 @@ class Channel(Base):
         if consumer_tag in self.consumers:
             raise exc.DuplicateConsumerTag(self.number)
 
-        self.consumers[consumer_tag] = consumer_callback
+        self.consumers[consumer_tag] = awaitable(consumer_callback)
 
         # noinspection PyTypeChecker
         return await self.rpc(

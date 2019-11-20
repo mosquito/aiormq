@@ -1,4 +1,6 @@
 import asyncio
+import pprint
+
 import gc
 import logging
 import os
@@ -42,15 +44,20 @@ def event_loop(request):
     def getter_mock():
         raise RuntimeError("asyncio.get_event_loop() call forbidden")
 
-    asyncio.get_event_loop = getter_mock
+    if not request.node.get_closest_marker("allow_get_event_loop"):
+        asyncio.get_event_loop = getter_mock
 
     nocatch_marker = request.node.get_closest_marker(
         "no_catch_loop_exceptions"
     )
 
+    def on_exception(loop, err):
+        logging.exception("%s", pprint.pformat(err))
+        exceptions.append(err)
+
     exceptions = list()
     if not nocatch_marker:
-        loop.set_exception_handler(lambda l, c: exceptions.append(c))
+        loop.set_exception_handler(on_exception)
 
     try:
         yield loop
@@ -59,7 +66,9 @@ def event_loop(request):
             raise RuntimeError(exceptions)
 
     finally:
-        asyncio.get_event_loop = original
+        if not request.node.get_closest_marker("allow_get_event_loop"):
+            asyncio.get_event_loop = original
+
         asyncio.set_event_loop_policy(None)
         del policy
 
@@ -100,9 +109,14 @@ for name, url in amqp_urls.items():
 
 
 @pytest.fixture(params=amqp_url_list, ids=amqp_url_ids)
+async def amqp_url(request):
+    return request.param
+
+
+@pytest.fixture
 @async_generator
-async def amqp_connection(request, event_loop):
-    connection = Connection(request.param, loop=event_loop)
+async def amqp_connection(amqp_url, event_loop):
+    connection = Connection(amqp_url, loop=event_loop)
 
     await connection.connect()
 
