@@ -179,3 +179,13 @@ async def test_exclusive_queue_locked(amqp_connection):
             await channel1.basic_consume(qname, print, exclusive=True)
     finally:
         await channel0.queue_delete(qname)
+
+
+async def test_remove_writer_when_closed(amqp_channel: aiormq.Channel):
+    with pytest.raises(aiormq.exceptions.ChannelClosed):
+        await amqp_channel.queue_declare(
+            "amq.forbidden_queue_name", auto_delete=True
+        )
+
+    with pytest.raises(aiormq.exceptions.ChannelInvalidStateError):
+        await amqp_channel.queue_delete("amq.forbidden_queue_name")
