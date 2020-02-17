@@ -75,8 +75,13 @@ class Channel(Base):
         self.writer = connector.writer
         self.on_return_raises = on_return_raises
         self.on_return_callbacks = set()
+        self._close_exception = None
 
         self.create_task(self._reader())
+        self.closing.add_done_callback(self.__clean_up_when_writer_close)
+
+    def __clean_up_when_writer_close(self, _):
+        self.writer = None
 
     @property
     def lock(self):
