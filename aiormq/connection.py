@@ -276,7 +276,10 @@ class Connection(Base):
         self._reader_task = self.create_task(self.__reader(), important=True)
 
         # noinspection PyAsyncCall
-        heartbeat_task = self.create_task(self.__heartbeat_task(), important=True)
+        heartbeat_task = self.create_task(
+            self.__heartbeat_task(),
+            important=True
+        )
         heartbeat_task.add_done_callback(self._on_heartbeat_done)
         self.loop.call_soon(self.connected.set)
 

@@ -57,7 +57,9 @@ class FutureStore:
 
         return remover
 
-    def add(self, future: typing.Union[asyncio.Future, TaskWrapper], important: bool):
+    def add(self,
+            future: typing.Union[asyncio.Future, TaskWrapper],
+            important: bool):
         if important:
             self.important_futures.add(future)
         else:
@@ -68,7 +70,10 @@ class FutureStore:
             self.parent.add(future, important)
 
     @shield
-    async def reject(self, exception: Exception, all_jobs: bool, important: bool = False):
+    async def reject(self,
+                     exception: Exception,
+                     all_jobs: bool,
+                     important: bool = False):
         tasks = []
         if all_jobs:
             future_set = self.important_futures.union(self.futures)
@@ -124,10 +129,17 @@ class Base:
         future.add_done_callback(lambda x: x.exception())
         return future
 
-    def _cancel_tasks(self, exc: Union[Exception, Type[Exception]] = None, all_tasks: bool = True, important: bool = False):
+    def _cancel_tasks(self,
+                      exc: Union[Exception, Type[Exception]] = None,
+                      all_tasks: bool = True,
+                      important: bool = False):
         if all_tasks:
             return self.__future_store.reject(exc, all_jobs=True)
-        return self.__future_store.reject(exc, all_jobs=False, important=important)
+        return self.__future_store.reject(
+            exc,
+            all_jobs=False,
+            important=important
+        )
 
     def _future_store_child(self):
         return self.__future_store.get_child()
@@ -180,6 +192,9 @@ def task(important: bool = False):
         @wraps(func)
         async def wrap(self: "Base", *args, **kwargs):
             # noinspection PyCallingNonCallable
-            return await self.create_task(func(self, *args, **kwargs), important)
+            return await self.create_task(
+                func(self, *args, **kwargs),
+                important
+            )
         return wrap
     return wrapper
