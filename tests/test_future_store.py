@@ -12,7 +12,7 @@ def root_store(event_loop):
         yield store
     finally:
         event_loop.run_until_complete(
-            store.reject_all(Exception("Cancelling"))
+            store.reject(Exception("Cancelling"), True)
         )
 
 
@@ -23,12 +23,12 @@ def child_store(event_loop, root_store):
         yield store
     finally:
         event_loop.run_until_complete(
-            store.reject_all(Exception("Cancelling"))
+            store.reject(Exception("Cancelling"), True)
         )
 
 
 @pytest.mark.asyncio
-async def test_reject_all(
+async def test_reject(
     event_loop, root_store: FutureStore, child_store: FutureStore
 ):
 
@@ -38,7 +38,7 @@ async def test_reject_all(
     assert root_store.futures
     assert child_store.futures
 
-    await root_store.reject_all(RuntimeError)
+    await root_store.reject(RuntimeError, True)
     await asyncio.sleep(0.1)
 
     assert isinstance(future1.exception(), RuntimeError)
@@ -64,7 +64,7 @@ async def test_siblings(
 ):
     async def coro(store):
         await asyncio.sleep(0.1)
-        await store.reject_all(RuntimeError)
+        await store.reject(RuntimeError, True)
 
     task1 = child_store.create_task(coro(child_store))
     assert root_store.futures

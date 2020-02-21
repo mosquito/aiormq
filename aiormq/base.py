@@ -40,34 +40,43 @@ class TaskWrapper:
 
 
 class FutureStore:
-    __slots__ = "futures", "loop", "parent"
+    __slots__ = "futures", "important_futures", "loop", "parent"
 
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.futures = set()  # type: typing.Set[TaskWrapper]
+        self.important_futures = set()  # type: typing.Set[TaskWrapper]
         self.loop = loop  # type: asyncio.AbstractEventLoop
         self.parent = None  # type: FutureStore
 
     def __on_task_done(self, future):
         def remover(*_):
             nonlocal future
-            if future in self.futures:
-                self.futures.remove(future)
+            for future_set in (self.futures, self.important_futures):
+                if future in future_set:
+                    future_set.remove(future)
 
         return remover
 
-    def add(self, future: typing.Union[asyncio.Future, TaskWrapper]):
-        self.futures.add(future)
+    def add(self, future: typing.Union[asyncio.Future, TaskWrapper], important: bool):
+        if important:
+            self.important_futures.add(future)
+        else:
+            self.futures.add(future)
         future.add_done_callback(self.__on_task_done(future))
 
         if self.parent:
-            self.parent.add(future)
+            self.parent.add(future, important)
 
     @shield
-    async def reject_all(self, exception: Exception):
+    async def reject(self, exception: Exception, all_jobs: bool, important: bool = False):
         tasks = []
+        if all_jobs:
+            future_set = self.important_futures.union(self.futures)
+        else:
+            future_set = self.important_futures if important else self.futures
 
-        while self.futures:
-            future = self.futures.pop()  # type: TaskWrapper
+        while future_set:
+            future = future_set.pop()  # type: TaskWrapper
 
             if future.done():
                 continue
@@ -81,14 +90,14 @@ class FutureStore:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def create_task(self, coro: T) -> T:
+    def create_task(self, coro: T, important: bool = False) -> T:
         task = TaskWrapper(self.loop.create_task(coro))
-        self.add(task)
+        self.add(task, important)
         return task
 
-    def create_future(self):
+    def create_future(self, important: bool = False):
         future = self.loop.create_future()
-        self.add(future)
+        self.add(future, important)
         return future
 
     def get_child(self) -> "FutureStore":
@@ -111,22 +120,24 @@ class Base:
         self.closing = self._create_closing_future()
 
     def _create_closing_future(self):
-        future = self.__future_store.create_future()
+        future = self.__future_store.create_future(True)
         future.add_done_callback(lambda x: x.exception())
         return future
 
-    def _cancel_tasks(self, exc: Union[Exception, Type[Exception]] = None):
-        return self.__future_store.reject_all(exc)
+    def _cancel_tasks(self, exc: Union[Exception, Type[Exception]] = None, all_tasks: bool = True, important: bool = False):
+        if all_tasks:
+            return self.__future_store.reject(exc, all_jobs=True)
+        return self.__future_store.reject(exc, all_jobs=False, important=important)
 
     def _future_store_child(self):
         return self.__future_store.get_child()
 
     # noinspection PyShadowingNames
-    def create_task(self, coro) -> asyncio.Future:
-        return self.__future_store.create_task(coro)
+    def create_task(self, coro, important: bool = False) -> asyncio.Future:
+        return self.__future_store.create_task(coro, important)
 
-    def create_future(self) -> asyncio.Future:
-        return self.__future_store.create_future()
+    def create_future(self, important: bool = False) -> asyncio.Future:
+        return self.__future_store.create_future(important)
 
     @abc.abstractmethod
     async def _on_close(self, exc=None):  # pragma: no cover
@@ -137,10 +148,13 @@ class Base:
             return
 
         with suppress(Exception):
-            await self._cancel_tasks(exc)
+            await self._cancel_tasks(exc, all_tasks=False, important=False)
 
         with suppress(Exception):
             await self._on_close(exc)
+
+        with suppress(Exception):
+            await self._cancel_tasks(exc, all_tasks=False, important=True)
 
     async def close(self, exc=asyncio.CancelledError()):
         if self.is_closed:
@@ -161,10 +175,11 @@ class Base:
         return self.closing.done()
 
 
-def task(func: T) -> T:
-    @wraps(func)
-    async def wrap(self: "Base", *args, **kwargs):
-        # noinspection PyCallingNonCallable
-        return await self.create_task(func(self, *args, **kwargs))
-
-    return wrap
+def task(important: bool = False):
+    def wrapper(func: T) -> T:
+        @wraps(func)
+        async def wrap(self: "Base", *args, **kwargs):
+            # noinspection PyCallingNonCallable
+            return await self.create_task(func(self, *args, **kwargs), important)
+        return wrap
+    return wrapper

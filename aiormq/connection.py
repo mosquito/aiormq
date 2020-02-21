@@ -214,7 +214,7 @@ class Connection(Base):
             raise err
         return frame
 
-    @task
+    @task(important=True)
     async def connect(self, client_properties: dict = None):
         if self.writer is not None:
             raise RuntimeError("Already connected")
@@ -273,10 +273,10 @@ class Connection(Base):
         await self.__rpc(spec.Connection.Open(virtual_host=self.vhost))
 
         # noinspection PyAsyncCall
-        self._reader_task = self.create_task(self.__reader())
+        self._reader_task = self.create_task(self.__reader(), important=True)
 
         # noinspection PyAsyncCall
-        heartbeat_task = self.create_task(self.__heartbeat_task())
+        heartbeat_task = self.create_task(self.__heartbeat_task(), important=True)
         heartbeat_task.add_done_callback(self._on_heartbeat_done)
         self.loop.call_soon(self.connected.set)
 
@@ -285,7 +285,8 @@ class Connection(Base):
     def _on_heartbeat_done(self, future):
         if not future.cancelled() and future.exception():
             self.create_task(
-                self.close(ConnectionError("heartbeat task was failed."))
+                self.close(ConnectionError("heartbeat task was failed.")),
+                important=True
             )
 
     async def __heartbeat_task(self):
@@ -370,7 +371,7 @@ class Connection(Base):
         else:
             return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
 
-    @task
+    @task(important=True)
     async def __reader(self):
         try:
             while not self.reader.at_eof():
