@@ -1,12 +1,14 @@
 import asyncio
 import os
 import uuid
+from contextlib import suppress
 
 import pytest
 from binascii import hexlify
 
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
+from aiormq.types import DeliveredMessage
 from .conftest import skip_when_quick_test
 
 
@@ -273,6 +275,61 @@ async def test_cancel_on_queue_deleted(amqp_connection, event_loop):
     await asyncio.sleep(0.1)
 
     assert consume_ok.consumer_tag not in channel.consumers
+
+
+@skip_when_quick_test
+async def test_connection_open_on_consume_message_nack_after_cancellation(
+    amqp_connection,
+    event_loop
+):
+    conn = amqp_connection  # type: aiormq.Connection
+    called = False
+
+    def close_callback(_):
+        nonlocal called
+        called = True
+
+    async def consume(message: DeliveredMessage):
+        try:
+            await asyncio.sleep(20)
+        finally:
+            await message.channel.basic_reject(message.delivery.delivery_tag)
+
+    conn.closing.add_done_callback(close_callback)
+
+    NUMBER_OF_CLIENTS = 10
+
+    async def set_up():
+        channel = await conn.channel(publisher_confirms=False)
+        await channel.basic_qos(prefetch_count=3)
+        queue = str(uuid.uuid4())
+        await channel.queue_declare(queue=queue, auto_delete=True)
+        for _ in range(20):
+            await channel.basic_publish(b'0', routing_key=queue)
+        return channel, queue
+
+    setups = await asyncio.gather(
+        *(set_up()
+          for _ in range(NUMBER_OF_CLIENTS))
+    )
+
+    consumes = await asyncio.gather(
+        *(channel.basic_consume(queue, consume)
+          for channel, queue in setups)
+    )
+
+    await asyncio.sleep(0.5)
+    for (channel, queue), consume in zip(setups, consumes):
+        # It also spams ChannelInvalidStateError
+        # because of connection closing, but we are not interested
+        with suppress(aiormq.exceptions.ChannelInvalidStateError):
+            await channel.basic_cancel(consume.consumer_tag)
+        await asyncio.sleep(0.1)
+        await channel.close()
+        await asyncio.sleep(0.1)
+    await asyncio.sleep(0.5)
+
+    assert called is False
 
 
 URL_VHOSTS = [
