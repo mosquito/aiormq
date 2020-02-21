@@ -14,7 +14,7 @@ from pamqp.body import ContentBody
 
 from aiormq.tools import LazyCoroutine, awaitable
 from . import exceptions as exc
-from .base import Base, task
+from .base import Base, task, TaskPriority
 from .types import (
     DeliveredMessage,
     ConfirmationFrameType,
@@ -77,7 +77,7 @@ class Channel(Base):
         self.on_return_callbacks = set()
         self._close_exception = None
 
-        self.create_task(self._reader(), important=True)
+        self.create_task(self._reader(), priority=TaskPriority.HIGH)
         self.closing.add_done_callback(self.__clean_up_when_writer_close)
 
     def __clean_up_when_writer_close(self, _):
@@ -98,7 +98,7 @@ class Channel(Base):
     def __str__(self):
         return str(self.number)
 
-    @task(important=True)
+    @task(priority=TaskPriority.HIGH)
     async def rpc(self, frame: spec.Frame) -> typing.Optional[spec.Frame]:
         async with self.lock:
             self.writer.write(pamqp.frame.marshal(frame, self.number))
@@ -181,7 +181,7 @@ class Channel(Base):
 
         consumer = self.consumers.get(frame.consumer_tag)
         if consumer is not None:
-            self.create_task(consumer(message), important=False)
+            self.create_task(consumer(message), TaskPriority.LOW)
 
     async def _on_get(
         self, frame: typing.Union[spec.Basic.GetOk, spec.Basic.GetEmpty]

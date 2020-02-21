@@ -14,7 +14,7 @@ from yarl import URL
 
 from . import exceptions as exc
 from .auth import AuthMechanism
-from .base import Base, task
+from .base import Base, task, TaskPriority
 from .channel import Channel
 from .tools import censor_url
 from .types import ArgumentsType, SSLCerts, URLorStr
@@ -214,7 +214,7 @@ class Connection(Base):
             raise err
         return frame
 
-    @task(important=True)
+    @task(TaskPriority.HIGH)
     async def connect(self, client_properties: dict = None):
         if self.writer is not None:
             raise RuntimeError("Already connected")
@@ -273,12 +273,15 @@ class Connection(Base):
         await self.__rpc(spec.Connection.Open(virtual_host=self.vhost))
 
         # noinspection PyAsyncCall
-        self._reader_task = self.create_task(self.__reader(), important=True)
+        self._reader_task = self.create_task(
+            self.__reader(),
+            priority=TaskPriority.HIGH
+        )
 
         # noinspection PyAsyncCall
         heartbeat_task = self.create_task(
             self.__heartbeat_task(),
-            important=True
+            priority=TaskPriority.HIGH
         )
         heartbeat_task.add_done_callback(self._on_heartbeat_done)
         self.loop.call_soon(self.connected.set)
@@ -289,7 +292,7 @@ class Connection(Base):
         if not future.cancelled() and future.exception():
             self.create_task(
                 self.close(ConnectionError("heartbeat task was failed.")),
-                important=True
+                priority=TaskPriority.HIGH
             )
 
     async def __heartbeat_task(self):
@@ -374,7 +377,7 @@ class Connection(Base):
         else:
             return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
 
-    @task(important=True)
+    @task(priority=TaskPriority.HIGH)
     async def __reader(self):
         try:
             while not self.reader.at_eof():
