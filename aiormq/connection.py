@@ -437,12 +437,14 @@ class Connection(Base):
         self.reader = None
         self.writer = None
 
-        await asyncio.gather(self._reader_task, return_exceptions=True)
+        reader = self._reader_task
         self._reader_task = None
 
         await asyncio.gather(
             self.__close_writer(writer), return_exceptions=True
         )
+
+        await asyncio.gather(reader, return_exceptions=True)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
