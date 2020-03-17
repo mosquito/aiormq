@@ -289,7 +289,7 @@ class Connection(Base):
             self.connection_tune.heartbeat * self.HEARTBEAT_INTERVAL_MULTIPLIER
         )
         heartbeat_grace_timeout = (
-            self.connection_tune.heartbeat * self.HEARTBEAT_GRACE_MULTIPLIER
+            heartbeat_interval * self.HEARTBEAT_GRACE_MULTIPLIER
         )
 
         while self.writer:
