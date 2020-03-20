@@ -6,7 +6,7 @@ class AMQPError(Exception):
     reason = "An unspecified AMQP error has occurred: %s"
 
     def __repr__(self):
-        return "<%s: %s>" % (self.__class__.__name__, self.reason % self.args)
+        return "<%s: %s>" % (self.__class__.__name__, self.reason % str(self.args))
 
 
 # Backward compatibility
