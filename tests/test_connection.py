@@ -296,7 +296,6 @@ async def test_connection_urls_vhosts(url, vhost, event_loop):
 
 async def test_ssl_verification_fails_without_trusted_ca(event_loop):
     url = AMQP_URL.with_scheme("amqps")
-    print(url)
     with pytest.raises(ConnectionError, match=".*CERTIFICATE_VERIFY_FAILED.*"):
         connection = aiormq.Connection(url, loop=event_loop)
         await connection.connect()
