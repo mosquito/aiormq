@@ -7,7 +7,7 @@ from binascii import hexlify
 
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
-from .conftest import skip_when_quick_test
+from .conftest import skip_when_quick_test, AMQP_URL
 
 
 pytestmark = pytest.mark.asyncio
@@ -292,3 +292,12 @@ URL_VHOSTS = [
 @pytest.mark.parametrize("url,vhost", URL_VHOSTS)
 async def test_connection_urls_vhosts(url, vhost, event_loop):
     assert aiormq.Connection(url, loop=event_loop).vhost == vhost
+
+
+async def test_ssl_verification_fails_without_trusted_ca(event_loop):
+    url = AMQP_URL.with_scheme("amqps")
+    print(url)
+    with pytest.raises(ConnectionError, match=".*CERTIFICATE_VERIFY_FAILED.*"):
+        connection = aiormq.Connection(url, loop=event_loop)
+        await connection.connect()
+

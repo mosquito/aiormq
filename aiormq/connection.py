@@ -145,11 +145,7 @@ class Connection(Base):
 
     def _get_ssl_context(self):
         context = ssl.create_default_context(
-            (
-                ssl.Purpose.SERVER_AUTH
-                if self.ssl_certs.key
-                else ssl.Purpose.CLIENT_AUTH
-            ),
+            ssl.Purpose.SERVER_AUTH,
             capath=self.ssl_certs.capath,
             cafile=self.ssl_certs.cafile,
             cadata=self.ssl_certs.cadata,
