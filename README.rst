@@ -10,9 +10,9 @@ AIORMQ
    :target: https://github.com/mosquito/aiormq
    :alt: Status
 
-.. image:: https://cloud.drone.io/api/badges/mosquito/aiormq/status.svg
-   :target: https://cloud.drone.io/mosquito/aiormq
-   :alt: Drone CI
+.. image:: ![tox](https://github.com/mosquito/aiormq/workflows/tox/badge.svg)
+   :target: https://github.com/mosquito/aiormq/actions?query=workflow%3Atox
+   :alt: Build status
 
 .. image:: https://img.shields.io/pypi/v/aiormq.svg
    :target: https://pypi.python.org/pypi/aiormq/
