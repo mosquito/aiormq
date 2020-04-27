@@ -36,6 +36,6 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: tox ${{ matrix.toxenv }}
-      uses: snakepacker/python@all
+      uses: snakepacker/python/all
       with: 
         args: tox -e ${{ matrix.python-version }}
