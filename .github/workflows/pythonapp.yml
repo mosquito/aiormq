@@ -16,7 +16,7 @@ jobs:
 
     services:
       rabbitmq:
-        image: mosquito/aiormq-rabbitmq
+        image: docker://mosquito/aiormq-rabbitmq
 
     strategy:
       matrix:
@@ -36,6 +36,6 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: tox ${{ matrix.toxenv }}
-      uses: snakepacker/python/all@master
+      uses: docker://snakepacker/python:all
       with: 
         args: tox -e ${{ matrix.python-version }}
