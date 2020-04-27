@@ -10,7 +10,7 @@ AIORMQ
    :target: https://github.com/mosquito/aiormq
    :alt: Status
 
-.. image:: ![tox](https://github.com/mosquito/aiormq/workflows/tox/badge.svg)
+.. image:: https://github.com/mosquito/aiormq/workflows/tox/badge.svg
    :target: https://github.com/mosquito/aiormq/actions?query=workflow%3Atox
    :alt: Build status
 
