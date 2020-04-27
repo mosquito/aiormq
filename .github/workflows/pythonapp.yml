@@ -1,0 +1,41 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: aiormq
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    services:
+      rabbitmq:
+        image: mosquito/aiormq-rabbitmq
+
+    strategy:
+      matrix:
+        toxenv:
+          - checkdoc
+          - mypy
+          - py35
+          - py36
+          - py37
+          - py38
+          - py35-uvloop
+          - py36-uvloop
+          - py37-uvloop
+          - py38-uvloop
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: tox ${{ matrix.toxenv }}
+      uses: snakepacker/python:all
+      run: |
+        tox -e ${{ matrix.python-version }}
