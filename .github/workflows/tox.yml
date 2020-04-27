@@ -10,19 +10,33 @@ on:
     branches: [ master ]
 
 jobs:
-  build:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        linter:
+          - checkdoc
+          - mypy
+    steps:
+    - name: tox ${{ matrix.linter }}
+      uses: docker://snakepacker/python:all
+      env:
+        TOXENV: ${{ matrix.linter }} 
+      with:
+        args: tox
 
+  build:
     runs-on: ubuntu-latest
 
     services:
       rabbitmq:
         image: docker://mosquito/aiormq-rabbitmq
+        ports:
+          - 5672:5672
 
     strategy:
       matrix:
         toxenv:
-          - checkdoc
-          - mypy
           - py35
           - py36
           - py37
@@ -38,6 +52,6 @@ jobs:
     - name: tox ${{ matrix.toxenv }}
       uses: docker://snakepacker/python:all
       env:
-        TOXENV: ${{ matrix.python-version }} 
+        TOXENV: ${{ matrix.toxenv }} 
       with:
         args: tox
