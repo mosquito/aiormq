@@ -60,5 +60,4 @@ jobs:
           AMQP_URL: amqp://guest:guest@rabbitmq
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         with:
-          entrypoint: /bin/bash
-          args: python3 /usr/local/sbin/wait-for-port rabbitmq:5672 && tox
+          args: /bin/bash -c "wait-for-port rabbitmq:5672 && tox"
