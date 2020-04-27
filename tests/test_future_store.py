@@ -6,30 +6,30 @@ from aiormq.base import FutureStore
 
 
 @pytest.fixture
-def root_store(event_loop):
-    store = FutureStore(loop=event_loop)
+def root_store(loop):
+    store = FutureStore(loop=loop)
     try:
         yield store
     finally:
-        event_loop.run_until_complete(
-            store.reject_all(Exception("Cancelling"))
+        loop.run_until_complete(
+            store.reject_all(Exception("Cancelling")),
         )
 
 
 @pytest.fixture
-def child_store(event_loop, root_store):
+def child_store(loop, root_store):
     store = root_store.get_child()
     try:
         yield store
     finally:
-        event_loop.run_until_complete(
-            store.reject_all(Exception("Cancelling"))
+        loop.run_until_complete(
+            store.reject_all(Exception("Cancelling")),
         )
 
 
 @pytest.mark.asyncio
 async def test_reject_all(
-    event_loop, root_store: FutureStore, child_store: FutureStore
+    loop, root_store: FutureStore, child_store: FutureStore
 ):
 
     future1 = root_store.create_future()
@@ -49,7 +49,7 @@ async def test_reject_all(
 
 @pytest.mark.asyncio
 async def test_result(
-    event_loop, root_store: FutureStore, child_store: FutureStore
+    loop, root_store: FutureStore, child_store: FutureStore
 ):
     async def result():
         await asyncio.sleep(0.1)
@@ -60,7 +60,7 @@ async def test_result(
 
 @pytest.mark.asyncio
 async def test_siblings(
-    event_loop, root_store: FutureStore, child_store: FutureStore
+    loop, root_store: FutureStore, child_store: FutureStore
 ):
     async def coro(store):
         await asyncio.sleep(0.1)

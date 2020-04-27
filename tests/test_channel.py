@@ -68,17 +68,17 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
 
 
 @pytest.mark.no_catch_loop_exceptions
-async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
+async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
     channel = amqp_channel  # type: aiormq.Channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare()
 
-    future = event_loop.create_future()
+    future = loop.create_future()
 
     await channel.basic_publish(b"urgent", routing_key=declare_ok.queue)
 
-    consumer_tag = event_loop.create_future()
+    consumer_tag = loop.create_future()
 
     async def bad_consumer(message):
         await channel.basic_cancel(await consumer_tag)
@@ -86,7 +86,7 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
         raise Exception
 
     consume_ok = await channel.basic_consume(
-        declare_ok.queue, bad_consumer, no_ack=False
+        declare_ok.queue, bad_consumer, no_ack=False,
     )
 
     consumer_tag.set_result(consume_ok.consumer_tag)
@@ -95,10 +95,10 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
     await channel.basic_reject(message.delivery.delivery_tag, requeue=True)
     assert message.body == b"urgent"
 
-    future = event_loop.create_future()
+    future = loop.create_future()
 
     await channel.basic_consume(
-        declare_ok.queue, future.set_result, no_ack=True
+        declare_ok.queue, future.set_result, no_ack=True,
     )
 
     message = await future
@@ -107,7 +107,7 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
     await channel.basic_ack(message.delivery.delivery_tag)
 
 
-async def test_ack_nack_reject(amqp_channel: aiormq.Channel, event_loop):
+async def test_ack_nack_reject(amqp_channel: aiormq.Channel):
     channel = amqp_channel  # type: aiormq.Channel
     await channel.basic_qos(prefetch_count=1)
 
@@ -146,13 +146,13 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
     try:
         declare_ok = await channel.queue_declare(exclusive=True)
         await channel.queue_bind(
-            declare_ok.queue, exchange, routing_key="test.5"
+            declare_ok.queue, exchange, routing_key="test.5",
         )
 
         for i in range(10):
             messages = [
                 channel.basic_publish(
-                    b"test", exchange=exchange, routing_key="test.{}".format(i)
+                    b"test", exchange=exchange, routing_key="test.{}".format(i),
                 )
                 for i in range(10)
             ]
@@ -184,7 +184,7 @@ async def test_exclusive_queue_locked(amqp_connection):
 async def test_remove_writer_when_closed(amqp_channel: aiormq.Channel):
     with pytest.raises(aiormq.exceptions.ChannelClosed):
         await amqp_channel.queue_declare(
-            "amq.forbidden_queue_name", auto_delete=True
+            "amq.forbidden_queue_name", auto_delete=True,
         )
 
     with pytest.raises(aiormq.exceptions.ChannelInvalidStateError):

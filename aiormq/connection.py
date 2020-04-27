@@ -20,6 +20,7 @@ from .tools import censor_url
 from .types import ArgumentsType, SSLCerts, URLorStr
 from .version import __version__
 
+
 log = logging.getLogger(__name__)
 
 
@@ -38,7 +39,7 @@ PRODUCT = "aiormq"
 PLATFORM = "{} {} ({} build {})".format(
     platform.python_implementation(),
     platform.python_version(),
-    *platform.python_build()
+    *platform.python_build(),
 )
 
 
@@ -113,10 +114,10 @@ class Connection(Base):
         self.last_channel = 1
 
         self.heartbeat_monitoring = parse_bool(
-            self.url.query.get("heartbeat_monitoring", "1")
+            self.url.query.get("heartbeat_monitoring", "1"),
         )
         self.heartbeat_timeout = parse_int(
-            self.url.query.get("heartbeat", "0")
+            self.url.query.get("heartbeat", "0"),
         )
         self.heartbeat_last_received = 0
         self.last_channel_lock = asyncio.Lock()
@@ -190,7 +191,7 @@ class Connection(Base):
                 return AuthMechanism[mechanism]
 
         raise exc.AuthenticationError(
-            start_frame.mechanisms, [m.name for m in AuthMechanism]
+            start_frame.mechanisms, [m.name for m in AuthMechanism],
         )
 
     async def __rpc(self, request: spec.Frame, wait_response=True):
@@ -223,12 +224,12 @@ class Connection(Base):
 
         if self.url.scheme == "amqps":
             ssl_context = await self.loop.run_in_executor(
-                None, self._get_ssl_context
+                None, self._get_ssl_context,
             )
 
         try:
             self.reader, self.writer = await asyncio.open_connection(
-                self.url.host, self.url.port, ssl=ssl_context
+                self.url.host, self.url.port, ssl=ssl_context,
             )
         except OSError as e:
             raise ConnectionError(*e.args) from e
@@ -251,11 +252,11 @@ class Connection(Base):
         self.connection_tune = await self.__rpc(
             spec.Connection.StartOk(
                 client_properties=self._client_properties(
-                    **(client_properties or {})
+                    **(client_properties or {}),
                 ),
                 mechanism=credentials.name,
                 response=credentials.value(self).marshal(),
-            )
+            ),
         )  # type: spec.Connection.Tune
 
         if self.heartbeat_timeout > 0:
@@ -285,7 +286,7 @@ class Connection(Base):
     def _on_heartbeat_done(self, future):
         if not future.cancelled() and future.exception():
             self.create_task(
-                self.close(ConnectionError("heartbeat task was failed."))
+                self.close(ConnectionError("heartbeat task was failed.")),
             )
 
     async def __heartbeat_task(self):
@@ -318,8 +319,8 @@ class Connection(Base):
             await self.close(
                 ConnectionError(
                     "Server connection probably hang, last heartbeat "
-                    "received %.3f seconds ago" % last_heartbeat
-                )
+                    "received %.3f seconds ago" % last_heartbeat,
+                ),
             )
 
             return
@@ -383,7 +384,7 @@ class Connection(Base):
                         return
                     if isinstance(frame, spec.Connection.Close):
                         return await self.close(
-                            self.__exception_by_code(frame)
+                            self.__exception_by_code(frame),
                         )
                     elif isinstance(frame, Heartbeat):
                         continue
@@ -393,7 +394,7 @@ class Connection(Base):
 
                 if self.channels.get(channel) is None:
                     log.exception(
-                        "Got frame for closed channel %d: %r", channel, frame
+                        "Got frame for closed channel %d: %r", channel, frame,
                     )
                     continue
 
@@ -430,7 +431,7 @@ class Connection(Base):
         )
 
         await asyncio.gather(
-            self.__rpc(frame, wait_response=False), return_exceptions=True
+            self.__rpc(frame, wait_response=False), return_exceptions=True,
         )
 
         writer = self.writer
@@ -439,7 +440,7 @@ class Connection(Base):
         self._reader_task = None
 
         await asyncio.gather(
-            self.__close_writer(writer), return_exceptions=True
+            self.__close_writer(writer), return_exceptions=True,
         )
 
         await asyncio.gather(self._reader_task, return_exceptions=True)
@@ -506,7 +507,7 @@ class Connection(Base):
             channel_number,
             frame_buffer=frame_buffer,
             publisher_confirms=publisher_confirms,
-            **kwargs
+            **kwargs,
         )
 
         self.channels[channel_number] = channel

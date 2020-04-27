@@ -9,19 +9,19 @@ from functools import partial
 from io import BytesIO
 
 import pamqp.frame
-from pamqp import specification as spec, ContentHeader
+from pamqp import ContentHeader
+from pamqp import specification as spec
 from pamqp.body import ContentBody
 
 from aiormq.tools import LazyCoroutine, awaitable
+
 from . import exceptions as exc
 from .base import Base, task
 from .types import (
-    DeliveredMessage,
-    ConfirmationFrameType,
-    ConsumerCallback,
-    ArgumentsType,
+    ArgumentsType, ConfirmationFrameType, ConsumerCallback, DeliveredMessage,
     DrainResult,
 )
+
 
 log = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ class Channel(Base):
                         self.REJECT_CANCELLED_FRAME_TIMEOUT,
                     )
                     log.warning(
-                        "Frame %r was rejected because task cancelled", result
+                        "Frame %r was rejected because task cancelled", result,
                     )
                 except asyncio.TimeoutError as e:
                     await self.close(e)
@@ -158,7 +158,7 @@ class Channel(Base):
 
         # noinspection PyTypeChecker
         return DeliveredMessage(
-            delivery=frame, header=header, body=body.getvalue(), channel=self
+            delivery=frame, header=header, body=body.getvalue(), channel=self,
         )
 
     @staticmethod
@@ -236,7 +236,7 @@ class Channel(Base):
             return
         elif confirmation.done():  # pragma: nocover
             log.warn(
-                "Delivery tag %r confirmed %r was ignored", delivery_tag, frame
+                "Delivery tag %r confirmed %r was ignored", delivery_tag, frame,
             )
             return
         elif isinstance(frame, spec.Basic.Ack):
@@ -244,7 +244,7 @@ class Channel(Base):
             return
 
         confirmation.set_exception(
-            exc.DeliveryError(None, frame)
+            exc.DeliveryError(None, frame),
         )  # pragma: nocover
 
     async def _on_confirm(self, frame: ConfirmationFrameType):
@@ -262,7 +262,7 @@ class Channel(Base):
                 if frame.delivery_tag >= delivery_tag:
                     # Should be called later to avoid keys copying
                     self.loop.call_soon(
-                        self._confirm_delivery, delivery_tag, frame
+                        self._confirm_delivery, delivery_tag, frame,
                     )
         else:
             self._confirm_delivery(frame.delivery_tag, frame)
@@ -277,7 +277,7 @@ class Channel(Base):
                         await self._on_deliver(frame)
                     continue
                 elif isinstance(
-                    frame, (spec.Basic.GetOk, spec.Basic.GetEmpty)
+                    frame, (spec.Basic.GetOk, spec.Basic.GetEmpty),
                 ):
                     with suppress(Exception):
                         await self._on_get(frame)
@@ -291,7 +291,7 @@ class Channel(Base):
                 elif isinstance(frame, spec.Basic.CancelOk):
                     self.consumers.pop(frame.consumer_tag, None)
                 elif isinstance(
-                    frame, (spec.Basic.Ack, spec.Basic.Nack, spec.Basic.Reject)
+                    frame, (spec.Basic.Ack, spec.Basic.Nack, spec.Basic.Reject),
                 ):
                     with suppress(Exception):
                         await self._on_confirm(frame)
@@ -300,8 +300,8 @@ class Channel(Base):
                     exc = self.__exception_by_code(frame)
                     self.writer.write(
                         pamqp.frame.marshal(
-                            spec.Channel.CloseOk(), self.number
-                        )
+                            spec.Channel.CloseOk(), self.number,
+                        ),
                     )
 
                     self.connection.channels.pop(self.number, None)
@@ -317,7 +317,7 @@ class Channel(Base):
 
     async def _on_close(self, exc=None):
         result = await self.rpc(
-            spec.Channel.Close(reply_code=spec.REPLY_SUCCESS)
+            spec.Channel.Close(reply_code=spec.REPLY_SUCCESS),
         )  # type: spec.Channel.CloseOk
 
         self.connection.channels.pop(self.number, None)
@@ -340,7 +340,7 @@ class Channel(Base):
     ) -> spec.Basic.CancelOk:
         # noinspection PyTypeChecker
         return await self.rpc(
-            spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait)
+            spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
         )
 
     async def basic_consume(
@@ -372,7 +372,7 @@ class Channel(Base):
                 exclusive=exclusive,
                 consumer_tag=consumer_tag,
                 arguments=arguments,
-            )
+            ),
         )
 
     def basic_ack(self, delivery_tag, multiple=False) -> DrainResult:
@@ -380,7 +380,7 @@ class Channel(Base):
             pamqp.frame.marshal(
                 spec.Basic.Ack(delivery_tag=delivery_tag, multiple=multiple),
                 self.number,
-            )
+            ),
         )
 
         return LazyCoroutine(self.connection.drain)
@@ -402,7 +402,7 @@ class Channel(Base):
                     requeue=requeue,
                 ),
                 self.number,
-            )
+            ),
         )
 
         return LazyCoroutine(self.connection.drain)
@@ -412,7 +412,7 @@ class Channel(Base):
             pamqp.frame.marshal(
                 spec.Basic.Reject(delivery_tag=delivery_tag, requeue=requeue),
                 self.number,
-            )
+            ),
         )
 
         return LazyCoroutine(self.connection.drain)
@@ -464,8 +464,8 @@ class Channel(Base):
 
                 confirmation.add_done_callback(
                     lambda _: self.message_id_delivery_tag.pop(
-                        message_id, None
-                    )
+                        message_id, None,
+                    ),
                 )
 
             self.writer.write(pamqp.frame.marshal(frame, self.number))
@@ -480,7 +480,7 @@ class Channel(Base):
                 for chunk in reader:
                     # noinspection PyTypeChecker
                     self.writer.write(
-                        pamqp.frame.marshal(ContentBody(chunk), self.number)
+                        pamqp.frame.marshal(ContentBody(chunk), self.number),
                     )
 
         if not self.publisher_confirms:
@@ -501,7 +501,7 @@ class Channel(Base):
                 prefetch_size=prefetch_size or 0,
                 prefetch_count=prefetch_count or 0,
                 global_=global_,
-            )
+            ),
         )
 
     async def basic_recover(
@@ -538,7 +538,7 @@ class Channel(Base):
                 internal=bool(internal),
                 nowait=bool(nowait),
                 arguments=arguments,
-            )
+            ),
         )
 
     def exchange_delete(
@@ -551,8 +551,8 @@ class Channel(Base):
         # noinspection PyTypeChecker
         return self.rpc(
             spec.Exchange.Delete(
-                exchange=exchange, nowait=nowait, if_unused=if_unused
-            )
+                exchange=exchange, nowait=nowait, if_unused=if_unused,
+            ),
         )
 
     async def exchange_bind(
@@ -572,7 +572,7 @@ class Channel(Base):
                 routing_key=routing_key,
                 nowait=nowait,
                 arguments=arguments,
-            )
+            ),
         )
 
     async def exchange_unbind(
@@ -592,7 +592,7 @@ class Channel(Base):
                 routing_key=routing_key,
                 nowait=nowait,
                 arguments=arguments,
-            )
+            ),
         )
 
     async def flow(self, active: bool) -> spec.Channel.FlowOk:
@@ -615,7 +615,7 @@ class Channel(Base):
                 routing_key=routing_key,
                 nowait=nowait,
                 arguments=arguments,
-            )
+            ),
         )
 
     async def queue_declare(
@@ -639,7 +639,7 @@ class Channel(Base):
                 auto_delete=bool(auto_delete),
                 nowait=bool(nowait),
                 arguments=arguments,
-            )
+            ),
         )
 
     async def queue_delete(
@@ -656,7 +656,7 @@ class Channel(Base):
                 if_unused=if_unused,
                 if_empty=if_empty,
                 nowait=nowait,
-            )
+            ),
         )
 
     async def queue_purge(
@@ -679,7 +679,7 @@ class Channel(Base):
                 arguments=arguments,
                 queue=queue,
                 exchange=exchange,
-            )
+            ),
         )
 
     async def tx_commit(self) -> spec.Tx.CommitOk:

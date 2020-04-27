@@ -1,11 +1,11 @@
 import os
-
-from setuptools import setup, find_packages
 from importlib.machinery import SourceFileLoader
+
+from setuptools import find_packages, setup
 
 
 module = SourceFileLoader(
-    "version", os.path.join("aiormq", "version.py")
+    "version", os.path.join("aiormq", "version.py"),
 ).load_module()
 
 
@@ -47,14 +47,14 @@ setup(
     package_data={"aiormq": ["py.typed"]},
     extras_require={
         "develop": [
+            "aiomisc<10",
             "async_generator",
             "coverage!=4.3",
             "coveralls",
             "pylava",
             "pytest",
-            "pytest-asyncio",
             "pytest-cov",
             "tox>=2.4",
-        ]
+        ],
     },
 )

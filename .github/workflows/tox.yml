@@ -21,7 +21,7 @@ jobs:
     - name: tox ${{ matrix.linter }}
       uses: docker://snakepacker/python:all
       env:
-        TOXENV: ${{ matrix.linter }} 
+        TOXENV: ${{ matrix.linter }}
       with:
         args: tox
 
@@ -52,6 +52,7 @@ jobs:
     - name: tox ${{ matrix.toxenv }}
       uses: docker://snakepacker/python:all
       env:
-        TOXENV: ${{ matrix.toxenv }} 
+        TOXENV: ${{ matrix.toxenv }}
+        AMQP_URL: amqp://guest:guest@rabbitmq
       with:
         args: tox

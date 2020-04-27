@@ -5,9 +5,8 @@ import pytest
 from aiormq.tools import LazyCoroutine, awaitable
 
 
-@pytest.mark.asyncio
 class TestLazyCoroutine:
-    async def test_coro(self, event_loop):
+    async def test_coro(self, loop):
         async def foo():
             await asyncio.sleep(0)
             return 42
@@ -16,23 +15,23 @@ class TestLazyCoroutine:
 
         assert await bar == 42
 
-    async def test_future(self, event_loop):
+    async def test_future(self, loop):
         def foo():
-            f = event_loop.create_future()
-            event_loop.call_soon(f.set_result, 42)
+            f = loop.create_future()
+            loop.call_soon(f.set_result, 42)
             return f
 
         bar = LazyCoroutine(foo)
 
         assert await bar == 42
 
-    async def test_task(self, event_loop):
+    async def test_task(self, loop):
         def foo():
             async def inner():
                 await asyncio.sleep(0)
                 return 42
 
-            return event_loop.create_task(inner())
+            return loop.create_task(inner())
 
         bar = LazyCoroutine(foo)
 
@@ -78,7 +77,5 @@ AWAITABLE_FUNCS = [
 
 
 @pytest.mark.parametrize("func,result", AWAITABLE_FUNCS)
-@pytest.mark.asyncio
-@pytest.mark.allow_get_event_loop
-async def test_awaitable(func, result, event_loop):
+async def test_awaitable(func, result, loop):
     assert await awaitable(func)() == result
