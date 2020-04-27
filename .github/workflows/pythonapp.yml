@@ -37,5 +37,7 @@ jobs:
 
     - name: tox ${{ matrix.toxenv }}
       uses: docker://snakepacker/python:all
-      with: 
-        args: tox -e ${{ matrix.python-version }}
+      with:
+        args: tox
+        env:
+          TOXENV: ${{ matrix.python-version }} 
