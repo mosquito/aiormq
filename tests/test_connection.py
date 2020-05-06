@@ -7,7 +7,8 @@ import pytest
 
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
-from .conftest import skip_when_quick_test, AMQP_URL
+
+from .conftest import AMQP_URL, skip_when_quick_test
 
 
 CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
@@ -205,7 +206,6 @@ async def test_non_publisher_confirms(amqp_connection):
 
 
 @skip_when_quick_test
-@pytest.mark.no_catch_loop_exceptions
 async def test_no_free_channels(amqp_connection: aiormq.Connection):
     await asyncio.wait_for(
         asyncio.wait(
@@ -287,12 +287,13 @@ URL_VHOSTS = [
 ]
 
 
-async def test_ssl_verification_fails_without_trusted_ca(event_loop):
+async def test_ssl_verification_fails_without_trusted_ca():
     url = AMQP_URL.with_scheme("amqps")
     with pytest.raises(ConnectionError, match=".*CERTIFICATE_VERIFY_FAILED.*"):
-        connection = aiormq.Connection(url, loop=event_loop)
+        connection = aiormq.Connection(url)
         await connection.connect()
 
 
+@pytest.mark.parametrize("url,vhost", URL_VHOSTS)
 async def test_connection_urls_vhosts(url, vhost, loop):
     assert aiormq.Connection(url, loop=loop).vhost == vhost

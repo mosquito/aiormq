@@ -6,9 +6,6 @@ import pytest
 import aiormq
 
 
-pytestmark = pytest.mark.asyncio
-
-
 async def test_simple(amqp_channel: aiormq.Channel):
     await amqp_channel.basic_qos(prefetch_count=1)
     assert amqp_channel.number

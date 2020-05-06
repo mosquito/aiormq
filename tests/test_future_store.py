@@ -27,7 +27,6 @@ def child_store(loop, root_store):
         )
 
 
-@pytest.mark.asyncio
 async def test_reject_all(
     loop, root_store: FutureStore, child_store: FutureStore
 ):
@@ -47,7 +46,6 @@ async def test_reject_all(
     assert not child_store.futures
 
 
-@pytest.mark.asyncio
 async def test_result(
     loop, root_store: FutureStore, child_store: FutureStore
 ):
@@ -58,7 +56,6 @@ async def test_result(
     assert await child_store.create_task(result()) == "result"
 
 
-@pytest.mark.asyncio
 async def test_siblings(
     loop, root_store: FutureStore, child_store: FutureStore
 ):
