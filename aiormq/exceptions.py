@@ -1,4 +1,5 @@
 from pamqp import specification as spec
+
 from .types import DeliveredMessage
 
 
@@ -186,7 +187,7 @@ class PublishError(DeliveryError):
         self.frame = frame
 
         super(DeliveryError, self).__init__(
-            message.delivery.reply_text, message.delivery.routing_key, *args
+            message.delivery.reply_text, message.delivery.routing_key, *args,
         )
 
 

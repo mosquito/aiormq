@@ -1,6 +1,4 @@
 import asyncio
-import pprint
-
 import gc
 import logging
 import os
@@ -8,77 +6,16 @@ import tracemalloc
 
 import pamqp
 import pytest
-
-from async_generator import yield_, async_generator
+from async_generator import async_generator, yield_
 from yarl import URL
 
 import aiormq
 from aiormq import Connection
 
 
-POLICIES = [asyncio.DefaultEventLoopPolicy]
-POLICY_IDS = ["asyncio"]
-
-try:
-    import uvloop
-
-    POLICIES = [uvloop.EventLoopPolicy]
-    POLICY_IDS = ["uvloop"]
-except ImportError:
-    pass
-
-
-@pytest.fixture(params=POLICIES, ids=POLICY_IDS)
-def event_loop(request):
-    policy = request.param()
-
-    asyncio.get_event_loop().close()
-    asyncio.set_event_loop_policy(policy)
-
-    loop = asyncio.new_event_loop()  # type: asyncio.AbstractEventLoop
-    loop.set_debug(True)
-    asyncio.set_event_loop(loop)
-
-    original = asyncio.get_event_loop
-
-    def getter_mock():
-        raise RuntimeError("asyncio.get_event_loop() call forbidden")
-
-    if not request.node.get_closest_marker("allow_get_event_loop"):
-        asyncio.get_event_loop = getter_mock
-
-    nocatch_marker = request.node.get_closest_marker(
-        "no_catch_loop_exceptions"
-    )
-
-    def on_exception(loop, err):
-        logging.exception("%s", pprint.pformat(err))
-        exceptions.append(err)
-
-    exceptions = list()
-    if not nocatch_marker:
-        loop.set_exception_handler(on_exception)
-
-    try:
-        yield loop
-
-        if exceptions:
-            raise RuntimeError(exceptions)
-
-    finally:
-        if not request.node.get_closest_marker("allow_get_event_loop"):
-            asyncio.get_event_loop = original
-
-        asyncio.set_event_loop_policy(None)
-        del policy
-
-        loop.close()
-        del loop
-
-
 def cert_path(*args):
     return os.path.join(
-        os.path.abspath(os.path.dirname(__file__)), "certs", *args
+        os.path.abspath(os.path.dirname(__file__)), "certs", *args,
     )
 
 
@@ -88,7 +25,7 @@ amqp_urls = {
     "amqp": AMQP_URL,
     "amqp-named": AMQP_URL.update_query(name="pytest"),
     "amqps": AMQP_URL.with_scheme("amqps").with_query(
-        {"cafile": cert_path("ca.pem"), "no_verify_ssl": 1}
+        {"cafile": cert_path("ca.pem"), "no_verify_ssl": 1},
     ),
     "amqps-client": AMQP_URL.with_scheme("amqps").with_query(
         {
@@ -96,7 +33,7 @@ amqp_urls = {
             "keyfile": cert_path("client.key"),
             "certfile": cert_path("client.pem"),
             "no_verify_ssl": 1,
-        }
+        },
     ),
 }
 
@@ -115,8 +52,8 @@ async def amqp_url(request):
 
 @pytest.fixture
 @async_generator
-async def amqp_connection(amqp_url, event_loop):
-    connection = Connection(amqp_url, loop=event_loop)
+async def amqp_connection(amqp_url, loop):
+    connection = Connection(amqp_url, loop=loop)
 
     await connection.connect()
 
@@ -144,7 +81,7 @@ async def amqp_channel(request, amqp_connection):
 
 
 skip_when_quick_test = pytest.mark.skipif(
-    os.getenv("TEST_QUICK") is not None, reason="quick test"
+    os.getenv("TEST_QUICK") is not None, reason="quick test",
 )
 
 
@@ -172,7 +109,7 @@ def memory_tracer():
             lineno = stat.traceback[0].lineno
             items.append(
                 "%-90s %6s %6s %6s"
-                % (fname, lineno, stat.size_diff, stat.count_diff)
+                % (fname, lineno, stat.size_diff, stat.count_diff),
             )
 
         return "\n".join(items)
@@ -185,7 +122,7 @@ def memory_tracer():
         snapshot_after = tracemalloc.take_snapshot().filter_traces(filters)
 
         top_stats = snapshot_after.compare_to(
-            snapshot_before, "lineno", cumulative=True
+            snapshot_before, "lineno", cumulative=True,
         )
 
         if top_stats:

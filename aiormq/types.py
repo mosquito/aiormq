@@ -1,6 +1,7 @@
 import typing
 
-from pamqp import specification as spec, ContentHeader
+from pamqp import ContentHeader
+from pamqp import specification as spec
 from yarl import URL
 
 
@@ -21,7 +22,7 @@ ReturnCallback = typing.Callable[[], CallbackCoro]
 ArgumentsType = typing.Dict[str, typing.Union[str, int, bool]]
 
 ConfirmationFrameType = typing.Union[
-    spec.Basic.Ack, spec.Basic.Nack, spec.Basic.Reject
+    spec.Basic.Ack, spec.Basic.Nack, spec.Basic.Reject,
 ]
 
 SSLCerts = typing.NamedTuple(
@@ -36,7 +37,7 @@ SSLCerts = typing.NamedTuple(
     ],
 )
 FrameReceived = typing.NamedTuple(
-    "FrameReceived", [("channel", int), ("frame", str)]
+    "FrameReceived", [("channel", int), ("frame", str)],
 )
 
 

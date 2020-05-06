@@ -3,7 +3,7 @@ import asyncio
 import typing
 from contextlib import suppress
 from functools import wraps
-from typing import TypeVar, Type, Union
+from typing import Type, TypeVar, Union
 
 from .tools import shield
 
