@@ -323,13 +323,17 @@ class Connection(Base):
 
     async def __receive_frame(self) -> typing.Tuple[int, int, spec.Frame]:
         async with self.lock:
-            frame_header = await self.reader.readexactly(1)
+
+            try:
+                frame_header = await self.reader.readexactly(1)
+            except asyncio.IncompleteReadError as e:
+                if len(e.partial) == 0:
+                    raise exc.ConnectionClosed(0, "socket closed")
+                else:
+                    raise
 
             if frame_header == b"\0x00":
                 raise spec.AMQPFrameError(await self.reader.read())
-
-            if self.reader is None:
-                raise ConnectionError
 
             frame_header += await self.reader.readexactly(6)
 
@@ -370,8 +374,15 @@ class Connection(Base):
     @task
     async def __reader(self):
         try:
-            while not self.reader.at_eof():
-                weight, channel, frame = await self.__receive_frame()
+            while self.reader and not self.reader.at_eof():
+                try:
+                    weight, channel, frame = await self.__receive_frame()
+                except exc.ConnectionClosed:
+                    if self.started_close:
+                        self.reader = None
+                        return
+
+                print("Received", frame)
 
                 self.heartbeat_last_received = self.loop.time()
 
@@ -399,7 +410,12 @@ class Connection(Base):
                 if isinstance(frame, CHANNEL_CLOSE_RESPONSES):
                     self.channels[channel] = None
 
-                await ch.frames.put((weight, frame))
+                if self.started_close:
+                    # Methods should be discarded after sending close
+                    #    https://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.close
+                    log.info("Ignoring frame after close %r ", frame)
+                else:
+                    await ch.frames.put((weight, frame))
         except asyncio.CancelledError as e:
             log.debug("Reader task cancelled:", exc_info=e)
         except asyncio.IncompleteReadError as e:
@@ -431,7 +447,6 @@ class Connection(Base):
         )
 
         writer = self.writer
-        self.reader = None
         self.writer = None
         self._reader_task = None
 

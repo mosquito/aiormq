@@ -49,7 +49,6 @@ class FutureStore:
 
     def __on_task_done(self, future):
         def remover(*_):
-            nonlocal future
             if future in self.futures:
                 self.futures.remove(future)
 
@@ -76,7 +75,9 @@ class FutureStore:
                 future.throw(exception or Exception)
                 tasks.append(future)
             elif isinstance(future, asyncio.Future):
-                future.set_exception(exception)
+                future.set_exception(exception or Exception)
+            else:
+                raise ValueError(future)
 
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -98,7 +99,7 @@ class FutureStore:
 
 
 class Base:
-    __slots__ = "loop", "__future_store", "closing"
+    __slots__ = "loop", "__future_store", "closing", "started_close"
 
     def __init__(self, *, loop, parent: "Base" = None):
         self.loop = loop  # type: asyncio.AbstractEventLoop
@@ -108,6 +109,7 @@ class Base:
         else:
             self.__future_store = FutureStore(loop=self.loop)
 
+        self.started_close = False
         self.closing = self._create_closing_future()
 
     def _create_closing_future(self):
@@ -133,6 +135,7 @@ class Base:
         return
 
     async def __closer(self, exc):
+        self.started_close = True
         if self.is_closed:  # pragma: no cover
             return
 
@@ -140,7 +143,13 @@ class Base:
             await self._on_close(exc)
 
         with suppress(Exception):
-            await self._cancel_tasks(exc)
+            try:
+                await self._cancel_tasks(exc)
+            except BaseException as e:
+                traceback.format_exc()
+                raise
+            finally:
+                print("Stopped cancelling...")
 
     async def close(self, exc=asyncio.CancelledError()):
         if self.is_closed:
