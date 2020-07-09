@@ -235,7 +235,7 @@ class Channel(Base):
         if confirmation is self.Returning:
             return
         elif confirmation.done():  # pragma: nocover
-            log.warn(
+            log.warning(
                 "Delivery tag %r confirmed %r was ignored", delivery_tag, frame,
             )
             return
