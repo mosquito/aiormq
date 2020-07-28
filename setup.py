@@ -47,7 +47,7 @@ setup(
     package_data={"aiormq": ["py.typed"]},
     extras_require={
         "develop": [
-            "aiomisc<10",
+            "aiomisc~=10.1.6",
             "async_generator",
             "coverage!=4.3",
             "coveralls",
