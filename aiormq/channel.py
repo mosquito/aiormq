@@ -100,12 +100,11 @@ class Channel(Base):
 
     @task
     async def rpc(self, frame: spec.Frame) -> typing.Optional[spec.Frame]:
-        writer = self.writer
-        if writer is None:
-            raise exc.ChannelInvalidStateError("writer is None")
-
         async with self.lock:
-            writer.write(pamqp.frame.marshal(frame, self.number))
+            if self.writer is None:
+                raise exc.ChannelInvalidStateError("writer is None")
+
+            self.writer.write(pamqp.frame.marshal(frame, self.number))
 
             if not (frame.synchronous or getattr(frame, "nowait", False)):
                 return
