@@ -26,13 +26,10 @@ log = logging.getLogger(__name__)
 
 CHANNEL_CLOSE_RESPONSES = (spec.Channel.Close, spec.Channel.CloseOk)
 
-try:
-    from yarl import DEFAULT_PORTS
-
-    DEFAULT_PORTS["amqp"] = 5672
-    DEFAULT_PORTS["amqps"] = 5671
-except ImportError:
-    pass
+DEFAULT_PORTS = {
+    "amqp": 5672,
+    "amqps": 5671,
+}
 
 
 PRODUCT = "aiormq"
@@ -84,6 +81,8 @@ class Connection(Base):
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=parent)
 
         self.url = URL(url)
+        if self.url.is_absolute() and not self.url.port:
+            self.url = self.url.with_port(DEFAULT_PORTS[self.url.scheme])
 
         if self.url.path == "/" or not self.url.path:
             self.vhost = "/"
