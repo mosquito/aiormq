@@ -361,6 +361,7 @@ class Channel(Base):
             result = await self.rpc(
                 spec.Channel.Close(reply_code=spec.REPLY_SUCCESS),
             )
+            self.connection.channels.pop(self.number, None)
 
         return result
 
