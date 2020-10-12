@@ -158,7 +158,9 @@ class Channel(Base):
                     self.writer = None
 
                     writer.write(pamqp.frame.marshal(
-                        spec.Channel.Close(504, "Timeout"),
+                        spec.Channel.Close(
+                            504, "RPC timeout on frame {!s}".format(frame)
+                        ),
                         self.number
                     ))
 
