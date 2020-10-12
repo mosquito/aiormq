@@ -162,6 +162,9 @@ class Channel(Base):
                         self.number
                     ))
 
+                    # The close method will close all channel related tasks
+                    # include current task, so I have to suppress
+                    # ``CancelledError`` for current task.
                     with suppress(asyncio.CancelledError):
                         await self.close()
                 raise
