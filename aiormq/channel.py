@@ -1,12 +1,12 @@
 import asyncio
 import logging
 import os
-from typing import Optional, Dict, Any, Union
 from binascii import hexlify
 from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
+from typing import Any, Dict, Optional, Union
 
 import pamqp.frame
 from pamqp import ContentHeader
@@ -15,23 +15,16 @@ from pamqp.body import ContentBody
 
 from aiormq.tools import LazyCoroutine, awaitable
 
-from .exceptions import (
-    ChannelAccessRefused,
-    ChannelPreconditionFailed,
-    InvalidFrameError,
-    ChannelLockedResource,
-    DeliveryError,
-    ChannelNotFoundEntity,
-    ChannelClosed,
-    ChannelInvalidStateError,
-    DuplicateConsumerTag,
-    MethodNotImplemented,
-    PublishError
-)
 from .base import Base, task
+from .exceptions import (
+    ChannelAccessRefused, ChannelClosed, ChannelInvalidStateError,
+    ChannelLockedResource, ChannelNotFoundEntity, ChannelPreconditionFailed,
+    DeliveryError, DuplicateConsumerTag, InvalidFrameError,
+    MethodNotImplemented, PublishError,
+)
 from .types import (
     ArgumentsType, ConfirmationFrameType, ConsumerCallback, DeliveredMessage,
-    DrainResult, TimeoutType, FrameType, RpcReturnType
+    DrainResult, FrameType, RpcReturnType, TimeoutType,
 )
 
 
@@ -107,8 +100,10 @@ class Channel(Base):
         return str(self.number)
 
     @task
-    async def rpc(self, frame: spec.Frame,
-                  timeout: TimeoutType = None) -> RpcReturnType:
+    async def rpc(
+        self, frame: spec.Frame,
+        timeout: TimeoutType = None
+    ) -> RpcReturnType:
 
         deadline = None
         if timeout is not None:
@@ -139,7 +134,7 @@ class Channel(Base):
                     return None
 
                 result = await asyncio.wait_for(
-                    self.rpc_frames.get(), get_exceeded(0)
+                    self.rpc_frames.get(), get_exceeded(0),
                 )
 
                 self.rpc_frames.task_done()
@@ -152,17 +147,19 @@ class Channel(Base):
                 if not self.is_closed:
                     log.warning(
                         "Closing channel %r because RPC call %s cancelled",
-                        self, frame
+                        self, frame,
                     )
                     writer = self.writer
                     self.writer = None
 
-                    writer.write(pamqp.frame.marshal(
-                        spec.Channel.Close(
-                            504, "RPC timeout on frame {!s}".format(frame)
+                    writer.write(
+                        pamqp.frame.marshal(
+                            spec.Channel.Close(
+                                504, "RPC timeout on frame {!s}".format(frame),
+                            ),
+                            self.number,
                         ),
-                        self.number
-                    ))
+                    )
 
                     # The close method will close all channel related tasks
                     # include current task, so I have to suppress
@@ -378,7 +375,7 @@ class Channel(Base):
         async with self.getter_lock:
             self.getter = self.create_future()
             await self.rpc(
-                spec.Basic.Get(queue=queue, no_ack=no_ack), timeout=timeout
+                spec.Basic.Get(queue=queue, no_ack=no_ack), timeout=timeout,
             )
 
             if self.getter is None:
@@ -395,7 +392,7 @@ class Channel(Base):
     ) -> spec.Basic.CancelOk:
         return await self.rpc(
             spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def basic_consume(
@@ -428,7 +425,7 @@ class Channel(Base):
                 consumer_tag=consumer_tag,
                 arguments=arguments,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     def basic_ack(
@@ -561,7 +558,7 @@ class Channel(Base):
                 prefetch_count=prefetch_count or 0,
                 global_=global_,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def basic_recover(
@@ -600,7 +597,7 @@ class Channel(Base):
                 nowait=bool(nowait),
                 arguments=arguments,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def exchange_delete(
@@ -615,7 +612,7 @@ class Channel(Base):
             spec.Exchange.Delete(
                 exchange=exchange, nowait=nowait, if_unused=if_unused,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def exchange_bind(
@@ -636,7 +633,7 @@ class Channel(Base):
                 nowait=nowait,
                 arguments=arguments,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def exchange_unbind(
@@ -657,7 +654,7 @@ class Channel(Base):
                 nowait=nowait,
                 arguments=arguments,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def flow(
@@ -666,7 +663,7 @@ class Channel(Base):
     ) -> spec.Channel.FlowOk:
         return await self.rpc(
             spec.Channel.Flow(active=active),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def queue_bind(
@@ -686,7 +683,7 @@ class Channel(Base):
                 nowait=nowait,
                 arguments=arguments,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def queue_declare(
@@ -711,7 +708,7 @@ class Channel(Base):
                 nowait=bool(nowait),
                 arguments=arguments,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def queue_delete(
@@ -729,7 +726,7 @@ class Channel(Base):
                 if_empty=if_empty,
                 nowait=nowait,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def queue_purge(
@@ -738,7 +735,7 @@ class Channel(Base):
     ) -> spec.Queue.PurgeOk:
         return await self.rpc(
             spec.Queue.Purge(queue=queue, nowait=nowait),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def queue_unbind(
@@ -756,7 +753,7 @@ class Channel(Base):
                 queue=queue,
                 exchange=exchange,
             ),
-            timeout=timeout
+            timeout=timeout,
         )
 
     async def tx_commit(
@@ -772,9 +769,11 @@ class Channel(Base):
     async def tx_select(self, timeout: TimeoutType = None) -> spec.Tx.SelectOk:
         return await self.rpc(spec.Tx.Select(), timeout=timeout)
 
-    async def confirm_delivery(self, nowait=False,
-                               timeout: TimeoutType = None):
+    async def confirm_delivery(
+        self, nowait=False,
+        timeout: TimeoutType = None
+    ):
         return await self.rpc(
             spec.Confirm.Select(nowait=nowait),
-            timeout=timeout
+            timeout=timeout,
         )
