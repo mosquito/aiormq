@@ -117,7 +117,7 @@ class Channel(Base):
         def check_deadline() -> bool:
             return deadline and self.loop.time() > deadline
 
-        async def get_exceeded(default: TimeoutType = None):
+        def get_exceeded(default: TimeoutType = None):
             if deadline is None:
                 return None
             value = deadline - self.loop.time()
@@ -138,9 +138,8 @@ class Channel(Base):
                 if not (frame.synchronous or getattr(frame, "nowait", False)):
                     return None
 
-                get_timeout = await get_exceeded(0)
                 result = await asyncio.wait_for(
-                    self.rpc_frames.get(), get_timeout
+                    self.rpc_frames.get(), get_exceeded(0)
                 )
 
                 self.rpc_frames.task_done()
