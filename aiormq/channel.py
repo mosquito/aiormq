@@ -32,7 +32,8 @@ class Channel(Base):
     # Prevent stuck channel when connection hangs.
     # When Channel RPC response does not received after this timeout
     # in case cancelling of current rpc operation channel will be closed.
-    REJECT_CANCELLED_FRAME_TIMEOUT = 0.3
+    REJECT_CANCELLED_FRAME_TIMEOUT = 10
+    REJECT_CANCELLED_CLOSE_TIMEOUT = 0.3
     Returning = object()
 
     def __init__(
@@ -107,20 +108,20 @@ class Channel(Base):
             deadline = self.loop.time() + timeout
 
         def check_deadline() -> bool:
-            return timeout and self.loop.time() > deadline
+            return deadline and self.loop.time() > deadline
 
-        def get_exceeded():
+        def get_exceeded(default: TimeoutType = None):
             if not deadline:
-                return self.REJECT_CANCELLED_FRAME_TIMEOUT
+                return None
 
-            return max((
-                deadline - self.loop.time(),
-                self.REJECT_CANCELLED_FRAME_TIMEOUT
-            ))
+            value = deadline - self.loop.time()
+
+            if value < 0:
+                return default
 
         async with self.lock:
             if check_deadline():
-                raise asyncio.TimeoutError
+                raise asyncio.TimeoutError("Unable to lock channel")
 
             if self.writer is None:
                 raise exc.ChannelInvalidStateError("writer is None")
@@ -150,7 +151,7 @@ class Channel(Base):
                 # user cancel rpc call trying to wait result
                 result = await asyncio.wait_for(
                     self.rpc_frames.get(),
-                    get_exceeded()
+                    get_exceeded(self.REJECT_CANCELLED_FRAME_TIMEOUT)
                 )
 
                 log.warning("Frame %r was rejected because task cancelled",
@@ -161,7 +162,8 @@ class Channel(Base):
                             self, frame)
 
                 await asyncio.wait_for(
-                    self.close(e), get_exceeded()
+                    self.close(e),
+                    get_exceeded(self.REJECT_CANCELLED_CLOSE_TIMEOUT)
                 )
 
             raise
