@@ -2,6 +2,7 @@ import typing
 
 from pamqp import ContentHeader
 from pamqp import specification as spec
+from pamqp.body import ContentBody
 from yarl import URL
 
 
@@ -43,3 +44,11 @@ FrameReceived = typing.NamedTuple(
 
 URLorStr = typing.Union[URL, str]
 DrainResult = typing.Awaitable[None]
+TimeoutType = typing.Optional[typing.Union[int, float]]
+FrameType = typing.Union[spec.Frame, ContentHeader, ContentBody]
+RpcFrameType = typing.Union[
+    spec.Frame,
+    spec.Tx.CommitOk,
+    spec.Tx.RollbackOk,
+    spec.Tx.SelectOk
+]

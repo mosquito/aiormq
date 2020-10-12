@@ -19,7 +19,7 @@ from . import exceptions as exc
 from .base import Base, task
 from .types import (
     ArgumentsType, ConfirmationFrameType, ConsumerCallback, DeliveredMessage,
-    DrainResult,
+    DrainResult, TimeoutType, FrameType, RpcFrameType
 )
 
 
@@ -32,7 +32,7 @@ class Channel(Base):
     # Prevent stuck channel when connection hangs.
     # When Channel RPC response does not received after this timeout
     # in case cancelling of current rpc operation channel will be closed.
-    REJECT_CANCELLED_FRAME_TIMEOUT = 10
+    REJECT_CANCELLED_FRAME_TIMEOUT = 0.3
     Returning = object()
 
     def __init__(
@@ -90,7 +90,7 @@ class Channel(Base):
 
         return self.__lock
 
-    async def _get_frame(self) -> spec.Frame:
+    async def _get_frame(self) -> FrameType:
         weight, frame = await self.frames.get()
         self.frames.task_done()
         return frame
@@ -99,36 +99,41 @@ class Channel(Base):
         return str(self.number)
 
     @task
-    async def rpc(self, frame: spec.Frame) -> typing.Optional[spec.Frame]:
+    async def rpc(self, frame: spec.Frame,
+                  timeout: TimeoutType = None) -> RpcFrameType:
+
+        deadline = None
+        if timeout:
+            deadline = self.loop.time() + timeout
+
+        def check_deadline() -> bool:
+            return timeout and self.loop.time() > deadline
+
+        def get_exceeded():
+            if not deadline:
+                return self.REJECT_CANCELLED_FRAME_TIMEOUT
+
+            return max((
+                deadline - self.loop.time(),
+                self.REJECT_CANCELLED_FRAME_TIMEOUT
+            ))
+
         async with self.lock:
+            if check_deadline():
+                raise asyncio.TimeoutError
+
             if self.writer is None:
                 raise exc.ChannelInvalidStateError("writer is None")
 
+        try:
             self.writer.write(pamqp.frame.marshal(frame, self.number))
 
             if not (frame.synchronous or getattr(frame, "nowait", False)):
-                return
+                return frame
 
-            try:
-                result = await self.rpc_frames.get()
-            except asyncio.CancelledError:
-                # channel already closed
-                if self.is_closed:
-                    raise
-
-                try:
-                    # user cancel rpc call trying to wait result
-                    result = await asyncio.wait_for(
-                        self.rpc_frames.get(),
-                        self.REJECT_CANCELLED_FRAME_TIMEOUT,
-                    )
-                    log.warning(
-                        "Frame %r was rejected because task cancelled", result,
-                    )
-                except asyncio.TimeoutError as e:
-                    await self.close(e)
-
-                raise
+            result = await asyncio.wait_for(
+                self.rpc_frames.get(), get_exceeded()
+            )
 
             self.rpc_frames.task_done()
 
@@ -136,6 +141,30 @@ class Channel(Base):
                 raise exc.InvalidFrameError(frame)
 
             return result
+        except (asyncio.CancelledError, asyncio.TimeoutError) as e:
+            # channel already closed
+            if self.is_closed:
+                raise
+
+            with suppress(Exception):
+                # user cancel rpc call trying to wait result
+                result = await asyncio.wait_for(
+                    self.rpc_frames.get(),
+                    get_exceeded()
+                )
+
+                log.warning("Frame %r was rejected because task cancelled",
+                            result)
+
+            with suppress(Exception):
+                log.warning("Closing channel %r because RPC call %s cancelled",
+                            self, frame)
+
+                await asyncio.wait_for(
+                    self.close(e), get_exceeded()
+                )
+
+            raise
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
@@ -150,6 +179,7 @@ class Channel(Base):
         body = BytesIO()
 
         content = None
+
         if header.body_size:
             content = await self._get_frame()  # type: ContentBody
 
@@ -161,7 +191,10 @@ class Channel(Base):
 
         # noinspection PyTypeChecker
         return DeliveredMessage(
-            delivery=frame, header=header, body=body.getvalue(), channel=self,
+            delivery=frame,
+            header=header,
+            body=body.getvalue(),
+            channel=self,
         )
 
     @staticmethod
@@ -184,6 +217,7 @@ class Channel(Base):
 
         consumer = self.consumers.get(frame.consumer_tag)
         if consumer is not None:
+            # noinspection PyAsyncCall
             self.create_task(consumer(message))
 
     async def _on_get(
@@ -327,23 +361,28 @@ class Channel(Base):
         return result
 
     async def basic_get(
-        self, queue: str = "", no_ack: bool = False
-    ) -> typing.Optional[DeliveredMessage]:
+        self, queue: str = "", no_ack: bool = False,
+        timeout: typing.Union[int, float] = None
+    ) -> DeliveredMessage:
 
         async with self.getter_lock:
             self.getter = self.create_future()
-            await self.rpc(spec.Basic.Get(queue=queue, no_ack=no_ack))
+            await self.rpc(
+                spec.Basic.Get(queue=queue, no_ack=no_ack), timeout=timeout
+            )
             frame, message = await self.getter
             self.getter = None
 
         return message
 
     async def basic_cancel(
-        self, consumer_tag, *, nowait=False
+        self, consumer_tag, *, nowait: bool = False,
+        timeout: typing.Union[int, float] = None
     ) -> spec.Basic.CancelOk:
         # noinspection PyTypeChecker
         return await self.rpc(
             spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
+            timeout=timeout
         )
 
     async def basic_consume(
@@ -354,7 +393,8 @@ class Channel(Base):
         no_ack: bool = False,
         exclusive: bool = False,
         arguments: ArgumentsType = None,
-        consumer_tag: str = None
+        consumer_tag: str = None,
+        timeout: typing.Union[int, float] = None
     ) -> spec.Basic.ConsumeOk:
 
         consumer_tag = consumer_tag or "ctag%i.%s" % (
@@ -376,9 +416,12 @@ class Channel(Base):
                 consumer_tag=consumer_tag,
                 arguments=arguments,
             ),
+            timeout=timeout
         )
 
-    def basic_ack(self, delivery_tag, multiple=False) -> DrainResult:
+    def basic_ack(
+        self, delivery_tag, multiple=False,
+    ) -> DrainResult:
         self.writer.write(
             pamqp.frame.marshal(
                 spec.Basic.Ack(delivery_tag=delivery_tag, multiple=multiple),
@@ -428,8 +471,9 @@ class Channel(Base):
         routing_key: str = "",
         properties: spec.Basic.Properties = None,
         mandatory: bool = False,
-        immediate: bool = False
-    ) -> typing.Optional[ConfirmationFrameType]:
+        immediate: bool = False,
+        timeout: typing.Union[int, float] = None
+    ) -> ConfirmationFrameType:
 
         frame = spec.Basic.Publish(
             exchange=exchange,
@@ -489,14 +533,15 @@ class Channel(Base):
         if not self.publisher_confirms:
             return
 
-        return await confirmation
+        return await asyncio.wait_for(confirmation, timeout=timeout)
 
     async def basic_qos(
         self,
         *,
         prefetch_size: int = None,
         prefetch_count: int = None,
-        global_: bool = False
+        global_: bool = False,
+        timeout: typing.Union[int, float] = None
     ) -> spec.Basic.QosOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -505,30 +550,33 @@ class Channel(Base):
                 prefetch_count=prefetch_count or 0,
                 global_=global_,
             ),
+            timeout=timeout
         )
 
     async def basic_recover(
-        self, *, nowait: bool = False, requeue=False
+        self, *, nowait: bool = False, requeue=False,
+        timeout: typing.Union[int, float] = None
     ) -> spec.Basic.RecoverOk:
 
         if nowait:
             frame = spec.Basic.RecoverAsync(requeue=requeue)
         else:
             frame = spec.Basic.Recover(requeue=requeue)
-        # noinspection PyTypeChecker
-        return self.rpc(frame)
+
+        return await self.rpc(frame, timeout=timeout)
 
     async def exchange_declare(
         self,
         exchange: str = None,
         *,
-        exchange_type="direct",
-        passive=False,
-        durable=False,
-        auto_delete=False,
-        internal=False,
-        nowait=False,
-        arguments=None
+        exchange_type: str = "direct",
+        passive: bool = False,
+        durable: bool = False,
+        auto_delete: bool = False,
+        internal: bool = False,
+        nowait: bool = False,
+        arguments: typing.Optional[typing.Dict[str, typing.Any]] = None,
+        timeout: TimeoutType = None
     ) -> spec.Exchange.DeclareOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -542,6 +590,7 @@ class Channel(Base):
                 nowait=bool(nowait),
                 arguments=arguments,
             ),
+            timeout=timeout
         )
 
     def exchange_delete(
@@ -549,13 +598,15 @@ class Channel(Base):
         exchange: str = None,
         *,
         if_unused: bool = False,
-        nowait: bool = False
+        nowait: bool = False,
+        timeout: TimeoutType = None
     ) -> spec.Exchange.DeleteOk:
         # noinspection PyTypeChecker
         return self.rpc(
             spec.Exchange.Delete(
                 exchange=exchange, nowait=nowait, if_unused=if_unused,
             ),
+            timeout=timeout
         )
 
     async def exchange_bind(
@@ -565,7 +616,8 @@ class Channel(Base):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None
+        arguments: dict = None,
+        timeout: TimeoutType = None
     ) -> spec.Exchange.BindOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -576,6 +628,7 @@ class Channel(Base):
                 nowait=nowait,
                 arguments=arguments,
             ),
+            timeout=timeout
         )
 
     async def exchange_unbind(
@@ -585,7 +638,8 @@ class Channel(Base):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None
+        arguments: dict = None,
+        timeout: TimeoutType = None
     ) -> spec.Exchange.UnbindOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -596,11 +650,18 @@ class Channel(Base):
                 nowait=nowait,
                 arguments=arguments,
             ),
+            timeout=timeout
         )
 
-    async def flow(self, active: bool) -> spec.Channel.FlowOk:
+    async def flow(
+        self, active: bool,
+        timeout: TimeoutType = None
+    ) -> spec.Channel.FlowOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Channel.Flow(active=active))
+        return await self.rpc(
+            spec.Channel.Flow(active=active),
+            timeout=timeout
+        )
 
     async def queue_bind(
         self,
@@ -609,6 +670,7 @@ class Channel(Base):
         routing_key: str = "",
         nowait: bool = False,
         arguments: dict = None,
+        timeout: TimeoutType = None
     ) -> spec.Queue.BindOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -619,6 +681,7 @@ class Channel(Base):
                 nowait=nowait,
                 arguments=arguments,
             ),
+            timeout=timeout
         )
 
     async def queue_declare(
@@ -630,7 +693,8 @@ class Channel(Base):
         exclusive: bool = False,
         auto_delete: bool = False,
         nowait: bool = False,
-        arguments: dict = None
+        arguments: dict = None,
+        timeout: TimeoutType = None
     ) -> spec.Queue.DeclareOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -643,6 +707,7 @@ class Channel(Base):
                 nowait=bool(nowait),
                 arguments=arguments,
             ),
+            timeout=timeout
         )
 
     async def queue_delete(
@@ -651,6 +716,7 @@ class Channel(Base):
         if_unused: bool = False,
         if_empty: bool = False,
         nowait=False,
+        timeout: TimeoutType = None
     ) -> spec.Queue.DeleteOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -660,13 +726,18 @@ class Channel(Base):
                 if_empty=if_empty,
                 nowait=nowait,
             ),
+            timeout=timeout
         )
 
     async def queue_purge(
-        self, queue: str = "", nowait: bool = False
+        self, queue: str = "", nowait: bool = False,
+        timeout: TimeoutType = None
     ) -> spec.Queue.PurgeOk:
         # noinspection PyTypeChecker
-        return await self.rpc(spec.Queue.Purge(queue=queue, nowait=nowait))
+        return await self.rpc(
+            spec.Queue.Purge(queue=queue, nowait=nowait),
+            timeout=timeout
+        )
 
     async def queue_unbind(
         self,
@@ -674,6 +745,7 @@ class Channel(Base):
         exchange: str = None,
         routing_key: str = None,
         arguments: dict = None,
+        timeout: TimeoutType = None
     ) -> spec.Queue.UnbindOk:
         # noinspection PyTypeChecker
         return await self.rpc(
@@ -683,19 +755,25 @@ class Channel(Base):
                 queue=queue,
                 exchange=exchange,
             ),
+            timeout=timeout
         )
 
-    async def tx_commit(self) -> spec.Tx.CommitOk:
-        # noinspection PyTypeChecker
-        return await self.rpc(spec.Tx.Commit())
+    async def tx_commit(
+        self, timeout: TimeoutType = None
+    ) -> spec.Tx.CommitOk:
+        return await self.rpc(spec.Tx.Commit(), timeout=timeout)
 
-    async def tx_rollback(self) -> spec.Tx.RollbackOk:
-        # noinspection PyTypeChecker
-        return await self.rpc(spec.Tx.Rollback())
+    async def tx_rollback(
+        self, timeout: TimeoutType = None
+    ) -> spec.Tx.RollbackOk:
+        return await self.rpc(spec.Tx.Rollback(), timeout=timeout)
 
-    async def tx_select(self) -> spec.Tx.SelectOk:
-        # noinspection PyTypeChecker
-        return await self.rpc(spec.Tx.Select())
+    async def tx_select(self, timeout: TimeoutType = None) -> spec.Tx.SelectOk:
+        return await self.rpc(spec.Tx.Select(), timeout=timeout)
 
-    async def confirm_delivery(self, nowait=False):
-        return await self.rpc(spec.Confirm.Select(nowait=nowait))
+    async def confirm_delivery(self, nowait=False,
+                               timeout: TimeoutType = None):
+        return await self.rpc(
+            spec.Confirm.Select(nowait=nowait),
+            timeout=timeout
+        )
