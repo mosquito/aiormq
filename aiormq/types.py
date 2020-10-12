@@ -46,9 +46,25 @@ URLorStr = typing.Union[URL, str]
 DrainResult = typing.Awaitable[None]
 TimeoutType = typing.Optional[typing.Union[int, float]]
 FrameType = typing.Union[spec.Frame, ContentHeader, ContentBody]
-RpcFrameType = typing.Union[
-    spec.Frame,
+RpcReturnType = typing.Optional[typing.Union[
     spec.Tx.CommitOk,
     spec.Tx.RollbackOk,
-    spec.Tx.SelectOk
-]
+    spec.Tx.SelectOk,
+    spec.Basic.RecoverOk,
+    spec.Basic.QosOk,
+    spec.Basic.CancelOk,
+    spec.Channel.CloseOk,
+    spec.Basic.ConsumeOk,
+    spec.Basic.GetOk,
+    spec.Exchange.DeclareOk,
+    spec.Exchange.UnbindOk,
+    spec.Exchange.BindOk,
+    spec.Exchange.DeleteOk,
+    spec.Queue.DeleteOk,
+    spec.Queue.BindOk,
+    spec.Queue.UnbindOk,
+    spec.Queue.PurgeOk,
+    spec.Queue.DeleteOk,
+    spec.Channel.FlowOk
+]]
+

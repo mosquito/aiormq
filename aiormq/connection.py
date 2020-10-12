@@ -384,16 +384,18 @@ class Connection(Base):
                     elif isinstance(frame, Heartbeat):
                         continue
 
+                    elif isinstance(frame, spec.Channel.CloseOk):
+                        self.channels.pop(channel, None)
+
                     log.error("Unexpected frame %r", frame)
                     continue
 
-                if self.channels.get(channel) is None:
-                    log.exception(
+                ch = self.channels.get(channel)
+                if ch is None:
+                    log.error(
                         "Got frame for closed channel %d: %r", channel, frame,
                     )
                     continue
-
-                ch = self.channels[channel]
 
                 if isinstance(frame, CHANNEL_CLOSE_RESPONSES):
                     self.channels[channel] = None
