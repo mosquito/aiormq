@@ -292,7 +292,7 @@ class Channel(Base):
             return
 
         if frame.delivery_tag not in self.confirmations:
-            log.error("Unknown %r from broker", frame)
+            log.error("Unexpected confirmation frame %r from broker", frame)
             return
 
         multiple = getattr(frame, "multiple", False)
