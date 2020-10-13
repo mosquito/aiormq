@@ -2,6 +2,7 @@ import asyncio
 import uuid
 
 import pytest
+from aiomisc_pytest.pytest_plugin import TCPProxy
 
 import aiormq
 
@@ -186,3 +187,21 @@ async def test_remove_writer_when_closed(amqp_channel: aiormq.Channel):
 
     with pytest.raises(aiormq.exceptions.ChannelInvalidStateError):
         await amqp_channel.queue_delete("amq.forbidden_queue_name")
+
+
+async def test_proxy_connection(proxy_connection, proxy: TCPProxy):
+    channel = await proxy_connection.channel()  # type: aiormq.Channel
+    await channel.queue_declare(auto_delete=True)
+
+
+async def test_declare_queue_timeout(proxy_connection, proxy: TCPProxy):
+    for _ in range(3):
+        channel = await proxy_connection.channel()  # type: aiormq.Channel
+
+        qname = str(uuid.uuid4())
+
+        with proxy.slowdown(read_delay=5, write_delay=0):
+            with pytest.raises(asyncio.TimeoutError):
+                await channel.queue_declare(
+                    qname, auto_delete=True, timeout=0.5
+                )

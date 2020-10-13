@@ -6,6 +6,7 @@ import tracemalloc
 
 import pamqp
 import pytest
+from aiomisc_pytest.pytest_plugin import TCPProxy
 from async_generator import async_generator, yield_
 from yarl import URL
 
@@ -130,3 +131,29 @@ def memory_tracer():
             raise AssertionError("Possible memory leak")
     finally:
         tracemalloc.stop()
+
+
+@pytest.fixture()
+@async_generator
+async def proxy(tcp_proxy, localhost, amqp_url: URL):
+    port = amqp_url.port or 5672 if amqp_url.scheme == "amqp" else 5671
+    async with tcp_proxy(amqp_url.host, port) as proxy:
+        await yield_(proxy)
+
+
+@pytest.fixture
+@async_generator
+async def proxy_connection(proxy: TCPProxy, amqp_url: URL, loop):
+    url = amqp_url.with_host(
+        "localhost"
+    ).with_port(
+        proxy.proxy_port
+    )
+    connection = Connection(url, loop=loop)
+
+    await connection.connect()
+
+    try:
+        await yield_(connection)
+    finally:
+        await connection.close()
