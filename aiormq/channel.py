@@ -109,9 +109,6 @@ class Channel(Base):
         if timeout is not None:
             deadline = self.loop.time() + timeout
 
-        def check_deadline() -> bool:
-            return deadline and self.loop.time() > deadline
-
         def get_exceeded(default: TimeoutType = None):
             if deadline is None:
                 return None
