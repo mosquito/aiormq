@@ -123,50 +123,53 @@ class Channel(Base):
         if self.writer is None:
             raise ChannelInvalidStateError("writer is None")
 
-        async with self.lock:
-            if check_deadline():
-                raise asyncio.TimeoutError("Unable to lock channel")
+        try:
+            await asyncio.wait_for(self.lock.acquire(), timeout=get_exceeded(0))
+        except asyncio.TimeoutError as e:
+            raise asyncio.TimeoutError("Unable to lock channel") from e
 
-            try:
-                self.writer.write(pamqp.frame.marshal(frame, self.number))
+        try:
+            self.writer.write(pamqp.frame.marshal(frame, self.number))
 
-                if not (frame.synchronous or getattr(frame, "nowait", False)):
-                    return None
+            if not (frame.synchronous or getattr(frame, "nowait", False)):
+                return None
 
-                result = await asyncio.wait_for(
-                    self.rpc_frames.get(), get_exceeded(0),
+            result = await asyncio.wait_for(
+                self.rpc_frames.get(), get_exceeded(0),
+            )
+
+            self.rpc_frames.task_done()
+
+            if result.name not in frame.valid_responses:  # pragma: no cover
+                raise InvalidFrameError(frame)
+
+            return result
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            if not self.is_closed:
+                log.warning(
+                    "Closing channel %r because RPC call %s cancelled",
+                    self, frame,
+                )
+                writer = self.writer
+                self.writer = None
+
+                writer.write(
+                    pamqp.frame.marshal(
+                        spec.Channel.Close(
+                            504, "RPC timeout on frame {!s}".format(frame),
+                        ),
+                        self.number,
+                    ),
                 )
 
-                self.rpc_frames.task_done()
-
-                if result.name not in frame.valid_responses:  # pragma: no cover
-                    raise InvalidFrameError(frame)
-
-                return result
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                if not self.is_closed:
-                    log.warning(
-                        "Closing channel %r because RPC call %s cancelled",
-                        self, frame,
-                    )
-                    writer = self.writer
-                    self.writer = None
-
-                    writer.write(
-                        pamqp.frame.marshal(
-                            spec.Channel.Close(
-                                504, "RPC timeout on frame {!s}".format(frame),
-                            ),
-                            self.number,
-                        ),
-                    )
-
-                    # The close method will close all channel related tasks
-                    # include current task, so I have to suppress
-                    # ``CancelledError`` for current task.
-                    with suppress(asyncio.CancelledError):
-                        await self.close()
-                raise
+                # The close method will close all channel related tasks
+                # include current task, so I have to suppress
+                # ``CancelledError`` for current task.
+                with suppress(asyncio.CancelledError):
+                    await self.close()
+            raise
+        finally:
+            self.lock.release()
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
