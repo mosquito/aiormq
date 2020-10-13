@@ -85,7 +85,7 @@ class Channel(Base):
         self.writer = None
 
     @property
-    def lock(self):
+    def lock(self) -> asyncio.Lock:
         if self.is_closed:
             raise ChannelInvalidStateError("%r closed" % self)
 
@@ -120,8 +120,10 @@ class Channel(Base):
         if self.writer is None:
             raise ChannelInvalidStateError("writer is None")
 
+        lock = self.lock
+
         try:
-            await asyncio.wait_for(self.lock.acquire(), timeout=get_exceeded(0))
+            await asyncio.wait_for(lock.acquire(), timeout=get_exceeded(0))
         except asyncio.TimeoutError as e:
             raise asyncio.TimeoutError("Unable to lock channel") from e
 
@@ -166,7 +168,7 @@ class Channel(Base):
                     await self.close()
             raise
         finally:
-            self.lock.release()
+            lock.release()
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
