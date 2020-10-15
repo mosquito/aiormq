@@ -66,6 +66,8 @@ class Connection(Base):
     HEARTBEAT_GRACE_MULTIPLIER = 3
     _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
+    READER_CLOSE_TIMEOUT = 2
+
     @staticmethod
     def _parse_ca_data(data) -> typing.Optional[bytes]:
         return b64decode(data) if data else data
@@ -434,13 +436,25 @@ class Connection(Base):
         writer = self.writer
         self.reader = None
         self.writer = None
+
+        reader = self._reader_task
         self._reader_task = None
 
         await asyncio.gather(
             self.__close_writer(writer), return_exceptions=True,
         )
 
-        await asyncio.gather(self._reader_task, return_exceptions=True)
+        if not isinstance(reader, asyncio.Task) or reader.done():
+            return
+
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(reader, return_exceptions=True),
+                timeout=self.READER_CLOSE_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            reader.cancel()
+            await asyncio.gather(reader, return_exceptions=True)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
