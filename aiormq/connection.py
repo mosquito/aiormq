@@ -153,7 +153,7 @@ class Connection(Base):
             cadata=self.ssl_certs.cadata,
         )
 
-        if self.ssl_certs.key:
+        if self.ssl_certs.cert or self.ssl_certs.key:
             context.load_cert_chain(self.ssl_certs.cert, self.ssl_certs.key)
 
         if not self.ssl_certs.verify:
