@@ -178,7 +178,7 @@ class Connection(Base):
         }
 
         properties.update(parse_connection_name(self.connection_name))
-        properties.update(kwargs.get("client_properties", {}))
+        properties.update(kwargs)
         return properties
 
     @staticmethod
