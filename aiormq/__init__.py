@@ -1,4 +1,4 @@
-from pamqp import specification as spec
+from pamqp import commands as spec
 
 from . import types
 from .channel import Channel

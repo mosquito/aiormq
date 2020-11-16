@@ -9,8 +9,9 @@ from io import BytesIO
 from typing import Any, Dict, Optional, Union
 
 import pamqp.frame
-from pamqp import ContentHeader
-from pamqp import specification as spec
+from pamqp import commands as spec
+from pamqp.base import Frame
+from pamqp.header import ContentHeader
 from pamqp.body import ContentBody
 
 from aiormq.tools import LazyCoroutine, awaitable
@@ -101,7 +102,7 @@ class Channel(Base):
 
     @task
     async def rpc(
-        self, frame: spec.Frame,
+        self, frame: Frame,
         timeout: TimeoutType = None
     ) -> RpcReturnType:
 

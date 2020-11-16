@@ -7,8 +7,9 @@ from base64 import b64decode
 from contextlib import suppress
 
 import pamqp.frame
-from pamqp import ProtocolHeader
-from pamqp import specification as spec
+from pamqp import commands as spec
+from pamqp.base import Frame
+from pamqp.header import ProtocolHeader
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
@@ -182,8 +183,10 @@ class Connection(Base):
         return properties
 
     @staticmethod
-    def _credentials_class(start_frame: spec.Connection.Start):
-        for mechanism in start_frame.mechanisms.decode().split():
+    def _credentials_class(
+        start_frame: spec.Connection.Start
+    ) -> typing.Type[AuthMechanism]:
+        for mechanism in start_frame.mechanisms.split():
             with suppress(KeyError):
                 return AuthMechanism[mechanism]
 
@@ -191,7 +194,7 @@ class Connection(Base):
             start_frame.mechanisms, [m.name for m in AuthMechanism],
         )
 
-    async def __rpc(self, request: spec.Frame, wait_response=True):
+    async def __rpc(self, request: Frame, wait_response=True):
         self.writer.write(pamqp.frame.marshal(request, 0))
 
         if not wait_response:
@@ -322,7 +325,7 @@ class Connection(Base):
 
             return
 
-    async def __receive_frame(self) -> typing.Tuple[int, int, spec.Frame]:
+    async def __receive_frame(self) -> typing.Tuple[int, int, Frame]:
         async with self.lock:
             frame_header = await self.reader.readexactly(1)
 

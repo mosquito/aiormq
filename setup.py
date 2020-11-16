@@ -19,7 +19,7 @@ setup(
     url="https://github.com/mosquito/aiormq",
     author=module.__author__,
     author_email=module.team_email,
-    install_requires=["pamqp<=3.0.1", "yarl"],
+    install_requires=["pamqp==3.0.1", "yarl"],
     keywords=["rabbitmq", "asyncio", "amqp", "amqp 0.9.1", "driver", "pamqp"],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
