@@ -6,6 +6,7 @@ from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
+from types import MappingProxyType
 from typing import Any, Dict, Optional, Union
 
 import pamqp.frame
@@ -30,6 +31,12 @@ from .types import (
 
 
 log = logging.getLogger(__name__)
+
+
+
+METHOD_IDS = MappingProxyType({
+
+})
 
 
 class Channel(Base):
@@ -156,7 +163,12 @@ class Channel(Base):
                 writer.write(
                     pamqp.frame.marshal(
                         spec.Channel.Close(
-                            504, "RPC timeout on frame {!s}".format(frame),
+                            reply_code=504,
+                            reply_text="RPC timeout on frame {!s}".format(
+                                frame
+                            ),
+                            class_id=0,
+                            method_id=0
                         ),
                         self.number,
                     ),
