@@ -48,7 +48,6 @@ setup(
     extras_require={
         "develop": [
             "aiomisc~=11.0",
-            "async_generator",
             "coverage!=4.3",
             "coveralls",
             "pylava",
