@@ -7,7 +7,6 @@ import tracemalloc
 import pamqp
 import pytest
 from aiomisc_pytest.pytest_plugin import TCPProxy
-from async_generator import async_generator, yield_
 from yarl import URL
 
 import aiormq
@@ -52,14 +51,13 @@ async def amqp_url(request):
 
 
 @pytest.fixture
-@async_generator
 async def amqp_connection(amqp_url, loop):
     connection = Connection(amqp_url, loop=loop)
 
     await connection.connect()
 
     try:
-        await yield_(connection)
+        yield connection
     finally:
         await connection.close()
 
@@ -73,10 +71,9 @@ channel_params = [
 
 
 @pytest.fixture(params=channel_params)
-@async_generator
 async def amqp_channel(request, amqp_connection):
     try:
-        await yield_(await amqp_connection.channel(**request.param))
+        yield await amqp_connection.channel(**request.param)
     finally:
         await amqp_connection.close()
 
@@ -134,15 +131,13 @@ def memory_tracer():
 
 
 @pytest.fixture()
-@async_generator
 async def proxy(tcp_proxy, localhost, amqp_url: URL):
     port = amqp_url.port or 5672 if amqp_url.scheme == "amqp" else 5671
     async with tcp_proxy(amqp_url.host, port) as proxy:
-        await yield_(proxy)
+        yield proxy
 
 
 @pytest.fixture
-@async_generator
 async def proxy_connection(proxy: TCPProxy, amqp_url: URL, loop):
     url = amqp_url.with_host(
         "localhost"
@@ -154,6 +149,6 @@ async def proxy_connection(proxy: TCPProxy, amqp_url: URL, loop):
     await connection.connect()
 
     try:
-        await yield_(connection)
+        yield connection
     finally:
         await connection.close()
