@@ -6,11 +6,14 @@ from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
+from types import MappingProxyType
 from typing import Any, Dict, Optional, Union
 
 import pamqp.frame
-from pamqp import ContentHeader
-from pamqp import specification as spec
+from pamqp import commands as spec
+from pamqp.base import Frame
+from pamqp.constants import REPLY_SUCCESS
+from pamqp.header import ContentHeader
 from pamqp.body import ContentBody
 
 from aiormq.tools import LazyCoroutine, awaitable
@@ -29,6 +32,12 @@ from .types import (
 
 
 log = logging.getLogger(__name__)
+
+
+
+METHOD_IDS = MappingProxyType({
+
+})
 
 
 class Channel(Base):
@@ -101,7 +110,7 @@ class Channel(Base):
 
     @task
     async def rpc(
-        self, frame: spec.Frame,
+        self, frame: Frame,
         timeout: TimeoutType = None
     ) -> RpcReturnType:
 
@@ -155,7 +164,12 @@ class Channel(Base):
                 writer.write(
                     pamqp.frame.marshal(
                         spec.Channel.Close(
-                            504, "RPC timeout on frame {!s}".format(frame),
+                            reply_code=504,
+                            reply_text="RPC timeout on frame {!s}".format(
+                                frame
+                            ),
+                            class_id=0,
+                            method_id=0
                         ),
                         self.number,
                     ),
@@ -363,7 +377,10 @@ class Channel(Base):
         result = None
         if self.writer is not None:
             result = await self.rpc(
-                spec.Channel.Close(reply_code=spec.REPLY_SUCCESS),
+                spec.Channel.Close(
+                    reply_code=REPLY_SUCCESS,
+                    class_id=0, method_id=0,
+                ),
             )
             self.connection.channels.pop(self.number, None)
 

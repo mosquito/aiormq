@@ -1,17 +1,18 @@
 import typing
 
-from pamqp import ContentHeader
-from pamqp import specification as spec
+from pamqp.base import Frame
+from pamqp.commands import Channel, Basic, Tx, Exchange, Queue
+from pamqp.header import ContentHeader
 from pamqp.body import ContentBody
 from yarl import URL
 
 
-ChannelRType = typing.Tuple[int, spec.Channel.OpenOk]
-GetResultType = typing.Union[spec.Basic.GetEmpty, spec.Basic.GetOk]
+ChannelRType = typing.Tuple[int, Channel.OpenOk]
+GetResultType = typing.Union[Basic.GetEmpty, Basic.GetOk]
 DeliveredMessage = typing.NamedTuple(
     "DeliveredMessage",
     [
-        ("delivery", typing.Union[spec.Basic.Deliver, GetResultType]),
+        ("delivery", typing.Union[Basic.Deliver, GetResultType]),
         ("header", ContentHeader),
         ("body", bytes),
         ("channel", "aiormq.Channel"),
@@ -23,7 +24,7 @@ ReturnCallback = typing.Callable[[], CallbackCoro]
 ArgumentsType = typing.Dict[str, typing.Union[str, int, bool]]
 
 ConfirmationFrameType = typing.Union[
-    spec.Basic.Ack, spec.Basic.Nack, spec.Basic.Reject,
+    Basic.Ack, Basic.Nack, Basic.Reject,
 ]
 
 SSLCerts = typing.NamedTuple(
@@ -45,28 +46,28 @@ FrameReceived = typing.NamedTuple(
 URLorStr = typing.Union[URL, str]
 DrainResult = typing.Awaitable[None]
 TimeoutType = typing.Optional[typing.Union[int, float]]
-FrameType = typing.Union[spec.Frame, ContentHeader, ContentBody]
+FrameType = typing.Union[Frame, ContentHeader, ContentBody]
 RpcReturnType = typing.Optional[
     typing.Union[
-        spec.Tx.CommitOk,
-        spec.Tx.RollbackOk,
-        spec.Tx.SelectOk,
-        spec.Basic.RecoverOk,
-        spec.Basic.QosOk,
-        spec.Basic.CancelOk,
-        spec.Channel.CloseOk,
-        spec.Basic.ConsumeOk,
-        spec.Basic.GetOk,
-        spec.Exchange.DeclareOk,
-        spec.Exchange.UnbindOk,
-        spec.Exchange.BindOk,
-        spec.Exchange.DeleteOk,
-        spec.Queue.DeleteOk,
-        spec.Queue.BindOk,
-        spec.Queue.UnbindOk,
-        spec.Queue.PurgeOk,
-        spec.Queue.DeleteOk,
-        spec.Channel.FlowOk,
+        Tx.CommitOk,
+        Tx.RollbackOk,
+        Tx.SelectOk,
+        Basic.RecoverOk,
+        Basic.QosOk,
+        Basic.CancelOk,
+        Channel.CloseOk,
+        Basic.ConsumeOk,
+        Basic.GetOk,
+        Exchange.DeclareOk,
+        Exchange.UnbindOk,
+        Exchange.BindOk,
+        Exchange.DeleteOk,
+        Queue.DeleteOk,
+        Queue.BindOk,
+        Queue.UnbindOk,
+        Queue.PurgeOk,
+        Queue.DeleteOk,
+        Channel.FlowOk,
     ]
 ]
 

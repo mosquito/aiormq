@@ -78,6 +78,7 @@ async def test_channel_reuse(amqp_connection: aiormq.Connection):
         channel = await amqp_connection.channel(channel_number=1)
         await channel.basic_qos(prefetch_count=1)
         await channel.close()
+        del channel
 
 
 async def test_channel_closed_reuse(amqp_connection: aiormq.Connection):
@@ -150,8 +151,8 @@ async def test_auth_plain(amqp_connection, loop):
 
     assert auth == PlainAuth(amqp_connection).marshal()
 
-    auth_parts = auth.split(b"\x00")
-    assert auth_parts == [b"", b"guest", b"guest"]
+    auth_parts = auth.split("\x00")
+    assert auth_parts == ["", "guest", "guest"]
 
     connection = aiormq.Connection(
         amqp_connection.url.with_user("foo").with_password("bar"),
@@ -160,13 +161,13 @@ async def test_auth_plain(amqp_connection, loop):
 
     auth = PlainAuth(connection).marshal()
 
-    auth_parts = auth.split(b"\x00")
-    assert auth_parts == [b"", b"foo", b"bar"]
+    auth_parts = auth.split("\x00")
+    assert auth_parts == ["", "foo", "bar"]
 
     auth = PlainAuth(connection)
-    auth.value = b"boo"
+    auth.value = "boo"
 
-    assert auth.marshal() == b"boo"
+    assert auth.marshal() == "boo"
 
 
 async def test_channel_closed(amqp_connection):

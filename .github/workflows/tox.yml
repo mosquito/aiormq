@@ -41,11 +41,10 @@ jobs:
     strategy:
       matrix:
         toxenv:
-          - py35
           - py36
           - py37
           - py38
-          - py35-uvloop
+          - py39
           - py36-uvloop
           - py37-uvloop
           - py38-uvloop

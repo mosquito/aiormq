@@ -1,4 +1,5 @@
-from pamqp import specification as spec
+from pamqp.base import Frame
+from pamqp.commands import Basic
 
 from .types import DeliveredMessage
 
@@ -170,7 +171,7 @@ class DeliveryError(AMQPError):
 
     reason = "Error when delivery message %r, frame %r"
 
-    def __init__(self, message: DeliveredMessage, frame: spec.Frame, *args):
+    def __init__(self, message: DeliveredMessage, frame: Frame, *args):
         self.message = message
         self.frame = frame
 
@@ -180,8 +181,8 @@ class DeliveryError(AMQPError):
 class PublishError(DeliveryError):
     reason = "%r for routing key %r"
 
-    def __init__(self, message: DeliveredMessage, frame: spec.Frame, *args):
-        assert isinstance(message.delivery, spec.Basic.Return)
+    def __init__(self, message: DeliveredMessage, frame: Frame, *args):
+        assert isinstance(message.delivery, Basic.Return)
 
         self.message = message
         self.frame = frame
