@@ -1,5 +1,3 @@
-from pamqp import commands as spec
-
 from . import types
 from .channel import Channel
 from .connection import Connection, connect
@@ -59,7 +57,6 @@ __all__ = (
     "package_license",
     "ProbableAuthenticationError",
     "ProtocolSyntaxError",
-    "spec",
     "team_email",
     "types",
     "version_info",
