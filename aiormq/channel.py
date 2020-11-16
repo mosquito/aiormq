@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional, Union
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
+from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from pamqp.body import ContentBody
 
@@ -376,7 +377,10 @@ class Channel(Base):
         result = None
         if self.writer is not None:
             result = await self.rpc(
-                spec.Channel.Close(reply_code=spec.REPLY_SUCCESS),
+                spec.Channel.Close(
+                    reply_code=REPLY_SUCCESS,
+                    class_id=0, method_id=0,
+                ),
             )
             self.connection.channels.pop(self.number, None)
 
