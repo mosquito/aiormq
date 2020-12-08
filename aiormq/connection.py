@@ -78,7 +78,8 @@ class Connection(Base):
         url: URLorStr,
         *,
         parent=None,
-        loop: asyncio.AbstractEventLoop = None
+        loop: asyncio.AbstractEventLoop = None,
+        context: ssl.SSLContext = None
     ):
 
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=parent)
@@ -95,6 +96,7 @@ class Connection(Base):
         self._reader_task = None  # type: asyncio.Task
         self.reader = None  # type: asyncio.StreamReader
         self.writer = None  # type: asyncio.StreamWriter
+        self.ssl_context = context
         self.ssl_certs = SSLCerts(
             cafile=self.url.query.get("cafile"),
             capath=self.url.query.get("capath"),
@@ -220,9 +222,9 @@ class Connection(Base):
         if self.writer is not None:
             raise RuntimeError("Already connected")
 
-        ssl_context = None
+        ssl_context = self.ssl_context
 
-        if self.url.scheme == "amqps":
+        if ssl_context is None and self.url.scheme == "amqps":
             ssl_context = await self.loop.run_in_executor(
                 None, self._get_ssl_context,
             )

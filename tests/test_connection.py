@@ -1,5 +1,6 @@
 import asyncio
 import os
+import ssl
 import uuid
 from binascii import hexlify
 
@@ -8,7 +9,7 @@ import pytest
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
 
-from .conftest import AMQP_URL, skip_when_quick_test
+from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
 
 CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
@@ -293,6 +294,19 @@ async def test_ssl_verification_fails_without_trusted_ca():
     with pytest.raises(ConnectionError, match=".*CERTIFICATE_VERIFY_FAILED.*"):
         connection = aiormq.Connection(url)
         await connection.connect()
+
+
+async def test_ssl_context():
+    url = AMQP_URL.with_scheme("amqps")
+    context = ssl.create_default_context(
+        purpose=ssl.Purpose.SERVER_AUTH, 
+        cafile=cert_path("ca.pem")
+    )
+    context.load_cert_chain(cert_path("client.pem"), cert_path("client.key"))
+    context.check_hostname = False
+    connection = aiormq.Connection(url, context=context)
+    await connection.connect()
+    await connection.close()
 
 
 @pytest.mark.parametrize("url,vhost", URL_VHOSTS)
