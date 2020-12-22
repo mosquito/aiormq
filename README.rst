@@ -60,13 +60,15 @@ Features
 
 * Tracking unroutable messages
   (Use **connection.channel(on_return_raises=False)** for disabling)
-* Full SSL/TLS support with url query parameters:
-    * ``cafile=`` - string contains path to ca certificate file
-    * ``capath=`` - string contains path to ca certificates
-    * ``cadata=`` - base64 encoded ca certificate data
-    * ``keyfile=`` - string contains path to key file
-    * ``certfile=`` - string contains path to certificate file
-    * ``no_verify_ssl`` - boolean disables certificates validation
+* Full SSL/TLS support, using your choice of:
+    * ``amqps://`` url query parameters:
+        * ``cafile=`` - string contains path to ca certificate file
+        * ``capath=`` - string contains path to ca certificates
+        * ``cadata=`` - base64 encoded ca certificate data
+        * ``keyfile=`` - string contains path to key file
+        * ``certfile=`` - string contains path to certificate file
+        * ``no_verify_ssl`` - boolean disables certificates validation
+    * ``context=`` `SSLContext`_ keyword argument to ``connect()``.
 * Python `type hints`_
 * Uses `pamqp`_ as an AMQP 0.9.1 frame encoder/decoder
 
@@ -76,6 +78,7 @@ Features
 .. _PLAIN: https://www.rabbitmq.com/authentication.html
 .. _type hints: https://docs.python.org/3/library/typing.html
 .. _pamqp: https://pypi.org/project/pamqp/
+.. _SSLContext: https://docs.python.org/3/library/ssl.html#ssl.SSLContext
 
 Tutorial
 ========
