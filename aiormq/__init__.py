@@ -18,6 +18,8 @@ from .version import (
     team_email, version_info,
 )
 
+from pamqp import commands as spec
+
 
 __all__ = (
     "__author__",
@@ -57,6 +59,7 @@ __all__ = (
     "package_license",
     "ProbableAuthenticationError",
     "ProtocolSyntaxError",
+    "spec",
     "team_email",
     "types",
     "version_info",
