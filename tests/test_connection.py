@@ -210,8 +210,8 @@ async def test_non_publisher_confirms(amqp_connection):
 @skip_when_quick_test
 async def test_no_free_channels(amqp_connection: aiormq.Connection):
     await asyncio.wait_for(
-        asyncio.wait(
-            [
+        asyncio.gather(
+            *[
                 amqp_connection.channel(n + 1)
                 for n in range(amqp_connection.connection_tune.channel_max)
             ],
@@ -299,7 +299,7 @@ async def test_ssl_verification_fails_without_trusted_ca():
 async def test_ssl_context():
     url = AMQP_URL.with_scheme("amqps")
     context = ssl.create_default_context(
-        purpose=ssl.Purpose.SERVER_AUTH, 
+        purpose=ssl.Purpose.SERVER_AUTH,
         cafile=cert_path("ca.pem")
     )
     context.load_cert_chain(cert_path("client.pem"), cert_path("client.key"))

@@ -410,6 +410,7 @@ class Connection(Base):
                 await ch.frames.put((weight, frame))
         except asyncio.CancelledError as e:
             log.debug("Reader task cancelled:", exc_info=e)
+            await self.close(e)
         except asyncio.IncompleteReadError as e:
             log.debug("Can not read bytes from server:", exc_info=e)
             await self.close(ConnectionError(*e.args))
