@@ -439,28 +439,28 @@ class Connection(Base):
             self.__rpc(frame, wait_response=False), return_exceptions=True,
         )
 
+        reader_task = self._reader_task
         writer = self.writer
+        self._reader_task = None
         self.reader = None
         self.writer = None
 
-        reader = self._reader_task
-        self._reader_task = None
+        if not writer.is_closing():
+            await asyncio.gather(
+                self.__close_writer(writer), return_exceptions=True,
+            )
 
-        await asyncio.gather(
-            self.__close_writer(writer), return_exceptions=True,
-        )
-
-        if not isinstance(reader, asyncio.Task) or reader.done():
+        if not isinstance(reader_task, asyncio.Task) or reader_task.done():
             return
 
         try:
             await asyncio.wait_for(
-                asyncio.gather(reader, return_exceptions=True),
+                asyncio.gather(reader_task, return_exceptions=True),
                 timeout=self.READER_CLOSE_TIMEOUT
             )
         except asyncio.TimeoutError:
-            reader.cancel()
-            await asyncio.gather(reader, return_exceptions=True)
+            reader_task.cancel()
+            await asyncio.gather(reader_task, return_exceptions=True)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
