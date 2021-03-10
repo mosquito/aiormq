@@ -6,7 +6,6 @@ from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
-from types import MappingProxyType
 from typing import Any, Dict, Optional, Union
 
 import pamqp.frame
@@ -32,12 +31,6 @@ from .types import (
 
 
 log = logging.getLogger(__name__)
-
-
-
-METHOD_IDS = MappingProxyType({
-
-})
 
 
 class Channel(Base):
@@ -348,9 +341,7 @@ class Channel(Base):
                     continue
                 elif isinstance(frame, spec.Basic.CancelOk):
                     self.consumers.pop(frame.consumer_tag, None)
-                elif isinstance(
-                    frame, (spec.Basic.Ack, spec.Basic.Nack, spec.Basic.Reject),
-                ):
+                elif isinstance(frame, (spec.Basic.Ack, spec.Basic.Nack)):
                     with suppress(Exception):
                         await self._on_confirm(frame)
                     continue
