@@ -88,7 +88,7 @@ class Channel(Base):
         self.__close_class_id = 0
         self.__close_method_id = 0
 
-    def _set_close_reason(self, reply_code=REPLY_SUCCESS, reply_text='', class_id=0, method_id=0):
+    def set_close_reason(self, reply_code=REPLY_SUCCESS, reply_text='', class_id=0, method_id=0):
         self.__close_reply_code = reply_code
         self.__close_reply_text = reply_text
         self.__close_class_id = class_id
@@ -162,7 +162,7 @@ class Channel(Base):
                     "Closing channel %r because RPC call %s cancelled",
                     self, frame,
                 )
-                self._set_close_reason(
+                self.set_close_reason(
                     reply_code=504,
                     reply_text="RPC timeout on frame {!s}".format(frame),
                 )
