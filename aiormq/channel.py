@@ -83,6 +83,17 @@ class Channel(Base):
         self.create_task(self._reader())
         self.closing.add_done_callback(self.__clean_up_when_writer_close)
 
+        self.__close_reply_code = REPLY_SUCCESS
+        self.__close_reply_text = 0
+        self.__close_class_id = 0
+        self.__close_method_id = 0
+
+    def _set_close_reason(self, reply_code=REPLY_SUCCESS, reply_text='', class_id=0, method_id=0):
+        self.__close_reply_code = reply_code
+        self.__close_reply_text = reply_text
+        self.__close_class_id = class_id
+        self.__close_method_id = method_id
+
     def __clean_up_when_writer_close(self, _):
         self.writer = None
 
@@ -151,21 +162,9 @@ class Channel(Base):
                     "Closing channel %r because RPC call %s cancelled",
                     self, frame,
                 )
-                writer = self.writer
-                self.writer = None
-
-                writer.write(
-                    pamqp.frame.marshal(
-                        spec.Channel.Close(
-                            reply_code=504,
-                            reply_text="RPC timeout on frame {!s}".format(
-                                frame
-                            ),
-                            class_id=0,
-                            method_id=0
-                        ),
-                        self.number,
-                    ),
+                self._set_close_reason(
+                    reply_code=504,
+                    reply_text="RPC timeout on frame {!s}".format(frame),
                 )
 
                 # The close method will close all channel related tasks
@@ -369,8 +368,9 @@ class Channel(Base):
         if self.writer is not None:
             result = await self.rpc(
                 spec.Channel.Close(
-                    reply_code=REPLY_SUCCESS,
-                    class_id=0, method_id=0,
+                    reply_code=self.__close_reply_code,
+                    class_id=self.__close_class_id,
+                    method_id=self.__close_method_id,
                 ),
             )
             self.connection.channels.pop(self.number, None)
