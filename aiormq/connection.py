@@ -229,6 +229,7 @@ class Connection(Base):
                 None, self._get_ssl_context,
             )
 
+        log.debug("Connecting to: %s", self)
         try:
             self.reader, self.writer = await asyncio.open_connection(
                 self.url.host, self.url.port, ssl=ssl_context,
@@ -428,6 +429,20 @@ class Connection(Base):
         if hasattr(writer, "wait_closed"):
             await writer.wait_closed()
 
+    @staticmethod
+    def __check_writer(writer: asyncio.StreamWriter):
+        if writer is None:
+            return True
+
+        if hasattr(writer, 'is_closing'):
+            return writer.is_closing()
+
+        if writer.transport:
+            return writer.transport.is_closing()
+
+        return not writer.can_write_eof()
+
+
     async def _on_close(self, ex=exc.ConnectionClosed(0, "normal closed")):
         frame = (
             spec.Connection.CloseOk()
@@ -445,7 +460,7 @@ class Connection(Base):
         self.reader = None
         self.writer = None
 
-        if writer is not None and not writer.is_closing():
+        if not self.__check_writer(writer):
             await asyncio.gather(
                 self.__close_writer(writer), return_exceptions=True,
             )
