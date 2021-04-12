@@ -37,6 +37,7 @@ class Channel(Base):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
     Returning = object()
+    CLOSE_TIMEOUT = 2
 
     def __init__(
         self,
@@ -133,6 +134,7 @@ class Channel(Base):
         if self.writer is None:
             raise ChannelInvalidStateError("writer is None")
 
+        writer = self.writer
         lock = self.lock
 
         try:
@@ -141,7 +143,7 @@ class Channel(Base):
             raise asyncio.TimeoutError("Unable to lock channel") from e
 
         try:
-            self.writer.write(pamqp.frame.marshal(frame, self.number))
+            writer.write(pamqp.frame.marshal(frame, self.number))
 
             if not (frame.synchronous or getattr(frame, "nowait", False)):
                 return None
@@ -156,7 +158,9 @@ class Channel(Base):
                 raise InvalidFrameError(frame)
 
             return result
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except (asyncio.CancelledError, asyncio.TimeoutError) as e:
+            lock.release()
+
             if not self.is_closed:
                 log.warning(
                     "Closing channel %r because RPC call %s cancelled",
@@ -167,14 +171,12 @@ class Channel(Base):
                     reply_text="RPC timeout on frame {!s}".format(frame),
                 )
 
-                # The close method will close all channel related tasks
-                # include current task, so I have to suppress
-                # ``CancelledError`` for current task.
-                with suppress(asyncio.CancelledError):
-                    await self.close()
-            raise
+                # noinspection PyAsyncCall
+                self.create_task(self.close())
+            raise e
         finally:
-            lock.release()
+            if lock.locked():
+                lock.release()
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
