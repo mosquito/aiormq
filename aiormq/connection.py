@@ -445,7 +445,7 @@ class Connection(Base):
         self.reader = None
         self.writer = None
 
-        if not writer.is_closing():
+        if writer is not None and not writer.is_closing():
             await asyncio.gather(
                 self.__close_writer(writer), return_exceptions=True,
             )

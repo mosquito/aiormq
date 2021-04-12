@@ -37,6 +37,7 @@ class Channel(Base):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
     Returning = object()
+    CLOSE_TIMEOUT = 2
 
     def __init__(
         self,
@@ -83,6 +84,17 @@ class Channel(Base):
         self.create_task(self._reader())
         self.closing.add_done_callback(self.__clean_up_when_writer_close)
 
+        self.__close_reply_code = REPLY_SUCCESS
+        self.__close_reply_text = 0
+        self.__close_class_id = 0
+        self.__close_method_id = 0
+
+    def set_close_reason(self, reply_code=REPLY_SUCCESS, reply_text='', class_id=0, method_id=0):
+        self.__close_reply_code = reply_code
+        self.__close_reply_text = reply_text
+        self.__close_class_id = class_id
+        self.__close_method_id = method_id
+
     def __clean_up_when_writer_close(self, _):
         self.writer = None
 
@@ -122,6 +134,7 @@ class Channel(Base):
         if self.writer is None:
             raise ChannelInvalidStateError("writer is None")
 
+        writer = self.writer
         lock = self.lock
 
         try:
@@ -130,7 +143,7 @@ class Channel(Base):
             raise asyncio.TimeoutError("Unable to lock channel") from e
 
         try:
-            self.writer.write(pamqp.frame.marshal(frame, self.number))
+            writer.write(pamqp.frame.marshal(frame, self.number))
 
             if not (frame.synchronous or getattr(frame, "nowait", False)):
                 return None
@@ -145,37 +158,25 @@ class Channel(Base):
                 raise InvalidFrameError(frame)
 
             return result
-        except (asyncio.CancelledError, asyncio.TimeoutError):
+        except (asyncio.CancelledError, asyncio.TimeoutError) as e:
+            lock.release()
+
             if not self.is_closed:
                 log.warning(
                     "Closing channel %r because RPC call %s cancelled",
                     self, frame,
                 )
-                writer = self.writer
-                self.writer = None
-
-                writer.write(
-                    pamqp.frame.marshal(
-                        spec.Channel.Close(
-                            reply_code=504,
-                            reply_text="RPC timeout on frame {!s}".format(
-                                frame
-                            ),
-                            class_id=0,
-                            method_id=0
-                        ),
-                        self.number,
-                    ),
+                self.set_close_reason(
+                    reply_code=504,
+                    reply_text="RPC timeout on frame {!s}".format(frame),
                 )
 
-                # The close method will close all channel related tasks
-                # include current task, so I have to suppress
-                # ``CancelledError`` for current task.
-                with suppress(asyncio.CancelledError):
-                    await self.close()
-            raise
+                # noinspection PyAsyncCall
+                self.create_task(self.close())
+            raise e
         finally:
-            lock.release()
+            if lock.locked():
+                lock.release()
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
@@ -369,8 +370,9 @@ class Channel(Base):
         if self.writer is not None:
             result = await self.rpc(
                 spec.Channel.Close(
-                    reply_code=REPLY_SUCCESS,
-                    class_id=0, method_id=0,
+                    reply_code=self.__close_reply_code,
+                    class_id=self.__close_class_id,
+                    method_id=self.__close_method_id,
                 ),
             )
             self.connection.channels.pop(self.number, None)
