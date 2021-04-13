@@ -4,11 +4,15 @@ import platform
 import ssl
 import typing
 from base64 import b64decode
+from collections.abc import AsyncIterable
 from contextlib import suppress
+from types import MappingProxyType
 
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
+from pamqp.constants import REPLY_SUCCESS
+from pamqp.frame import FrameTypes
 from pamqp.header import ProtocolHeader
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
@@ -41,6 +45,33 @@ PLATFORM = "{} {} ({} build {})".format(
 )
 
 
+TimeType = typing.Union[float, int]
+TimeoutType = typing.Optional[TimeType]
+ReceivedFrame = typing.Tuple[int, int, FrameTypes]
+
+
+EXCEPTION_MAPPING = MappingProxyType({
+    501: exc.ConnectionFrameError,
+    502: exc.ConnectionSyntaxError,
+    503: exc.ConnectionCommandInvalid,
+    504: exc.ConnectionChannelError,
+    505: exc.ConnectionUnexpectedFrame,
+    506: exc.ConnectionResourceError,
+    530: exc.ConnectionNotAllowed,
+    540: exc.ConnectionNotImplemented,
+    541: exc.ConnectionInternalError,
+})
+
+
+def exception_by_code(frame: spec.Connection.Close):
+    exc_class = EXCEPTION_MAPPING.get(frame.reply_code)
+
+    if exc_class is None:
+        return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
+
+    return exc_class(frame.reply_text)
+
+
 def parse_bool(v: str):
     return v == "1" or v.lower() in ("true", "yes", "y", "enable", "on")
 
@@ -59,15 +90,91 @@ def parse_connection_name(conn_name: str):
     return {"connection_name": conn_name}
 
 
+class FrameReceiver(AsyncIterable):
+    _loop: asyncio.AbstractEventLoop
+
+    def __init__(self, reader: asyncio.StreamReader,
+                 receive_timeout: TimeoutType):
+        self.reader: asyncio.StreamReader = reader
+        self.timeout: TimeoutType = receive_timeout
+        self.started: bool = False
+        self.lock = asyncio.Lock()
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop:
+        if not hasattr(self, '_loop'):
+            self._loop = asyncio.get_event_loop()
+        return self._loop
+
+    def __aiter__(self) -> "FrameReceiver":
+        return self
+
+    async def get_frame(self) -> ReceivedFrame:
+        if self.reader.at_eof():
+            del self.reader
+            raise StopAsyncIteration
+
+        deadline: float = self.loop.time() + self.timeout
+
+        def get_timeout() -> float:
+            current = self.loop.time()
+            if current >= deadline:
+                raise asyncio.TimeoutError
+            return deadline - current
+
+        async with self.lock:
+            frame_header = await asyncio.wait_for(
+                self.reader.readexactly(1),
+                timeout=get_timeout()
+            )
+
+            if frame_header == b"\0x00":
+                raise spec.AMQPFrameError(
+                    await asyncio.wait_for(
+                        self.reader.read(),
+                        timeout=get_timeout()
+                    )
+                )
+
+            if self.reader is None:
+                raise ConnectionError
+
+            frame_header += await asyncio.wait_for(
+                self.reader.readexactly(6),
+                timeout=get_timeout()
+            )
+
+            if not self.started and frame_header.startswith(b"AMQP"):
+                raise spec.AMQPSyntaxError
+            else:
+                self.started = True
+
+            frame_type, _, frame_length = pamqp.frame.frame_parts(frame_header)
+            frame_payload = await asyncio.wait_for(
+                self.reader.readexactly(frame_length + 1),
+                timeout=get_timeout()
+            )
+        return pamqp.frame.unmarshal(frame_header + frame_payload)
+
+    async def __anext__(self) -> ReceivedFrame:
+        return await self.get_frame()
+
+
 class Connection(Base):
     FRAME_BUFFER = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
     HEARTBEAT_INTERVAL_MULTIPLIER = 0.5
-    # Allow two missed heartbeats (based on heartbeat(timeout)
+    # Allow three missed heartbeats (based on heartbeat(timeout)
     HEARTBEAT_GRACE_MULTIPLIER = 3
     _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
 
     READER_CLOSE_TIMEOUT = 2
+
+    _reader_task: asyncio.Task
+    server_properties: spec.Connection.OpenOk
+    connection_tune: spec.Connection.TuneOk
+    writer: typing.Optional[asyncio.StreamWriter] = None
+    channels: typing.Dict[int, typing.Optional[Channel]]
 
     @staticmethod
     def _parse_ca_data(data) -> typing.Optional[bytes]:
@@ -77,12 +184,11 @@ class Connection(Base):
         self,
         url: URLorStr,
         *,
-        parent=None,
         loop: asyncio.AbstractEventLoop = None,
         context: ssl.SSLContext = None
     ):
 
-        super().__init__(loop=loop or asyncio.get_event_loop(), parent=parent)
+        super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
 
         self.url = URL(url)
         if self.url.is_absolute() and not self.url.port:
@@ -93,9 +199,6 @@ class Connection(Base):
         else:
             self.vhost = self.url.path[1:]
 
-        self._reader_task = None  # type: asyncio.Task
-        self.reader = None  # type: asyncio.StreamReader
-        self.writer = None  # type: asyncio.StreamWriter
         self.ssl_context = context
         self.ssl_certs = SSLCerts(
             cafile=self.url.query.get("cafile"),
@@ -106,34 +209,32 @@ class Connection(Base):
             verify=self.url.query.get("no_verify_ssl", "0") == "0",
         )
 
-        self.started = False
-        self.__lock = asyncio.Lock()
         self.__drain_lock = asyncio.Lock()
 
-        self.channels = {}  # type: typing.Dict[int, typing.Optional[Channel]]
-
-        self.server_properties = None  # type: spec.Connection.OpenOk
-        self.connection_tune = None  # type: spec.Connection.TuneOk
+        self.started = False
+        self.channels = {}
 
         self.last_channel = 1
 
-        self.heartbeat_monitoring = parse_bool(
-            self.url.query.get("heartbeat_monitoring", "1"),
-        )
         self.heartbeat_timeout = parse_int(
-            self.url.query.get("heartbeat", "0"),
+            self.url.query.get("heartbeat", "60"),
         )
-        self.heartbeat_last_received = 0
         self.last_channel_lock = asyncio.Lock()
         self.connected = asyncio.Event()
         self.connection_name = self.url.query.get("name")
 
-    @property
-    def lock(self):
-        if self.is_closed:
-            raise RuntimeError("%r closed" % self)
+        self.__close_reply_code = REPLY_SUCCESS
+        self.__close_reply_text = "normally closed"
+        self.__close_class_id = 0
+        self.__close_method_id = 0
 
-        return self.__lock
+    def set_close_reason(self, reply_code=REPLY_SUCCESS,
+                         reply_text='normally closed',
+                         class_id=0, method_id=0):
+        self.__close_reply_code = reply_code
+        self.__close_reply_text = reply_text
+        self.__close_class_id = class_id
+        self.__close_method_id = method_id
 
     async def drain(self):
         async with self.__drain_lock:
@@ -196,13 +297,16 @@ class Connection(Base):
             start_frame.mechanisms, [m.name for m in AuthMechanism],
         )
 
-    async def __rpc(self, request: Frame, wait_response=True):
-        self.writer.write(pamqp.frame.marshal(request, 0))
+    @staticmethod
+    async def _rpc(request: Frame, writer: asyncio.StreamWriter,
+                   frame_receiver: FrameReceiver,
+                   wait_response: bool = True) -> typing.Optional[FrameTypes]:
+        writer.write(pamqp.frame.marshal(request, 0))
 
         if not wait_response:
             return
 
-        _, _, frame = await self.__receive_frame()
+        _, _, frame = await frame_receiver.get_frame()
 
         if request.synchronous and frame.name not in request.valid_responses:
             raise spec.AMQPInternalError(frame, dict(frame))
@@ -211,9 +315,6 @@ class Connection(Base):
                 err = exc.ProbableAuthenticationError(frame.reply_text)
             else:
                 err = exc.ConnectionClosed(frame.reply_code, frame.reply_text)
-
-            await self.close(err)
-
             raise err
         return frame
 
@@ -231,193 +332,122 @@ class Connection(Base):
 
         log.debug("Connecting to: %s", self)
         try:
-            self.reader, self.writer = await asyncio.open_connection(
+            reader, writer = await asyncio.open_connection(
                 self.url.host, self.url.port, ssl=ssl_context,
+            )
+
+            frame_receiver = FrameReceiver(
+                reader,
+                (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
             )
         except OSError as e:
             raise ConnectionError(*e.args) from e
 
         try:
             protocol_header = ProtocolHeader()
-            self.writer.write(protocol_header.marshal())
+            writer.write(protocol_header.marshal())
 
-            res = await self.__receive_frame()
-            _, _, frame = res  # type: spec.Connection.Start
-            self.heartbeat_last_received = self.loop.time()
+            frame: spec.Connection.Start
+            _, _, frame = await frame_receiver.get_frame()
         except EOFError as e:
             raise exc.IncompatibleProtocolError(*e.args) from e
 
         credentials = self._credentials_class(frame)
 
-        self.server_properties = frame.server_properties
+        server_properties = frame.server_properties
 
-        # noinspection PyTypeChecker
-        self.connection_tune = await self.__rpc(
-            spec.Connection.StartOk(
-                client_properties=self._client_properties(
-                    **(client_properties or {}),
+        try:
+            # noinspection PyTypeChecker
+            connection_tune: spec.Connection.TuneOk = await self._rpc(
+                spec.Connection.StartOk(
+                    client_properties=self._client_properties(
+                        **(client_properties or {}),
+                    ),
+                    mechanism=credentials.name,
+                    response=credentials.value(self).marshal(),
                 ),
-                mechanism=credentials.name,
-                response=credentials.value(self).marshal(),
-            ),
-        )  # type: spec.Connection.Tune
+                writer=writer,
+                frame_receiver=frame_receiver,
+            )
 
-        if self.heartbeat_timeout > 0:
-            self.connection_tune.heartbeat = self.heartbeat_timeout
+            if self.heartbeat_timeout > 0:
+                connection_tune.heartbeat = self.heartbeat_timeout
 
-        await self.__rpc(
-            spec.Connection.TuneOk(
-                channel_max=self.connection_tune.channel_max,
-                frame_max=self.connection_tune.frame_max,
-                heartbeat=self.connection_tune.heartbeat,
-            ),
-            wait_response=False,
-        )
+            await self._rpc(
+                spec.Connection.TuneOk(
+                    channel_max=connection_tune.channel_max,
+                    frame_max=connection_tune.frame_max,
+                    heartbeat=connection_tune.heartbeat,
+                ),
+                writer=writer,
+                frame_receiver=frame_receiver,
+                wait_response=False,
+            )
 
-        await self.__rpc(spec.Connection.Open(virtual_host=self.vhost))
+            await self._rpc(
+                spec.Connection.Open(virtual_host=self.vhost),
+                writer=writer,
+                frame_receiver=frame_receiver,
+            )
 
-        # noinspection PyAsyncCall
-        self._reader_task = self.create_task(self.__reader())
+            # noinspection PyAsyncCall
+            self._reader_task = self.create_task(self.__reader(frame_receiver))
+            self._reader_task.add_done_callback(self._on_reader_done)
+        except Exception as e:
+            await self.close(e)
+            raise
 
-        # noinspection PyAsyncCall
-        heartbeat_task = self.create_task(self.__heartbeat_task())
-        heartbeat_task.add_done_callback(self._on_heartbeat_done)
-        self.loop.call_soon(self.connected.set)
-
+        self.writer = writer
+        self.connection_tune = connection_tune
+        self.server_properties = server_properties
         return True
 
-    def _on_heartbeat_done(self, future):
-        if not future.cancelled() and future.exception():
-            self.create_task(
-                self.close(ConnectionError("heartbeat task was failed.")),
+    def _on_reader_done(self, task: asyncio.Task) -> typing.NoReturn:
+        log.debug("Reader exited for %r", self)
+
+        if not task.cancelled() and task.exception() is not None:
+            log.debug("Cancelling cause reader exited abnormally")
+            self.set_close_reason(
+                reply_code=500, reply_text="reader unexpected closed"
             )
+            self.create_task(self.close(task.exception()))
 
-    async def __heartbeat_task(self):
-        if not self.connection_tune.heartbeat:
-            return
+    async def __reader(self, frame_receiver: FrameReceiver):
+        self.connected.set()
 
-        heartbeat_interval = (
-            self.connection_tune.heartbeat * self.HEARTBEAT_INTERVAL_MULTIPLIER
-        )
-        heartbeat_grace_timeout = (
-            self.connection_tune.heartbeat * self.HEARTBEAT_GRACE_MULTIPLIER
-        )
+        async for weight, channel, frame in frame_receiver:
+            log.debug("Received frame %r weight=%s channel=%d",
+                      frame, weight, channel)
 
-        while self.writer:
-            # Send heartbeat to server unconditionally
-            self.writer.write(self._HEARTBEAT)
+            if channel == 0:
+                if isinstance(frame, spec.Connection.CloseOk):
+                    return
 
-            await asyncio.sleep(heartbeat_interval)
-
-            if not self.heartbeat_monitoring:
-                continue
-
-            # Check if the server sent us something
-            # within the heartbeat grace period
-            last_heartbeat = self.loop.time() - self.heartbeat_last_received
-
-            if last_heartbeat <= heartbeat_grace_timeout:
-                continue
-
-            await self.close(
-                ConnectionError(
-                    "Server connection probably hang, last heartbeat "
-                    "received %.3f seconds ago" % last_heartbeat,
-                ),
-            )
-
-            return
-
-    async def __receive_frame(self) -> typing.Tuple[int, int, Frame]:
-        async with self.lock:
-            frame_header = await self.reader.readexactly(1)
-
-            if frame_header == b"\0x00":
-                raise spec.AMQPFrameError(await self.reader.read())
-
-            if self.reader is None:
-                raise ConnectionError
-
-            frame_header += await self.reader.readexactly(6)
-
-            if not self.started and frame_header.startswith(b"AMQP"):
-                raise spec.AMQPSyntaxError
-            else:
-                self.started = True
-
-            frame_type, _, frame_length = pamqp.frame.frame_parts(frame_header)
-
-            frame_payload = await self.reader.readexactly(frame_length + 1)
-
-        return pamqp.frame.unmarshal(frame_header + frame_payload)
-
-    @staticmethod
-    def __exception_by_code(frame: spec.Connection.Close):
-        if frame.reply_code == 501:
-            return exc.ConnectionFrameError(frame.reply_text)
-        elif frame.reply_code == 502:
-            return exc.ConnectionSyntaxError(frame.reply_text)
-        elif frame.reply_code == 503:
-            return exc.ConnectionCommandInvalid(frame.reply_text)
-        elif frame.reply_code == 504:
-            return exc.ConnectionChannelError(frame.reply_text)
-        elif frame.reply_code == 505:
-            return exc.ConnectionUnexpectedFrame(frame.reply_text)
-        elif frame.reply_code == 506:
-            return exc.ConnectionResourceError(frame.reply_text)
-        elif frame.reply_code == 530:
-            return exc.ConnectionNotAllowed(frame.reply_text)
-        elif frame.reply_code == 540:
-            return exc.ConnectionNotImplemented(frame.reply_text)
-        elif frame.reply_code == 541:
-            return exc.ConnectionInternalError(frame.reply_text)
-        else:
-            return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
-
-    @task
-    async def __reader(self):
-        try:
-            while not self.reader.at_eof():
-                weight, channel, frame = await self.__receive_frame()
-
-                self.heartbeat_last_received = self.loop.time()
-
-                if channel == 0:
-                    if isinstance(frame, spec.Connection.CloseOk):
-                        return
-                    if isinstance(frame, spec.Connection.Close):
-                        return await self.close(
-                            self.__exception_by_code(frame),
-                        )
-                    elif isinstance(frame, Heartbeat):
-                        continue
-
-                    elif isinstance(frame, spec.Channel.CloseOk):
-                        self.channels.pop(channel, None)
-
-                    log.error("Unexpected frame %r", frame)
-                    continue
-
-                ch = self.channels.get(channel)
-                if ch is None:
-                    log.error(
-                        "Got frame for closed channel %d: %r", channel, frame,
+                if isinstance(frame, spec.Connection.Close):
+                    log.exception(
+                        "Unexpected connection close from remote \"%s\", %r",
+                        self, frame
                     )
+                    raise exception_by_code(frame)
+                elif isinstance(frame, Heartbeat):
                     continue
+                elif isinstance(frame, spec.Channel.CloseOk):
+                    self.channels.pop(channel, None)
 
-                if isinstance(frame, CHANNEL_CLOSE_RESPONSES):
-                    self.channels[channel] = None
+                log.error("Unexpected frame %r", frame)
+                continue
 
-                await ch.frames.put((weight, frame))
-        except asyncio.CancelledError as e:
-            log.debug("Reader task cancelled:", exc_info=e)
-            await self.close(e)
-        except asyncio.IncompleteReadError as e:
-            log.debug("Can not read bytes from server:", exc_info=e)
-            await self.close(ConnectionError(*e.args))
-        except Exception as e:
-            log.debug("Reader task exited because:", exc_info=e)
-            await self.close(e)
+            ch = self.channels.get(channel)
+            if ch is None:
+                log.error(
+                    "Got frame for closed channel %d: %r", channel, frame,
+                )
+                continue
+
+            if isinstance(frame, CHANNEL_CLOSE_RESPONSES):
+                self.channels[channel] = None
+
+            await ch.frames.put((weight, frame))
 
     @staticmethod
     async def __close_writer(writer: asyncio.StreamWriter):
@@ -432,50 +462,47 @@ class Connection(Base):
     @staticmethod
     def __check_writer(writer: asyncio.StreamWriter):
         if writer is None:
-            return True
+            return False
 
         if hasattr(writer, 'is_closing'):
-            return writer.is_closing()
+            return not writer.is_closing()
 
         if writer.transport:
-            return writer.transport.is_closing()
+            return not writer.transport.is_closing()
 
-        return not writer.can_write_eof()
-
+        return writer.can_write_eof()
 
     async def _on_close(self, ex=exc.ConnectionClosed(0, "normal closed")):
-        frame = (
-            spec.Connection.CloseOk()
-            if isinstance(ex, exc.ConnectionClosed)
-            else spec.Connection.Close()
-        )
-
-        await asyncio.gather(
-            self.__rpc(frame, wait_response=False), return_exceptions=True,
-        )
-
+        log.debug("Closing connection %r cause: %r", self, ex)
         reader_task = self._reader_task
+        del self._reader_task
+
+        if not reader_task.done():
+            reader_task.cancel()
+
         writer = self.writer
-        self._reader_task = None
-        self.reader = None
         self.writer = None
 
         if not self.__check_writer(writer):
-            await asyncio.gather(
-                self.__close_writer(writer), return_exceptions=True,
-            )
-
-        if not isinstance(reader_task, asyncio.Task) or reader_task.done():
             return
 
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(reader_task, return_exceptions=True),
-                timeout=self.READER_CLOSE_TIMEOUT
+        if isinstance(ex, exc.ConnectionClosed):
+            frame = spec.Connection.CloseOk()
+        else:
+            frame = spec.Connection.Close(
+                reply_code=self.__close_reply_code,
+                reply_text=self.__close_reply_text,
+                class_id=self.__close_class_id,
+                method_id=self.__close_method_id,
             )
-        except asyncio.TimeoutError:
-            reader_task.cancel()
-            await asyncio.gather(reader_task, return_exceptions=True)
+
+        writer.write(pamqp.frame.marshal(frame, 0))
+        log.debug("Sending %r to %s", frame, self)
+
+        async with self.__drain_lock:
+            await writer.drain()
+
+        await self.__close_writer(writer)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
@@ -559,10 +586,5 @@ class Connection(Base):
 async def connect(url, *args, client_properties=None, **kwargs) -> Connection:
     connection = Connection(url, *args, **kwargs)
 
-    try:
-        await connection.connect(client_properties or {})
-    except Exception as e:
-        await connection.close(e)
-        raise
-
+    await connection.connect(client_properties or {})
     return connection

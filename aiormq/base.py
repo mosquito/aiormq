@@ -122,7 +122,7 @@ class Base:
         return self.__future_store.get_child()
 
     # noinspection PyShadowingNames
-    def create_task(self, coro) -> asyncio.Future:
+    def create_task(self, coro) -> asyncio.Task:
         return self.__future_store.create_task(coro)
 
     def create_future(self) -> asyncio.Future:
@@ -142,9 +142,9 @@ class Base:
         with suppress(Exception):
             await self._cancel_tasks(exc)
 
-    async def close(self, exc=asyncio.CancelledError()):
+    async def close(self, exc=asyncio.CancelledError()) -> None:
         if self.is_closed:
-            return
+            return None
 
         await self.loop.create_task(self.__closer(exc))
 

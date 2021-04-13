@@ -249,7 +249,7 @@ class Channel(Base):
         return self.getter.set_result((frame, message))
 
     async def _on_return(self, frame: spec.Basic.Return):
-        header = await self._get_frame()  # type: ContentHeader
+        header: ContentHeader = await self._get_frame()
         message = await self._read_content(frame, header)
         message_id = message.header.properties.message_id
 

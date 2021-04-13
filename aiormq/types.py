@@ -24,7 +24,7 @@ ReturnCallback = typing.Callable[[], CallbackCoro]
 ArgumentsType = typing.Dict[str, typing.Union[str, int, bool]]
 
 ConfirmationFrameType = typing.Union[
-    Basic.Ack, Basic.Nack, Basic.Reject,
+    Basic.Ack, Basic.Nack, Basic.Reject, Basic.Return
 ]
 
 SSLCerts = typing.NamedTuple(

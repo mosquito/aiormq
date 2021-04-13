@@ -3,11 +3,14 @@ import os
 import ssl
 import uuid
 from binascii import hexlify
+from typing import Optional
 
 import pytest
+from pamqp.commands import Basic
 
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
+from aiormq.types import DeliveredMessage
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
@@ -16,7 +19,6 @@ CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
 
 
 async def test_simple(amqp_connection: aiormq.Connection):
-    assert amqp_connection.reader is not None
     assert amqp_connection.writer is not None
 
     channel1 = await amqp_connection.channel()
@@ -70,7 +72,6 @@ async def test_simple(amqp_connection: aiormq.Connection):
     with pytest.raises(RuntimeError):
         await amqp_connection.channel()
 
-    assert amqp_connection.reader is None
     assert amqp_connection.writer is None
 
 
@@ -234,7 +235,7 @@ async def test_huge_message(amqp_connection: aiormq.Connection):
     await channel.basic_consume(deaclare_ok.queue, queue.put)
     await channel.basic_publish(body, routing_key=deaclare_ok.queue)
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == body
 
 
@@ -243,13 +244,15 @@ async def test_return_message(amqp_connection: aiormq.Connection):
     body = os.urandom(512)
     routing_key = hexlify(os.urandom(16)).decode()
 
-    channel = await conn.channel(
+    channel: aiormq.Channel = await conn.channel(
         on_return_raises=False,
-    )  # type: aiormq.Channel
+    )
 
-    result = await channel.basic_publish(
+    result: Optional[Basic.Return] = await channel.basic_publish(
         body, routing_key=routing_key, mandatory=True,
     )
+
+    assert result is not None
 
     assert result.delivery.name == "Basic.Return"
     assert result.delivery.routing_key == routing_key
