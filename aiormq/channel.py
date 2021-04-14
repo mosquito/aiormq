@@ -208,33 +208,27 @@ class Channel(Base, AbstractChannel):
         if frame is None:  # pragma: no cover
             raise spec.AMQPFrameError(frame)
 
+    async def __get_content_frame(self) -> ContentBody:
+        content_frame = await self._get_frame()
+        if not isinstance(content_frame, ContentBody):
+            raise ValueError(
+                "Unexpected frame {!r}".format(content_frame),
+                content_frame
+            )
+        return content_frame
+
     async def _read_content(self, frame, header: ContentHeader):
         with BytesIO() as body:
             content: Optional[ContentBody] = None
-            content_frame: Union[Frame, ContentHeader, ContentBody]
 
             if header.body_size:
-                content_frame = await self._get_frame()
-                if not isinstance(content_frame, ContentBody):
-                    raise ValueError(
-                        "Unexpected frame {!r}".format(content_frame),
-                        content_frame
-                    )
-                content = content_frame
+                content = await self.__get_content_frame()
 
             while content and body.tell() < header.body_size:
                 body.write(content.value)
 
                 if body.tell() < header.body_size:
-                    content_frame = await self._get_frame()
-
-                    if not isinstance(content_frame, ContentBody):
-                        raise ValueError(
-                            "Unexpected frame {!r}".format(content_frame),
-                            content_frame
-                        )
-
-                    content = frame
+                    content = await self.__get_content_frame()
 
             return DeliveredMessage(
                 delivery=frame,
