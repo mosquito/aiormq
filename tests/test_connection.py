@@ -10,7 +10,7 @@ from pamqp.commands import Basic
 
 import aiormq
 from aiormq.auth import AuthBase, PlainAuth
-from aiormq.types import DeliveredMessage
+from aiormq.abc import DeliveredMessage
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
@@ -217,7 +217,7 @@ async def test_no_free_channels(amqp_connection: aiormq.Connection):
                 for n in range(amqp_connection.connection_tune.channel_max)
             ],
         ),
-        timeout=60,
+        timeout=120,
     )
 
     with pytest.raises(aiormq.exceptions.ConnectionNotAllowed):

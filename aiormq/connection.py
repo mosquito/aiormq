@@ -22,7 +22,7 @@ from .auth import AuthMechanism
 from .base import Base, task
 from .channel import Channel
 from .tools import censor_url
-from .types import ArgumentsType, SSLCerts, URLorStr
+from .abc import AbstractChannel, ArgumentsType, SSLCerts, URLorStr
 from .version import __version__
 
 
@@ -174,7 +174,7 @@ class Connection(Base):
     server_properties: spec.Connection.OpenOk
     connection_tune: spec.Connection.TuneOk
     writer: typing.Optional[asyncio.StreamWriter] = None
-    channels: typing.Dict[int, typing.Optional[Channel]]
+    channels: typing.Dict[int, typing.Optional[AbstractChannel]]
 
     @staticmethod
     def _parse_ca_data(data) -> typing.Optional[bytes]:
@@ -530,7 +530,7 @@ class Connection(Base):
         publisher_confirms=True,
         frame_buffer=FRAME_BUFFER,
         **kwargs
-    ) -> Channel:
+    ) -> AbstractChannel:
 
         await self.connected.wait()
 

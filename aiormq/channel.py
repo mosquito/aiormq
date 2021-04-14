@@ -6,7 +6,8 @@ from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
-from typing import Any, Dict, Optional, Union
+from types import MappingProxyType
+from typing import Any, Dict, Optional, Union, Mapping, Type
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -22,18 +23,38 @@ from .exceptions import (
     ChannelAccessRefused, ChannelClosed, ChannelInvalidStateError,
     ChannelLockedResource, ChannelNotFoundEntity, ChannelPreconditionFailed,
     DeliveryError, DuplicateConsumerTag, InvalidFrameError,
-    MethodNotImplemented, PublishError,
+    MethodNotImplemented, PublishError, AMQPChannelError,
 )
-from .types import (
-    ArgumentsType, ConfirmationFrameType, ConsumerCallback, DeliveredMessage,
-    DrainResult, FrameType, RpcReturnType, TimeoutType,
+from .abc import (
+    AbstractChannel, ArgumentsType, ConfirmationFrameType, ConsumerCallback,
+    DeliveredMessage, DrainResult, FrameType, RpcReturnType, TimeoutType,
 )
 
 
 log = logging.getLogger(__name__)
 
 
-class Channel(Base):
+EXCEPTION_MAPPING: Mapping[int, Type[AMQPChannelError]] = MappingProxyType({
+    403: ChannelAccessRefused,
+    404: ChannelNotFoundEntity,
+    405: ChannelLockedResource,
+    406: ChannelPreconditionFailed,
+})
+
+
+def exception_by_code(frame: spec.Connection.Close):
+    if frame.reply_code is None:
+        return ChannelClosed(frame.reply_code, frame.reply_text)
+
+    exception_class = EXCEPTION_MAPPING.get(frame.reply_code)
+
+    if exception_class is None:
+        return ChannelClosed(frame.reply_code, frame.reply_text)
+
+    return exception_class(frame.reply_text)
+
+
+class Channel(Base, AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
     Returning = object()
@@ -188,42 +209,53 @@ class Channel(Base):
             raise spec.AMQPFrameError(frame)
 
     async def _read_content(self, frame, header: ContentHeader):
-        body = BytesIO()
+        with BytesIO() as body:
+            content: Optional[ContentBody] = None
+            content_frame: Union[Frame, ContentHeader, ContentBody]
 
-        content = None
+            if header.body_size:
+                content_frame = await self._get_frame()
+                if not isinstance(content_frame, ContentBody):
+                    raise ValueError(
+                        "Unexpected frame {!r}".format(content_frame),
+                        content_frame
+                    )
+                content = content_frame
 
-        if header.body_size:
-            content = await self._get_frame()  # type: Optional[ContentBody]
+            while content and body.tell() < header.body_size:
+                body.write(content.value)
 
-        while content and body.tell() < header.body_size:
-            body.write(content.value)
+                if body.tell() < header.body_size:
+                    content_frame = await self._get_frame()
 
-            if body.tell() < header.body_size:
-                content = await self._get_frame()
+                    if not isinstance(content_frame, ContentBody):
+                        raise ValueError(
+                            "Unexpected frame {!r}".format(content_frame),
+                            content_frame
+                        )
 
-        return DeliveredMessage(
-            delivery=frame,
-            header=header,
-            body=body.getvalue(),
-            channel=self,
-        )
+                    content = frame
 
-    @staticmethod
-    def __exception_by_code(frame: spec.Channel.Close):  # pragma: nocover
-        if frame.reply_code == 403:
-            return ChannelAccessRefused(frame.reply_text)
-        elif frame.reply_code == 404:
-            return ChannelNotFoundEntity(frame.reply_text)
-        elif frame.reply_code == 405:
-            return ChannelLockedResource(frame.reply_text)
-        elif frame.reply_code == 406:
-            return ChannelPreconditionFailed(frame.reply_text)
-        else:
-            return ChannelClosed(frame.reply_code, frame.reply_text)
+            return DeliveredMessage(
+                delivery=frame,
+                header=header,
+                body=body.getvalue(),
+                channel=self,
+            )
+
+    async def __get_content_header(self) -> ContentHeader:
+        frame: FrameType = await self._get_frame()
+
+        if not isinstance(frame, ContentHeader):
+            raise ValueError(
+                "Unexpected frame {!r} instead of ContentHeader".format(frame),
+                frame
+            )
+
+        return frame
 
     async def _on_deliver(self, frame: spec.Basic.Deliver):
-        # async with self.lock:
-        header = await self._get_frame()  # type: ContentHeader
+        header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
 
         consumer = self.consumers.get(frame.consumer_tag)
@@ -236,7 +268,7 @@ class Channel(Base):
     ):
         message = None
         if isinstance(frame, spec.Basic.GetOk):
-            header = await self._get_frame()  # type: ContentHeader
+            header: ContentHeader = await self.__get_content_header()
             message = await self._read_content(frame, header)
 
         if self.getter is None:
@@ -249,7 +281,7 @@ class Channel(Base):
         return self.getter.set_result((frame, message))
 
     async def _on_return(self, frame: spec.Basic.Return):
-        header: ContentHeader = await self._get_frame()
+        header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
         message_id = message.header.properties.message_id
 
@@ -278,7 +310,8 @@ class Channel(Base):
 
         confirmation.set_result(message)
 
-    def _confirm_delivery(self, delivery_tag, frame: ConfirmationFrameType):
+    def _confirm_delivery(self, delivery_tag: Optional[int],
+                          frame: ConfirmationFrameType):
         if delivery_tag not in self.confirmations:
             return
 
@@ -347,7 +380,7 @@ class Channel(Base):
                         await self._on_confirm(frame)
                     continue
                 elif isinstance(frame, spec.Channel.Close):
-                    exc = self.__exception_by_code(frame)
+                    exc = exception_by_code(frame)
                     self.writer.write(
                         pamqp.frame.marshal(
                             spec.Channel.CloseOk(), self.number,
@@ -454,7 +487,7 @@ class Channel(Base):
 
     def basic_nack(
         self,
-        delivery_tag: str = None,
+        delivery_tag: int = None,
         multiple: bool = False,
         requeue: bool = True,
     ) -> DrainResult:

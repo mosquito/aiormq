@@ -1,4 +1,4 @@
-from . import types
+from . import abc
 from .channel import Channel
 from .connection import Connection, connect
 from .exceptions import (
@@ -24,6 +24,7 @@ from pamqp import commands as spec
 __all__ = (
     "__author__",
     "__version__",
+    "abc",
     "AMQPChannelError",
     "AMQPConnectionError",
     "AMQPError",
@@ -61,6 +62,5 @@ __all__ = (
     "ProtocolSyntaxError",
     "spec",
     "team_email",
-    "types",
     "version_info",
 )
