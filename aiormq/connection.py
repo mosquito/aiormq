@@ -12,6 +12,7 @@ import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.constants import REPLY_SUCCESS
+from pamqp.exceptions import AMQPFrameError, AMQPSyntaxError, AMQPInternalError
 from pamqp.frame import FrameTypes
 from pamqp.header import ProtocolHeader
 from pamqp.heartbeat import Heartbeat
@@ -19,7 +20,7 @@ from yarl import URL
 
 from . import exceptions as exc
 from .auth import AuthMechanism
-from .base import Base, task
+from .base import Base, task, TaskType
 from .channel import Channel
 from .tools import censor_url
 from .abc import AbstractChannel, ArgumentsType, SSLCerts, URLorStr
@@ -64,6 +65,9 @@ EXCEPTION_MAPPING = MappingProxyType({
 
 
 def exception_by_code(frame: spec.Connection.Close):
+    if frame.reply_code is None:
+        return exc.ConnectionClosed(frame.reply_code, frame.reply_text)
+
     exc_class = EXCEPTION_MAPPING.get(frame.reply_code)
 
     if exc_class is None:
@@ -94,9 +98,9 @@ class FrameReceiver(AsyncIterable):
     _loop: asyncio.AbstractEventLoop
 
     def __init__(self, reader: asyncio.StreamReader,
-                 receive_timeout: TimeoutType):
+                 receive_timeout: TimeType):
         self.reader: asyncio.StreamReader = reader
-        self.timeout: TimeoutType = receive_timeout
+        self.timeout: TimeType = receive_timeout
         self.started: bool = False
         self.lock = asyncio.Lock()
 
@@ -129,7 +133,7 @@ class FrameReceiver(AsyncIterable):
             )
 
             if frame_header == b"\0x00":
-                raise spec.AMQPFrameError(
+                raise AMQPFrameError(
                     await asyncio.wait_for(
                         self.reader.read(),
                         timeout=get_timeout()
@@ -145,11 +149,14 @@ class FrameReceiver(AsyncIterable):
             )
 
             if not self.started and frame_header.startswith(b"AMQP"):
-                raise spec.AMQPSyntaxError
+                raise AMQPSyntaxError
             else:
                 self.started = True
 
             frame_type, _, frame_length = pamqp.frame.frame_parts(frame_header)
+            if frame_length is None:
+                raise AMQPInternalError("No frame length", None)
+
             frame_payload = await asyncio.wait_for(
                 self.reader.readexactly(frame_length + 1),
                 timeout=get_timeout()
@@ -170,9 +177,9 @@ class Connection(Base):
 
     READER_CLOSE_TIMEOUT = 2
 
-    _reader_task: asyncio.Task
-    server_properties: spec.Connection.OpenOk
-    connection_tune: spec.Connection.TuneOk
+    _reader_task: TaskType
+    server_properties: ArgumentsType
+    connection_tune: spec.Connection.Tune
     writer: typing.Optional[asyncio.StreamWriter] = None
     channels: typing.Dict[int, typing.Optional[AbstractChannel]]
 
@@ -288,7 +295,7 @@ class Connection(Base):
     @staticmethod
     def _credentials_class(
         start_frame: spec.Connection.Start
-    ) -> typing.Type[AuthMechanism]:
+    ) -> AuthMechanism:
         for mechanism in start_frame.mechanisms.split():
             with suppress(KeyError):
                 return AuthMechanism[mechanism]
@@ -304,18 +311,18 @@ class Connection(Base):
         writer.write(pamqp.frame.marshal(request, 0))
 
         if not wait_response:
-            return
+            return None
 
         _, _, frame = await frame_receiver.get_frame()
 
         if request.synchronous and frame.name not in request.valid_responses:
-            raise spec.AMQPInternalError(frame, dict(frame))
+            raise AMQPInternalError(
+                "one of {!r}".format(request.valid_responses), frame
+            )
         elif isinstance(frame, spec.Connection.Close):
             if frame.reply_code == 403:
-                err = exc.ProbableAuthenticationError(frame.reply_text)
-            else:
-                err = exc.ConnectionClosed(frame.reply_code, frame.reply_text)
-            raise err
+                raise exc.ProbableAuthenticationError(frame.reply_text)
+            raise exc.ConnectionClosed(frame.reply_code, frame.reply_text)
         return frame
 
     @task
@@ -343,22 +350,25 @@ class Connection(Base):
         except OSError as e:
             raise ConnectionError(*e.args) from e
 
+        frame: typing.Optional[FrameTypes]
+
         try:
             protocol_header = ProtocolHeader()
             writer.write(protocol_header.marshal())
 
-            frame: spec.Connection.Start
             _, _, frame = await frame_receiver.get_frame()
         except EOFError as e:
             raise exc.IncompatibleProtocolError(*e.args) from e
 
+        if not isinstance(frame, spec.Connection.Start):
+            raise AMQPInternalError("Connection.StartOk", frame)
+
         credentials = self._credentials_class(frame)
 
-        server_properties = frame.server_properties
+        server_properties: ArgumentsType = frame.server_properties
 
         try:
-            # noinspection PyTypeChecker
-            connection_tune: spec.Connection.TuneOk = await self._rpc(
+            frame = await self._rpc(
                 spec.Connection.StartOk(
                     client_properties=self._client_properties(
                         **(client_properties or {}),
@@ -369,6 +379,11 @@ class Connection(Base):
                 writer=writer,
                 frame_receiver=frame_receiver,
             )
+
+            if not isinstance(frame, spec.Connection.Tune):
+                raise AMQPInternalError("Connection.Tune", frame)
+
+            connection_tune: spec.Connection.Tune = frame
 
             if self.heartbeat_timeout > 0:
                 connection_tune.heartbeat = self.heartbeat_timeout
@@ -384,14 +399,18 @@ class Connection(Base):
                 wait_response=False,
             )
 
-            await self._rpc(
+            frame = await self._rpc(
                 spec.Connection.Open(virtual_host=self.vhost),
                 writer=writer,
                 frame_receiver=frame_receiver,
             )
 
+            if not isinstance(frame, spec.Connection.OpenOk):
+                raise AMQPInternalError("Connection.OpenOk", frame)
+
             # noinspection PyAsyncCall
-            self._reader_task = self.create_task(self.__reader(frame_receiver))
+            self._reader_task = self.create_task(self.__reader(
+                frame_receiver))
             self._reader_task.add_done_callback(self._on_reader_done)
         except Exception as e:
             await self.close(e)
@@ -402,7 +421,7 @@ class Connection(Base):
         self.server_properties = server_properties
         return True
 
-    def _on_reader_done(self, task: asyncio.Task) -> typing.NoReturn:
+    def _on_reader_done(self, task: asyncio.Task) -> None:
         log.debug("Reader exited for %r", self)
 
         if not task.cancelled() and task.exception() is not None:
@@ -437,7 +456,7 @@ class Connection(Base):
                 log.error("Unexpected frame %r", frame)
                 continue
 
-            ch = self.channels.get(channel)
+            ch: typing.Optional[AbstractChannel] = self.channels.get(channel)
             if ch is None:
                 log.error(
                     "Got frame for closed channel %d: %r", channel, frame,
@@ -506,19 +525,19 @@ class Connection(Base):
 
     @property
     def server_capabilities(self) -> ArgumentsType:
-        return self.server_properties["capabilities"]
+        return self.server_properties["capabilities"]   # type: ignore
 
     @property
     def basic_nack(self) -> bool:
-        return self.server_capabilities.get("basic.nack")
+        return bool(self.server_capabilities.get("basic.nack"))
 
     @property
     def consumer_cancel_notify(self) -> bool:
-        return self.server_capabilities.get("consumer_cancel_notify")
+        return bool(self.server_capabilities.get("consumer_cancel_notify"))
 
     @property
     def exchange_exchange_bindings(self) -> bool:
-        return self.server_capabilities.get("exchange_exchange_bindings")
+        return bool(self.server_capabilities.get("exchange_exchange_bindings"))
 
     @property
     def publisher_confirms(self):

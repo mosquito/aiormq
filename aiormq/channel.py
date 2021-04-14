@@ -54,11 +54,19 @@ def exception_by_code(frame: spec.Connection.Close):
     return exception_class(frame.reply_text)
 
 
+class Returning(asyncio.Future):
+    pass
+
+
+ConfirmationType = Union[asyncio.Future, Returning]
+
+
 class Channel(Base, AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
-    Returning = object()
     CLOSE_TIMEOUT = 2
+
+    confirmations: Dict[int, ConfirmationType]
 
     def __init__(
         self,
@@ -110,7 +118,8 @@ class Channel(Base, AbstractChannel):
         self.__close_class_id = 0
         self.__close_method_id = 0
 
-    def set_close_reason(self, reply_code=REPLY_SUCCESS, reply_text='', class_id=0, method_id=0):
+    def set_close_reason(self, reply_code=REPLY_SUCCESS,
+                         reply_text='', class_id=0, method_id=0):
         self.__close_reply_code = reply_code
         self.__close_reply_text = reply_text
         self.__close_class_id = class_id
@@ -289,7 +298,7 @@ class Channel(Base, AbstractChannel):
         if confirmation is None:  # pragma: nocover
             return
 
-        self.confirmations[delivery_tag] = self.Returning
+        self.confirmations[delivery_tag] = Returning()
 
         if self.on_return_raises:
             confirmation.set_exception(PublishError(message, frame))
@@ -311,7 +320,7 @@ class Channel(Base, AbstractChannel):
 
         confirmation = self.confirmations.pop(delivery_tag)
 
-        if confirmation is self.Returning:
+        if isinstance(confirmation, Returning):
             return
         elif confirmation.done():  # pragma: nocover
             log.warning(
@@ -481,7 +490,7 @@ class Channel(Base, AbstractChannel):
 
     def basic_nack(
         self,
-        delivery_tag: int = None,
+        delivery_tag: int,
         multiple: bool = False,
         requeue: bool = True,
     ) -> DrainResult:
@@ -540,7 +549,7 @@ class Channel(Base, AbstractChannel):
             rnd_id = os.urandom(16)
             content_header.properties.message_id = hexlify(rnd_id).decode()
 
-        confirmation = None
+        confirmation: Optional[ConfirmationType] = None
 
         async with self.lock:
             self.delivery_tag += 1
@@ -579,7 +588,10 @@ class Channel(Base, AbstractChannel):
                     )
 
         if not self.publisher_confirms:
-            return
+            return None
+
+        if confirmation is None:
+            return None
 
         return await asyncio.wait_for(confirmation, timeout=timeout)
 
@@ -604,7 +616,7 @@ class Channel(Base, AbstractChannel):
         self, *, nowait: bool = False, requeue=False,
         timeout: Union[int, float] = None
     ) -> spec.Basic.RecoverOk:
-
+        frame: Union[spec.Basic.RecoverAsync, spec.Basic.Recover]
         if nowait:
             frame = spec.Basic.RecoverAsync(requeue=requeue)
         else:
@@ -614,7 +626,7 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_declare(
         self,
-        exchange: str = None,
+        exchange: str = '',
         *,
         exchange_type: str = "direct",
         passive: bool = False,
@@ -641,7 +653,7 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_delete(
         self,
-        exchange: str = None,
+        exchange: str = '',
         *,
         if_unused: bool = False,
         nowait: bool = False,
@@ -656,9 +668,9 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_bind(
         self,
-        destination: str = None,
-        source: str = None,
-        routing_key: str = "",
+        destination: str = '',
+        source: str = '',
+        routing_key: str = '',
         *,
         nowait: bool = False,
         arguments: dict = None,
@@ -677,8 +689,8 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_unbind(
         self,
-        destination: str = None,
-        source: str = None,
+        destination: str = '',
+        source: str = '',
         routing_key: str = "",
         *,
         nowait: bool = False,
@@ -779,9 +791,9 @@ class Channel(Base, AbstractChannel):
 
     async def queue_unbind(
         self,
-        queue: str = "",
-        exchange: str = None,
-        routing_key: str = None,
+        queue: str = '',
+        exchange: str = '',
+        routing_key: str = '',
         arguments: dict = None,
         timeout: TimeoutType = None
     ) -> spec.Queue.UnbindOk:

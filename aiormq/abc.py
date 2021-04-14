@@ -1,3 +1,4 @@
+import asyncio
 from abc import ABC, abstractmethod
 from pamqp import commands as spec
 from pamqp.base import Frame
@@ -27,26 +28,28 @@ ChannelRType = Tuple[int, Channel.OpenOk]
 CallbackCoro = Coroutine[DeliveredMessage, None, Any]
 ConsumerCallback = Callable[[], CallbackCoro]
 ReturnCallback = Callable[[], CallbackCoro]
-ArgumentsType = Dict[str, Union[str, int, bool]]
+
+ArgumentsType = Dict[
+    str, Union[str, int, bool, Dict[str, Union[str, int, bool]]]
+]
 
 ConfirmationFrameType = Union[
     Basic.Ack, Basic.Nack, Basic.Reject
 ]
 
-SSLCerts = NamedTuple(
-    "SSLCerts",
-    [
-        ("cert", str),
-        ("key", str),
-        ("capath", str),
-        ("cafile", str),
-        ("cadata", bytes),
-        ("verify", bool),
-    ],
-)
-FrameReceived = NamedTuple(
-    "FrameReceived", [("channel", int), ("frame", str)],
-)
+
+class SSLCerts(NamedTuple):
+    cert: Optional[str]
+    key: Optional[str]
+    capath: Optional[str]
+    cafile: Optional[str]
+    cadata: Optional[bytes]
+    verify: bool
+
+
+class FrameReceived(NamedTuple):
+    channel: int
+    frame: str
 
 
 URLorStr = Union[URL, str]
@@ -79,6 +82,8 @@ RpcReturnType = Optional[
 
 
 class AbstractChannel(ABC):
+    frames: asyncio.Queue
+
     @abstractmethod
     async def open(self):
         pass
@@ -120,7 +125,7 @@ class AbstractChannel(ABC):
     @abstractmethod
     def basic_nack(
         self,
-        delivery_tag: int = None,
+        delivery_tag: int,
         multiple: bool = False,
         requeue: bool = True,
     ) -> DrainResult:
@@ -165,7 +170,7 @@ class AbstractChannel(ABC):
     @abstractmethod
     async def exchange_declare(
         self,
-        exchange: str = None,
+        exchange: str = '',
         *,
         exchange_type: str = "direct",
         passive: bool = False,
@@ -181,7 +186,7 @@ class AbstractChannel(ABC):
     @abstractmethod
     async def exchange_delete(
         self,
-        exchange: str = None,
+        exchange: str = '',
         *,
         if_unused: bool = False,
         nowait: bool = False,
@@ -192,8 +197,8 @@ class AbstractChannel(ABC):
     @abstractmethod
     async def exchange_bind(
         self,
-        destination: str = None,
-        source: str = None,
+        destination: str = '',
+        source: str = '',
         routing_key: str = "",
         *,
         nowait: bool = False,
@@ -205,9 +210,9 @@ class AbstractChannel(ABC):
     @abstractmethod
     async def exchange_unbind(
         self,
-        destination: str = None,
-        source: str = None,
-        routing_key: str = "",
+        destination: str = '',
+        source: str = '',
+        routing_key: str = '',
         *,
         nowait: bool = False,
         arguments: dict = None,
@@ -271,8 +276,8 @@ class AbstractChannel(ABC):
     async def queue_unbind(
         self,
         queue: str = "",
-        exchange: str = None,
-        routing_key: str = None,
+        exchange: str = '',
+        routing_key: str = '',
         arguments: dict = None,
         timeout: TimeoutType = None
     ) -> spec.Queue.UnbindOk:
