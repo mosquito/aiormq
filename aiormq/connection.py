@@ -22,7 +22,7 @@ from . import exceptions as exc
 from .auth import AuthMechanism
 from .base import Base, task, TaskType
 from .channel import Channel
-from .tools import censor_url
+from .tools import censor_url, Countdown
 from .abc import AbstractChannel, ArgumentsType, SSLCerts, URLorStr
 from .version import __version__
 
@@ -118,35 +118,20 @@ class FrameReceiver(AsyncIterable):
             del self.reader
             raise StopAsyncIteration
 
-        deadline: float = self.loop.time() + self.timeout
-
-        def get_timeout() -> float:
-            current = self.loop.time()
-            if current >= deadline:
-                raise asyncio.TimeoutError
-            return deadline - current
+        countdown = Countdown(self.timeout)
 
         async with self.lock:
-            frame_header = await asyncio.wait_for(
-                self.reader.readexactly(1),
-                timeout=get_timeout()
-            )
+            frame_header = await countdown(self.reader.readexactly(1))
 
             if frame_header == b"\0x00":
                 raise AMQPFrameError(
-                    await asyncio.wait_for(
-                        self.reader.read(),
-                        timeout=get_timeout()
-                    )
+                    await countdown(self.reader.read())
                 )
 
             if self.reader is None:
                 raise ConnectionError
 
-            frame_header += await asyncio.wait_for(
-                self.reader.readexactly(6),
-                timeout=get_timeout()
-            )
+            frame_header += await countdown(self.reader.readexactly(6))
 
             if not self.started and frame_header.startswith(b"AMQP"):
                 raise AMQPSyntaxError
@@ -157,9 +142,8 @@ class FrameReceiver(AsyncIterable):
             if frame_length is None:
                 raise AMQPInternalError("No frame length", None)
 
-            frame_payload = await asyncio.wait_for(
-                self.reader.readexactly(frame_length + 1),
-                timeout=get_timeout()
+            frame_payload = await countdown(
+                self.reader.readexactly(frame_length + 1)
             )
         return pamqp.frame.unmarshal(frame_header + frame_payload)
 

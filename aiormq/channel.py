@@ -16,7 +16,7 @@ from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from pamqp.body import ContentBody
 
-from aiormq.tools import LazyCoroutine, awaitable
+from aiormq.tools import LazyCoroutine, awaitable, Countdown
 
 from .base import Base, task
 from .exceptions import (
@@ -145,21 +145,10 @@ class Channel(Base, AbstractChannel):
 
     @task
     async def rpc(
-        self, frame: Frame,
-        timeout: TimeoutType = None
+        self, frame: Frame, timeout: TimeoutType = None
     ) -> RpcReturnType:
 
-        deadline = None
-        if timeout is not None:
-            deadline = self.loop.time() + timeout
-
-        def get_exceeded(default: TimeoutType = None):
-            if deadline is None:
-                return None
-            value = deadline - self.loop.time()
-            if value < 0:
-                return default
-            return value
+        countdown = Countdown(timeout)
 
         if self.writer is None:
             raise ChannelInvalidStateError("writer is None")
@@ -168,7 +157,7 @@ class Channel(Base, AbstractChannel):
         lock = self.lock
 
         try:
-            await asyncio.wait_for(lock.acquire(), timeout=get_exceeded(0))
+            await countdown(lock.acquire())
         except asyncio.TimeoutError as e:
             raise asyncio.TimeoutError("Unable to lock channel") from e
 
@@ -178,9 +167,7 @@ class Channel(Base, AbstractChannel):
             if not (frame.synchronous or getattr(frame, "nowait", False)):
                 return None
 
-            result = await asyncio.wait_for(
-                self.rpc_frames.get(), get_exceeded(0),
-            )
+            result = await countdown(self.rpc_frames.get())
 
             self.rpc_frames.task_done()
 
