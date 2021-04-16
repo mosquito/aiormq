@@ -590,7 +590,7 @@ RPC server
 
 
     loop = asyncio.get_event_loop()
-    loop.create_task(main(loop))
+    loop.create_task(main())
 
     # we enter a never-ending loop that waits for data
     # and runs callbacks whenever necessary.
