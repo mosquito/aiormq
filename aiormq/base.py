@@ -1,51 +1,58 @@
 import abc
 import asyncio
-import typing
 from contextlib import suppress
 from functools import wraps
-from typing import Type, TypeVar, Union
+from typing import Any, Callable, Coroutine, Optional, Set, Type, TypeVar, Union
 
 from .tools import shield
 
 
 T = TypeVar("T")
+CoroutineType = Coroutine[Any, None, Any]
 
 
+# noinspection PyShadowingNames
 class TaskWrapper:
     def __init__(self, task: asyncio.Task):
         self.task = task
         self.exception = asyncio.CancelledError
 
-    def throw(self, exception):
+    def throw(self, exception) -> None:
         self.exception = exception
-        return self.task.cancel()
+        self.task.cancel()
 
-    async def __inner(self):
+    async def __inner(self) -> Any:
         try:
             return await self.task
         except asyncio.CancelledError as e:
             raise self.exception from e
 
-    def __await__(self, *args, **kwargs):
+    def __await__(self, *args, **kwargs) -> Any:
         return self.__inner().__await__()
 
-    def cancel(self):
+    def cancel(self) -> None:
         return self.throw(asyncio.CancelledError)
 
-    def __getattr__(self, item):
+    def __getattr__(self, item: str) -> Any:
         return getattr(self.task, item)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
+
+
+TaskType = Union[asyncio.Task, TaskWrapper]
 
 
 class FutureStore:
     __slots__ = "futures", "loop", "parent"
 
+    futures: Set[Union[asyncio.Future, TaskType]]
+    loop: asyncio.AbstractEventLoop
+
     def __init__(self, loop: asyncio.AbstractEventLoop):
-        self.futures = set()  # type: typing.Set[TaskWrapper]
-        self.loop = loop  # type: asyncio.AbstractEventLoop
-        self.parent = None  # type: FutureStore
+        self.futures = set()
+        self.loop = loop
+        self.parent: Optional[FutureStore] = None
 
     def __on_task_done(self, future):
         def remover(*_):
@@ -55,7 +62,7 @@ class FutureStore:
 
         return remover
 
-    def add(self, future: typing.Union[asyncio.Future, TaskWrapper]):
+    def add(self, future: Union[asyncio.Future, TaskWrapper]):
         self.futures.add(future)
         future.add_done_callback(self.__on_task_done(future))
 
@@ -67,7 +74,7 @@ class FutureStore:
         tasks = []
 
         while self.futures:
-            future = self.futures.pop()  # type: TaskWrapper
+            future: Union[TaskType, asyncio.Future] = self.futures.pop()
 
             if future.done():
                 continue
@@ -81,8 +88,8 @@ class FutureStore:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    def create_task(self, coro: T) -> T:
-        task = TaskWrapper(self.loop.create_task(coro))
+    def create_task(self, coro: CoroutineType) -> TaskType:
+        task: TaskWrapper = TaskWrapper(self.loop.create_task(coro))
         self.add(task)
         return task
 
@@ -101,7 +108,7 @@ class Base:
     __slots__ = "loop", "__future_store", "closing"
 
     def __init__(self, *, loop, parent: "Base" = None):
-        self.loop = loop  # type: asyncio.AbstractEventLoop
+        self.loop: asyncio.AbstractEventLoop = loop
 
         if parent:
             self.__future_store = parent._future_store_child()
@@ -121,8 +128,7 @@ class Base:
     def _future_store_child(self):
         return self.__future_store.get_child()
 
-    # noinspection PyShadowingNames
-    def create_task(self, coro) -> asyncio.Future:
+    def create_task(self, coro: CoroutineType) -> TaskType:
         return self.__future_store.create_task(coro)
 
     def create_future(self) -> asyncio.Future:
@@ -142,9 +148,9 @@ class Base:
         with suppress(Exception):
             await self._cancel_tasks(exc)
 
-    async def close(self, exc=asyncio.CancelledError()):
+    async def close(self, exc=asyncio.CancelledError()) -> None:
         if self.is_closed:
-            return
+            return None
 
         await self.loop.create_task(self.__closer(exc))
 
@@ -161,10 +167,12 @@ class Base:
         return self.closing.done()
 
 
-def task(func: T) -> T:
+TaskFunctionType = Callable[..., T]
+
+
+def task(func: TaskFunctionType) -> TaskFunctionType:
     @wraps(func)
-    async def wrap(self: "Base", *args, **kwargs):
-        # noinspection PyCallingNonCallable
+    async def wrap(self: Base, *args, **kwargs) -> Any:
         return await self.create_task(func(self, *args, **kwargs))
 
     return wrap

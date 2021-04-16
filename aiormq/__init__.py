@@ -1,4 +1,6 @@
-from . import types
+from pamqp import commands as spec
+
+from . import abc
 from .channel import Channel
 from .connection import Connection, connect
 from .exceptions import (
@@ -18,18 +20,13 @@ from .version import (
     team_email, version_info,
 )
 
-from pamqp import commands as spec
-
 
 __all__ = (
-    "__author__",
-    "__version__",
     "AMQPChannelError",
     "AMQPConnectionError",
     "AMQPError",
     "AMQPException",
     "AuthenticationError",
-    "author_info",
     "Channel",
     "ChannelAccessRefused",
     "ChannelClosed",
@@ -37,7 +34,6 @@ __all__ = (
     "ChannelLockedResource",
     "ChannelNotFoundEntity",
     "ChannelPreconditionFailed",
-    "connect",
     "Connection",
     "ConnectionChannelError",
     "ConnectionClosed",
@@ -50,17 +46,21 @@ __all__ = (
     "ConnectionSyntaxError",
     "ConnectionUnexpectedFrame",
     "DeliveryError",
-    "PublishError",
     "DuplicateConsumerTag",
     "IncompatibleProtocolError",
     "InvalidFrameError",
     "MethodNotImplemented",
-    "package_info",
-    "package_license",
     "ProbableAuthenticationError",
     "ProtocolSyntaxError",
+    "PublishError",
+    "__author__",
+    "__version__",
+    "abc",
+    "author_info",
+    "connect",
+    "package_info",
+    "package_license",
     "spec",
     "team_email",
-    "types",
     "version_info",
 )

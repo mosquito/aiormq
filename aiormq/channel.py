@@ -6,38 +6,67 @@ from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
-from typing import Any, Dict, Optional, Union
+from types import MappingProxyType
+from typing import Any, Dict, Mapping, Optional, Type, Union
 
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
+from pamqp.body import ContentBody
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
-from pamqp.body import ContentBody
 
-from aiormq.tools import LazyCoroutine, awaitable
+from aiormq.tools import Countdown, LazyCoroutine, awaitable
 
+from .abc import (
+    AbstractChannel, ArgumentsType, ConfirmationFrameType, ConsumerCallback,
+    DeliveredMessage, DrainResult, FrameType, RpcReturnType, TimeoutType,
+)
 from .base import Base, task
 from .exceptions import (
-    ChannelAccessRefused, ChannelClosed, ChannelInvalidStateError,
-    ChannelLockedResource, ChannelNotFoundEntity, ChannelPreconditionFailed,
-    DeliveryError, DuplicateConsumerTag, InvalidFrameError,
-    MethodNotImplemented, PublishError,
-)
-from .types import (
-    ArgumentsType, ConfirmationFrameType, ConsumerCallback, DeliveredMessage,
-    DrainResult, FrameType, RpcReturnType, TimeoutType,
+    AMQPChannelError, ChannelAccessRefused, ChannelClosed,
+    ChannelInvalidStateError, ChannelLockedResource, ChannelNotFoundEntity,
+    ChannelPreconditionFailed, DeliveryError, DuplicateConsumerTag,
+    InvalidFrameError, MethodNotImplemented, PublishError,
 )
 
 
 log = logging.getLogger(__name__)
 
 
-class Channel(Base):
+EXCEPTION_MAPPING: Mapping[int, Type[AMQPChannelError]] = MappingProxyType({
+    403: ChannelAccessRefused,
+    404: ChannelNotFoundEntity,
+    405: ChannelLockedResource,
+    406: ChannelPreconditionFailed,
+})
+
+
+def exception_by_code(frame: spec.Connection.Close):
+    if frame.reply_code is None:
+        return ChannelClosed(frame.reply_code, frame.reply_text)
+
+    exception_class = EXCEPTION_MAPPING.get(frame.reply_code)
+
+    if exception_class is None:
+        return ChannelClosed(frame.reply_code, frame.reply_text)
+
+    return exception_class(frame.reply_text)
+
+
+class Returning(asyncio.Future):
+    pass
+
+
+ConfirmationType = Union[asyncio.Future, Returning]
+
+
+class Channel(Base, AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
-    Returning = object()
     CLOSE_TIMEOUT = 2
+
+    confirmations: Dict[int, ConfirmationType]
 
     def __init__(
         self,
@@ -63,7 +92,7 @@ class Channel(Base):
 
         self.delivery_tag = 0
 
-        self.getter = None  # type: Optional[asyncio.Future]
+        self.getter: Optional[asyncio.Future] = None
         self.getter_lock = asyncio.Lock()
 
         self.frames = asyncio.Queue(maxsize=frame_buffer)
@@ -89,7 +118,10 @@ class Channel(Base):
         self.__close_class_id = 0
         self.__close_method_id = 0
 
-    def set_close_reason(self, reply_code=REPLY_SUCCESS, reply_text='', class_id=0, method_id=0):
+    def set_close_reason(
+        self, reply_code=REPLY_SUCCESS,
+        reply_text="", class_id=0, method_id=0,
+    ):
         self.__close_reply_code = reply_code
         self.__close_reply_text = reply_text
         self.__close_class_id = class_id
@@ -115,21 +147,10 @@ class Channel(Base):
 
     @task
     async def rpc(
-        self, frame: Frame,
-        timeout: TimeoutType = None
+        self, frame: Frame, timeout: TimeoutType = None
     ) -> RpcReturnType:
 
-        deadline = None
-        if timeout is not None:
-            deadline = self.loop.time() + timeout
-
-        def get_exceeded(default: TimeoutType = None):
-            if deadline is None:
-                return None
-            value = deadline - self.loop.time()
-            if value < 0:
-                return default
-            return value
+        countdown = Countdown(timeout)
 
         if self.writer is None:
             raise ChannelInvalidStateError("writer is None")
@@ -138,7 +159,7 @@ class Channel(Base):
         lock = self.lock
 
         try:
-            await asyncio.wait_for(lock.acquire(), timeout=get_exceeded(0))
+            await countdown(lock.acquire())
         except asyncio.TimeoutError as e:
             raise asyncio.TimeoutError("Unable to lock channel") from e
 
@@ -148,9 +169,7 @@ class Channel(Base):
             if not (frame.synchronous or getattr(frame, "nowait", False)):
                 return None
 
-            result = await asyncio.wait_for(
-                self.rpc_frames.get(), get_exceeded(0),
-            )
+            result = await countdown(self.rpc_frames.get())
 
             self.rpc_frames.task_done()
 
@@ -187,43 +206,48 @@ class Channel(Base):
         if frame is None:  # pragma: no cover
             raise spec.AMQPFrameError(frame)
 
+    async def __get_content_frame(self) -> ContentBody:
+        content_frame = await self._get_frame()
+        if not isinstance(content_frame, ContentBody):
+            raise ValueError(
+                "Unexpected frame {!r}".format(content_frame),
+                content_frame,
+            )
+        return content_frame
+
     async def _read_content(self, frame, header: ContentHeader):
-        body = BytesIO()
+        with BytesIO() as body:
+            content: Optional[ContentBody] = None
 
-        content = None
+            if header.body_size:
+                content = await self.__get_content_frame()
 
-        if header.body_size:
-            content = await self._get_frame()  # type: Optional[ContentBody]
+            while content and body.tell() < header.body_size:
+                body.write(content.value)
 
-        while content and body.tell() < header.body_size:
-            body.write(content.value)
+                if body.tell() < header.body_size:
+                    content = await self.__get_content_frame()
 
-            if body.tell() < header.body_size:
-                content = await self._get_frame()
+            return DeliveredMessage(
+                delivery=frame,
+                header=header,
+                body=body.getvalue(),
+                channel=self,
+            )
 
-        return DeliveredMessage(
-            delivery=frame,
-            header=header,
-            body=body.getvalue(),
-            channel=self,
-        )
+    async def __get_content_header(self) -> ContentHeader:
+        frame: FrameType = await self._get_frame()
 
-    @staticmethod
-    def __exception_by_code(frame: spec.Channel.Close):  # pragma: nocover
-        if frame.reply_code == 403:
-            return ChannelAccessRefused(frame.reply_text)
-        elif frame.reply_code == 404:
-            return ChannelNotFoundEntity(frame.reply_text)
-        elif frame.reply_code == 405:
-            return ChannelLockedResource(frame.reply_text)
-        elif frame.reply_code == 406:
-            return ChannelPreconditionFailed(frame.reply_text)
-        else:
-            return ChannelClosed(frame.reply_code, frame.reply_text)
+        if not isinstance(frame, ContentHeader):
+            raise ValueError(
+                "Unexpected frame {!r} instead of ContentHeader".format(frame),
+                frame,
+            )
+
+        return frame
 
     async def _on_deliver(self, frame: spec.Basic.Deliver):
-        # async with self.lock:
-        header = await self._get_frame()  # type: ContentHeader
+        header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
 
         consumer = self.consumers.get(frame.consumer_tag)
@@ -236,7 +260,7 @@ class Channel(Base):
     ):
         message = None
         if isinstance(frame, spec.Basic.GetOk):
-            header = await self._get_frame()  # type: ContentHeader
+            header: ContentHeader = await self.__get_content_header()
             message = await self._read_content(frame, header)
 
         if self.getter is None:
@@ -249,7 +273,7 @@ class Channel(Base):
         return self.getter.set_result((frame, message))
 
     async def _on_return(self, frame: spec.Basic.Return):
-        header = await self._get_frame()  # type: ContentHeader
+        header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
         message_id = message.header.properties.message_id
 
@@ -263,7 +287,7 @@ class Channel(Base):
         if confirmation is None:  # pragma: nocover
             return
 
-        self.confirmations[delivery_tag] = self.Returning
+        self.confirmations[delivery_tag] = Returning()
 
         if self.on_return_raises:
             confirmation.set_exception(PublishError(message, frame))
@@ -278,13 +302,16 @@ class Channel(Base):
 
         confirmation.set_result(message)
 
-    def _confirm_delivery(self, delivery_tag, frame: ConfirmationFrameType):
+    def _confirm_delivery(
+        self, delivery_tag: Optional[int],
+        frame: ConfirmationFrameType,
+    ):
         if delivery_tag not in self.confirmations:
             return
 
         confirmation = self.confirmations.pop(delivery_tag)
 
-        if confirmation is self.Returning:
+        if isinstance(confirmation, Returning):
             return
         elif confirmation.done():  # pragma: nocover
             log.warning(
@@ -347,7 +374,7 @@ class Channel(Base):
                         await self._on_confirm(frame)
                     continue
                 elif isinstance(frame, spec.Channel.Close):
-                    exc = self.__exception_by_code(frame)
+                    exc = exception_by_code(frame)
                     self.writer.write(
                         pamqp.frame.marshal(
                             spec.Channel.CloseOk(), self.number,
@@ -454,7 +481,7 @@ class Channel(Base):
 
     def basic_nack(
         self,
-        delivery_tag: str = None,
+        delivery_tag: int,
         multiple: bool = False,
         requeue: bool = True,
     ) -> DrainResult:
@@ -513,7 +540,7 @@ class Channel(Base):
             rnd_id = os.urandom(16)
             content_header.properties.message_id = hexlify(rnd_id).decode()
 
-        confirmation = None
+        confirmation: Optional[ConfirmationType] = None
 
         async with self.lock:
             self.delivery_tag += 1
@@ -552,7 +579,10 @@ class Channel(Base):
                     )
 
         if not self.publisher_confirms:
-            return
+            return None
+
+        if confirmation is None:
+            return None
 
         return await asyncio.wait_for(confirmation, timeout=timeout)
 
@@ -577,7 +607,7 @@ class Channel(Base):
         self, *, nowait: bool = False, requeue=False,
         timeout: Union[int, float] = None
     ) -> spec.Basic.RecoverOk:
-
+        frame: Union[spec.Basic.RecoverAsync, spec.Basic.Recover]
         if nowait:
             frame = spec.Basic.RecoverAsync(requeue=requeue)
         else:
@@ -587,7 +617,7 @@ class Channel(Base):
 
     async def exchange_declare(
         self,
-        exchange: str = None,
+        exchange: str = "",
         *,
         exchange_type: str = "direct",
         passive: bool = False,
@@ -614,7 +644,7 @@ class Channel(Base):
 
     async def exchange_delete(
         self,
-        exchange: str = None,
+        exchange: str = "",
         *,
         if_unused: bool = False,
         nowait: bool = False,
@@ -629,8 +659,8 @@ class Channel(Base):
 
     async def exchange_bind(
         self,
-        destination: str = None,
-        source: str = None,
+        destination: str = "",
+        source: str = "",
         routing_key: str = "",
         *,
         nowait: bool = False,
@@ -650,8 +680,8 @@ class Channel(Base):
 
     async def exchange_unbind(
         self,
-        destination: str = None,
-        source: str = None,
+        destination: str = "",
+        source: str = "",
         routing_key: str = "",
         *,
         nowait: bool = False,
@@ -753,8 +783,8 @@ class Channel(Base):
     async def queue_unbind(
         self,
         queue: str = "",
-        exchange: str = None,
-        routing_key: str = None,
+        exchange: str = "",
+        routing_key: str = "",
         arguments: dict = None,
         timeout: TimeoutType = None
     ) -> spec.Queue.UnbindOk:

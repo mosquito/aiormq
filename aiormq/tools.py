@@ -1,7 +1,13 @@
 import asyncio
 from functools import wraps
+from typing import Any, Awaitable, Coroutine, TypeVar
 
 from yarl import URL
+
+from aiormq.abc import TimeoutType
+
+
+T = TypeVar("T")
 
 
 def censor_url(url: URL):
@@ -89,3 +95,27 @@ class LazyCoroutine:
 
         def __await__(self):
             return (yield from self().__iter__())
+
+
+class Countdown:
+    def __init__(self, timeout: TimeoutType = None):
+        self.loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
+        self.deadline: TimeoutType = None
+
+        if timeout is not None:
+            self.deadline = self.loop.time() + timeout
+
+    def get_timeout(self) -> TimeoutType:
+        if self.deadline is None:
+            return None
+
+        current = self.loop.time()
+        if current >= self.deadline:
+            raise asyncio.TimeoutError
+
+        return self.deadline - current
+
+    def __call__(self, coro: Coroutine[Any, None, T]) -> Awaitable[T]:
+        if self.deadline is None:
+            return coro
+        return asyncio.wait_for(coro, timeout=self.get_timeout())
