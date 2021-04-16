@@ -1,18 +1,50 @@
 import asyncio
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, abstractproperty
 from typing import (
-    Any, Awaitable, Callable, Coroutine, Dict, NamedTuple, Optional, Tuple,
-    Union,
+    Any, Awaitable, Callable, Coroutine, Dict, Iterable, NamedTuple, Optional,
+    Set, Tuple, Type, Union,
 )
 
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
 from pamqp.commands import Basic, Channel, Exchange, Queue, Tx
+from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from yarl import URL
 
 
+# noinspection PyShadowingNames
+class TaskWrapper:
+    def __init__(self, task: asyncio.Task):
+        self.task = task
+        self.exception = asyncio.CancelledError
+
+    def throw(self, exception) -> None:
+        self.exception = exception
+        self.task.cancel()
+
+    async def __inner(self) -> Any:
+        try:
+            return await self.task
+        except asyncio.CancelledError as e:
+            raise self.exception from e
+
+    def __await__(self, *args, **kwargs) -> Any:
+        return self.__inner().__await__()
+
+    def cancel(self) -> None:
+        return self.throw(asyncio.CancelledError)
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self.task, item)
+
+    def __repr__(self) -> str:
+        return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
+
+
+TaskType = Union[asyncio.Task, TaskWrapper]
+CoroutineType = Coroutine[Any, None, Any]
 GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 DeliveredMessage = NamedTuple(
     "DeliveredMessage",
@@ -26,8 +58,8 @@ DeliveredMessage = NamedTuple(
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
-CallbackCoro = Coroutine[DeliveredMessage, None, Any]
-ConsumerCallback = Callable[[], CallbackCoro]
+CallbackCoro = Coroutine[Any, None, Any]
+ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[], CallbackCoro]
 
 ArgumentsType = Dict[
@@ -82,7 +114,72 @@ RpcReturnType = Optional[
 ]
 
 
-class AbstractChannel(ABC):
+class ChannelFrame(NamedTuple):
+    channel_number: int
+    frames: Iterable[FrameType]
+    drain_future: Optional[asyncio.Future] = None
+
+
+ExceptionType = Union[Exception, Type[Exception]]
+
+
+class AbstractFutureStore:
+    futures: Set[Union[asyncio.Future, TaskType]]
+    loop: asyncio.AbstractEventLoop
+
+    @abstractmethod
+    def add(self, future: Union[asyncio.Future, TaskWrapper]):
+        raise NotImplementedError
+
+    @abstractmethod
+    async def reject_all(self, exception: Optional[ExceptionType]) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_task(self, coro: CoroutineType) -> TaskType:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_future(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_child(self) -> "AbstractFutureStore":
+        raise NotImplementedError
+
+
+class AbstractBase(ABC):
+    loop: asyncio.AbstractEventLoop
+
+    @abstractmethod
+    def _future_store_child(self) -> AbstractFutureStore:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_task(self, coro: CoroutineType) -> TaskType:
+        raise NotImplementedError
+
+    def create_future(self) -> asyncio.Future:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def _on_close(self, exc: Optional[Exception] = None):
+        raise NotImplementedError
+
+    @abstractmethod
+    async def close(self, exc=asyncio.CancelledError()) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def __str__(self) -> str:
+        raise NotImplementedError
+
+    @abstractproperty
+    def is_closed(self) -> bool:
+        raise NotImplementedError
+
+
+class AbstractChannel(AbstractBase):
     frames: asyncio.Queue
 
     @abstractmethod
@@ -305,4 +402,71 @@ class AbstractChannel(ABC):
         self, nowait=False,
         timeout: TimeoutType = None
     ):
+        raise NotImplementedError
+
+
+class AbstractConnection(AbstractBase):
+    FRAME_BUFFER: int = 10
+    # Interval between sending heartbeats based on the heartbeat(timeout)
+    HEARTBEAT_INTERVAL_MULTIPLIER: Union[int, float]
+
+    # Allow three missed heartbeats (based on heartbeat(timeout)
+    HEARTBEAT_GRACE_MULTIPLIER: int
+
+    server_properties: ArgumentsType
+    connection_tune: spec.Connection.Tune
+    channels: Dict[int, Optional[AbstractChannel]]
+    write_queue: asyncio.Queue
+
+    @abstractmethod
+    def set_close_reason(
+        self, reply_code=REPLY_SUCCESS,
+        reply_text="normally closed",
+        class_id=0, method_id=0,
+    ):
+        raise NotImplementedError
+
+    @abstractproperty
+    def is_opened(self) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def __str__(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    async def connect(self, client_properties: dict = None) -> bool:
+        raise NotImplementedError
+
+    @abstractproperty
+    def server_capabilities(self) -> ArgumentsType:
+        raise NotImplementedError
+
+    @abstractproperty
+    def basic_nack(self) -> bool:
+        raise NotImplementedError
+
+    @abstractproperty
+    def consumer_cancel_notify(self) -> bool:
+        raise NotImplementedError
+
+    @abstractproperty
+    def exchange_exchange_bindings(self) -> bool:
+        raise NotImplementedError
+
+    @abstractproperty
+    def publisher_confirms(self):
+        raise NotImplementedError
+
+    async def channel(
+        self,
+        channel_number: int = None,
+        publisher_confirms=True,
+        frame_buffer: int = FRAME_BUFFER,
+        **kwargs
+    ) -> AbstractChannel:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def __aenter__(self):
         raise NotImplementedError

@@ -2,51 +2,23 @@ import abc
 import asyncio
 from contextlib import suppress
 from functools import wraps
-from typing import Any, Callable, Coroutine, Optional, Set, Type, TypeVar, Union
+from typing import Any, Callable, Optional, Set, Type, TypeVar, Union
+from weakref import WeakSet
 
+from .abc import (
+    AbstractBase, AbstractFutureStore, CoroutineType, TaskType, TaskWrapper,
+)
 from .tools import shield
 
 
 T = TypeVar("T")
-CoroutineType = Coroutine[Any, None, Any]
 
 
-# noinspection PyShadowingNames
-class TaskWrapper:
-    def __init__(self, task: asyncio.Task):
-        self.task = task
-        self.exception = asyncio.CancelledError
-
-    def throw(self, exception) -> None:
-        self.exception = exception
-        self.task.cancel()
-
-    async def __inner(self) -> Any:
-        try:
-            return await self.task
-        except asyncio.CancelledError as e:
-            raise self.exception from e
-
-    def __await__(self, *args, **kwargs) -> Any:
-        return self.__inner().__await__()
-
-    def cancel(self) -> None:
-        return self.throw(asyncio.CancelledError)
-
-    def __getattr__(self, item: str) -> Any:
-        return getattr(self.task, item)
-
-    def __repr__(self) -> str:
-        return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
-
-
-TaskType = Union[asyncio.Task, TaskWrapper]
-
-
-class FutureStore:
+class FutureStore(AbstractFutureStore):
     __slots__ = "futures", "loop", "parent"
 
     futures: Set[Union[asyncio.Future, TaskType]]
+    weak_futures: WeakSet
     loop: asyncio.AbstractEventLoop
 
     def __init__(self, loop: asyncio.AbstractEventLoop):
@@ -93,7 +65,7 @@ class FutureStore:
         self.add(task)
         return task
 
-    def create_future(self):
+    def create_future(self, weak: bool = False):
         future = self.loop.create_future()
         self.add(future)
         return future
@@ -104,10 +76,13 @@ class FutureStore:
         return store
 
 
-class Base:
+class Base(AbstractBase):
     __slots__ = "loop", "__future_store", "closing"
 
-    def __init__(self, *, loop, parent: "Base" = None):
+    def __init__(
+        self, *, loop: asyncio.AbstractEventLoop,
+        parent: Optional[AbstractBase] = None
+    ):
         self.loop: asyncio.AbstractEventLoop = loop
 
         if parent:
@@ -125,7 +100,7 @@ class Base:
     def _cancel_tasks(self, exc: Union[Exception, Type[Exception]] = None):
         return self.__future_store.reject_all(exc)
 
-    def _future_store_child(self):
+    def _future_store_child(self) -> AbstractFutureStore:
         return self.__future_store.get_child()
 
     def create_task(self, coro: CoroutineType) -> TaskType:
@@ -156,7 +131,9 @@ class Base:
 
     def __repr__(self):
         cls_name = self.__class__.__name__
-        return '<{0}: "{1}">'.format(cls_name, str(self))
+        return '<{0}: "{1}" at 0x{2:02x}>'.format(
+            cls_name, str(self), id(self),
+        )
 
     @abc.abstractmethod
     def __str__(self):  # pragma: no cover

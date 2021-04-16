@@ -2,40 +2,7 @@ import asyncio
 
 import pytest
 
-from aiormq.tools import LazyCoroutine, awaitable
-
-
-class TestLazyCoroutine:
-    async def test_coro(self, loop):
-        async def foo():
-            await asyncio.sleep(0)
-            return 42
-
-        bar = LazyCoroutine(foo)
-
-        assert await bar == 42
-
-    async def test_future(self, loop):
-        def foo():
-            f = loop.create_future()
-            loop.call_soon(f.set_result, 42)
-            return f
-
-        bar = LazyCoroutine(foo)
-
-        assert await bar == 42
-
-    async def test_task(self, loop):
-        def foo():
-            async def inner():
-                await asyncio.sleep(0)
-                return 42
-
-            return loop.create_task(inner())
-
-        bar = LazyCoroutine(foo)
-
-        assert await bar == 42
+from aiormq.tools import awaitable
 
 
 def simple_func():

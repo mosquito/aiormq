@@ -1,6 +1,6 @@
 import asyncio
 from functools import wraps
-from typing import Any, Awaitable, Coroutine, TypeVar
+from typing import AsyncContextManager, Awaitable, TypeVar
 
 from yarl import URL
 
@@ -60,43 +60,6 @@ def _inspect_await_method():
 HAS_AWAIT_METHOD = _inspect_await_method()
 
 
-class LazyCoroutine:
-    __slots__ = "__func", "__args", "__kwargs", "__instance"
-
-    def __init__(self, func, *args, **kwargs):
-        self.__func = func
-        self.__args = args
-        self.__kwargs = kwargs
-        self.__instance = None
-
-    def __repr__(self):
-        return "<%s: %s(args: %r, kwargs: %r)>" % (
-            self.__class__.__name__,
-            self.__func.__name__,
-            self.__args,
-            self.__kwargs,
-        )
-
-    def __call__(self):
-        if self.__instance is None:
-            self.__instance = self.__func(*self.__args, **self.__kwargs)
-
-        return self.__instance
-
-    def __iter__(self):
-        return (yield from self().__iter__())
-
-    if HAS_AWAIT_METHOD:
-
-        def __await__(self):
-            return (yield from self().__await__())
-
-    else:
-
-        def __await__(self):
-            return (yield from self().__iter__())
-
-
 class Countdown:
     def __init__(self, timeout: TimeoutType = None):
         self.loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
@@ -115,7 +78,29 @@ class Countdown:
 
         return self.deadline - current
 
-    def __call__(self, coro: Coroutine[Any, None, T]) -> Awaitable[T]:
+    def __call__(self, coro: Awaitable[T]) -> Awaitable[T]:
         if self.deadline is None:
             return coro
         return asyncio.wait_for(coro, timeout=self.get_timeout())
+
+    def enter_context(
+        self, ctx: AsyncContextManager[T],
+    ) -> AsyncContextManager[T]:
+        return CountdownContext(self, ctx)
+
+
+class CountdownContext(AsyncContextManager):
+    def __init__(self, countdown: Countdown, ctx: AsyncContextManager):
+        self.countdown = countdown
+        self.ctx = ctx
+
+    def __aenter__(self):
+        if self.countdown.deadline is None:
+            return self.ctx.__aenter__()
+        return self.countdown(self.ctx.__aenter__())
+
+    def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.countdown.deadline is None:
+            return self.ctx.__aexit__(exc_type, exc_val, exc_tb)
+
+        return self.countdown(self.ctx.__aexit__(exc_type, exc_val, exc_tb))
