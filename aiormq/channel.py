@@ -7,7 +7,7 @@ from contextlib import suppress
 from functools import partial
 from io import BytesIO
 from types import MappingProxyType
-from typing import Any, Dict, Mapping, Optional, Type, Union
+from typing import Any, Dict, Mapping, Optional, Type, Union, Set
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -108,7 +108,7 @@ class Channel(Base, AbstractChannel):
         self.rpc_frames: asyncio.Queue = asyncio.Queue(maxsize=frame_buffer)
         self.write_queue = connector.write_queue
         self.on_return_raises = on_return_raises
-        self.on_return_callbacks = set()
+        self.on_return_callbacks: Set[ConsumerCallback] = set()
         self._close_exception = None
 
         self.create_task(self._reader())
@@ -239,6 +239,10 @@ class Channel(Base, AbstractChannel):
     async def _on_deliver(self, frame: spec.Basic.Deliver):
         header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
+
+        if frame.consumer_tag is None:
+            log.warning("Frame %r has no consumer tag", frame)
+            return
 
         consumer = self.consumers.get(frame.consumer_tag)
         if consumer is not None:
@@ -560,9 +564,11 @@ class Channel(Base, AbstractChannel):
                     self.delivery_tag
                 ] = self.create_future()
 
-            confirmation: asyncio.Future = self.confirmations[self.delivery_tag]
-
+            confirmation = self.confirmations[self.delivery_tag]
             self.message_id_delivery_tag[message_id] = self.delivery_tag
+
+            if confirmation is None:
+                return
 
             confirmation.add_done_callback(
                 lambda _: self.message_id_delivery_tag.pop(

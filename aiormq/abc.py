@@ -58,8 +58,8 @@ DeliveredMessage = NamedTuple(
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
-CallbackCoro = Coroutine[DeliveredMessage, None, Any]
-ConsumerCallback = Callable[[], CallbackCoro]
+CallbackCoro = Coroutine[Any, None, Any]
+ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[], CallbackCoro]
 
 ArgumentsType = Dict[
