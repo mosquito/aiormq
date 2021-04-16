@@ -121,30 +121,42 @@ class FrameReceiver(AsyncIterable):
         countdown = Countdown(self.timeout)
 
         async with self.lock:
-            frame_header = await countdown(self.reader.readexactly(1))
+            try:
+                frame_header = await countdown(self.reader.readexactly(1))
 
-            if frame_header == b"\0x00":
-                raise AMQPFrameError(
-                    await countdown(self.reader.read())
+                if frame_header == b"\0x00":
+                    raise AMQPFrameError(
+                        await countdown(self.reader.read())
+                    )
+
+                if self.reader is None:
+                    raise ConnectionError
+
+                frame_header += await countdown(self.reader.readexactly(6))
+
+                if not self.started and frame_header.startswith(b"AMQP"):
+                    raise AMQPSyntaxError
+                else:
+                    self.started = True
+
+                frame_type, _, frame_length = pamqp.frame.frame_parts(frame_header)
+                if frame_length is None:
+                    raise AMQPInternalError("No frame length", None)
+
+                frame_payload = await countdown(
+                    self.reader.readexactly(frame_length + 1)
                 )
-
-            if self.reader is None:
-                raise ConnectionError
-
-            frame_header += await countdown(self.reader.readexactly(6))
-
-            if not self.started and frame_header.startswith(b"AMQP"):
-                raise AMQPSyntaxError
-            else:
-                self.started = True
-
-            frame_type, _, frame_length = pamqp.frame.frame_parts(frame_header)
-            if frame_length is None:
-                raise AMQPInternalError("No frame length", None)
-
-            frame_payload = await countdown(
-                self.reader.readexactly(frame_length + 1)
-            )
+            except asyncio.IncompleteReadError as e:
+                raise AMQPFrameError(
+                    "Server connection unexpectedly closed"
+                ) from e
+            except asyncio.TimeoutError as e:
+                raise asyncio.TimeoutError(
+                    "Server connection was stucked. "
+                    "No frames were received in {} seconds.".format(
+                        self.timeout
+                    )
+                ) from e
         return pamqp.frame.unmarshal(frame_header + frame_payload)
 
     async def __anext__(self) -> ReceivedFrame:
