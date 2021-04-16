@@ -105,14 +105,13 @@ class Channel(Base, AbstractChannel):
         self.__lock = asyncio.Lock()
         self.number = number
         self.publisher_confirms = publisher_confirms
-        self.rpc_frames = asyncio.Queue(maxsize=frame_buffer)
-        self.writer = connector.writer
+        self.rpc_frames: asyncio.Queue = asyncio.Queue(maxsize=frame_buffer)
+        self.write_queue = connector.write_queue
         self.on_return_raises = on_return_raises
         self.on_return_callbacks = set()
         self._close_exception = None
 
         self.create_task(self._reader())
-        self.closing.add_done_callback(self.__clean_up_when_writer_close)
 
         self.__close_reply_code = REPLY_SUCCESS
         self.__close_reply_text = 0
@@ -127,9 +126,6 @@ class Channel(Base, AbstractChannel):
         self.__close_reply_text = reply_text
         self.__close_class_id = class_id
         self.__close_method_id = method_id
-
-    def __clean_up_when_writer_close(self, _):
-        self.writer = None
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -152,51 +148,44 @@ class Channel(Base, AbstractChannel):
     ) -> RpcReturnType:
 
         countdown = Countdown(timeout)
-
-        if self.writer is None:
-            raise ChannelInvalidStateError("writer is None")
-
-        writer = self.writer
         lock = self.lock
 
-        try:
-            await countdown(lock.acquire())
-        except asyncio.TimeoutError as e:
-            raise asyncio.TimeoutError("Unable to lock channel") from e
-
-        try:
-            writer.write(pamqp.frame.marshal(frame, self.number))
-
-            if not (frame.synchronous or getattr(frame, "nowait", False)):
-                return None
-
-            result = await countdown(self.rpc_frames.get())
-
-            self.rpc_frames.task_done()
-
-            if result.name not in frame.valid_responses:  # pragma: no cover
-                raise InvalidFrameError(frame)
-
-            return result
-        except (asyncio.CancelledError, asyncio.TimeoutError) as e:
-            lock.release()
-
-            if not self.is_closed:
-                log.warning(
-                    "Closing channel %r because RPC call %s cancelled",
-                    self, frame,
-                )
-                self.set_close_reason(
-                    reply_code=504,
-                    reply_text="RPC timeout on frame {!s}".format(frame),
+        async with countdown.enter_context(lock):
+            try:
+                await countdown(
+                    self.write_queue.put(
+                        ChannelFrame(
+                            channel_number=self.number,
+                            frames=[frame],
+                        ),
+                    ),
                 )
 
-                # noinspection PyAsyncCall
-                self.create_task(self.close())
-            raise e
-        finally:
-            if lock.locked():
-                lock.release()
+                if not (frame.synchronous or getattr(frame, "nowait", False)):
+                    return None
+
+                result = await countdown(self.rpc_frames.get())
+
+                self.rpc_frames.task_done()
+
+                if result.name not in frame.valid_responses:  # pragma: no cover
+                    raise InvalidFrameError(frame)
+
+                return result
+            except (asyncio.CancelledError, asyncio.TimeoutError) as e:
+                if not self.is_closed:
+                    log.warning(
+                        "Closing channel %r because RPC call %s cancelled",
+                        self, frame,
+                    )
+                    self.set_close_reason(
+                        reply_code=504,
+                        reply_text="RPC timeout on frame {!s}".format(frame),
+                    )
+
+                    # noinspection PyAsyncCall
+                    self.create_task(self.close())
+                raise e
 
     async def open(self):
         frame = await self.rpc(spec.Channel.Open())
@@ -376,9 +365,10 @@ class Channel(Base, AbstractChannel):
                     continue
                 elif isinstance(frame, spec.Channel.Close):
                     exc = exception_by_code(frame)
-                    self.writer.write(
-                        pamqp.frame.marshal(
-                            spec.Channel.CloseOk(), self.number,
+                    self.write_queue.put_nowait(
+                        ChannelFrame(
+                            channel_number=self.number,
+                            frames=[spec.Channel.CloseOk()],
                         ),
                     )
 
@@ -393,19 +383,15 @@ class Channel(Base, AbstractChannel):
                 await self._cancel_tasks(e)
                 raise
 
-    async def _on_close(self, exc=None) -> Optional[spec.Channel.CloseOk]:
-        result = None
-        if self.writer is not None:
-            result = await self.rpc(
-                spec.Channel.Close(
-                    reply_code=self.__close_reply_code,
-                    class_id=self.__close_class_id,
-                    method_id=self.__close_method_id,
-                ),
-            )
-            self.connection.channels.pop(self.number, None)
-
-        return result
+    async def _on_close(self, exc=None) -> None:
+        await self.rpc(
+            spec.Channel.Close(
+                reply_code=self.__close_reply_code,
+                class_id=self.__close_class_id,
+                method_id=self.__close_method_id,
+            ),
+        )
+        self.connection.channels.pop(self.number, None)
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
@@ -468,49 +454,69 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
-    def basic_ack(
+    async def basic_ack(
         self, delivery_tag, multiple=False,
-    ) -> DrainResult:
-        self.writer.write(
-            pamqp.frame.marshal(
-                spec.Basic.Ack(delivery_tag=delivery_tag, multiple=multiple),
-                self.number,
+    ) -> None:
+        drain_future = self.create_future()
+
+        await self.write_queue.put(
+            ChannelFrame(
+                frames=[
+                    spec.Basic.Ack(
+                        delivery_tag=delivery_tag,
+                        multiple=multiple,
+                    ),
+                ],
+                channel_number=self.number,
+                drain_future=drain_future,
             ),
         )
 
-        return LazyCoroutine(self.connection.drain)
+        await drain_future
 
-    def basic_nack(
+    async def basic_nack(
         self,
         delivery_tag: int,
         multiple: bool = False,
         requeue: bool = True,
-    ) -> DrainResult:
+    ) -> None:
         if not self.connection.basic_nack:
             raise MethodNotImplemented
 
-        self.writer.write(
-            pamqp.frame.marshal(
-                spec.Basic.Nack(
-                    delivery_tag=delivery_tag,
-                    multiple=multiple,
-                    requeue=requeue,
-                ),
-                self.number,
+        drain_future = self.create_future()
+
+        await self.write_queue.put(
+            ChannelFrame(
+                frames=[
+                    spec.Basic.Nack(
+                        delivery_tag=delivery_tag,
+                        multiple=multiple,
+                        requeue=requeue,
+                    ),
+                ],
+                channel_number=self.number,
+                drain_future=drain_future,
             ),
         )
 
-        return LazyCoroutine(self.connection.drain)
+        await drain_future
 
-    def basic_reject(self, delivery_tag, *, requeue=True) -> DrainResult:
-        self.writer.write(
-            pamqp.frame.marshal(
-                spec.Basic.Reject(delivery_tag=delivery_tag, requeue=requeue),
-                self.number,
+    async def basic_reject(self, delivery_tag, *, requeue=True) -> None:
+        drain_future = self.create_future()
+        await self.write_queue.put(
+            ChannelFrame(
+                channel_number=self.number,
+                frames=[
+                    spec.Basic.Reject(
+                        delivery_tag=delivery_tag,
+                        requeue=requeue,
+                    ),
+                ],
+                drain_future=drain_future,
             ),
         )
 
-        return LazyCoroutine(self.connection.drain)
+        await drain_future
 
     async def basic_publish(
         self,
@@ -523,8 +529,9 @@ class Channel(Base, AbstractChannel):
         immediate: bool = False,
         timeout: Union[int, float] = None
     ) -> Optional[ConfirmationFrameType]:
+        countdown = Countdown(timeout=timeout)
 
-        frame = spec.Basic.Publish(
+        publish_frame = spec.Basic.Publish(
             exchange=exchange,
             routing_key=routing_key,
             mandatory=mandatory,
@@ -543,49 +550,53 @@ class Channel(Base, AbstractChannel):
 
         confirmation: Optional[ConfirmationType] = None
 
-        async with self.lock:
-            self.delivery_tag += 1
+        self.delivery_tag += 1
 
-            if self.publisher_confirms:
-                message_id = content_header.properties.message_id
+        if self.publisher_confirms:
+            message_id = content_header.properties.message_id
 
-                if self.delivery_tag not in self.confirmations:
-                    self.confirmations[
-                        self.delivery_tag
-                    ] = self.create_future()
+            if self.delivery_tag not in self.confirmations:
+                self.confirmations[
+                    self.delivery_tag
+                ] = self.create_future()
 
-                confirmation = self.confirmations[self.delivery_tag]
+            confirmation: asyncio.Future = self.confirmations[self.delivery_tag]
 
-                self.message_id_delivery_tag[message_id] = self.delivery_tag
+            self.message_id_delivery_tag[message_id] = self.delivery_tag
 
-                confirmation.add_done_callback(
-                    lambda _: self.message_id_delivery_tag.pop(
-                        message_id, None,
-                    ),
-                )
+            confirmation.add_done_callback(
+                lambda _: self.message_id_delivery_tag.pop(
+                    message_id, None,
+                ),
+            )
 
-            self.writer.write(pamqp.frame.marshal(frame, self.number))
+        def frame_generator():
+            yield publish_frame
+            yield content_header
 
-            # noinspection PyTypeChecker
-            self.writer.write(pamqp.frame.marshal(content_header, self.number))
-
-            with BytesIO(body) as buf:
-                read_chunk = partial(buf.read, self.max_content_size)
-                reader = iter(read_chunk, b"")
-
-                for chunk in reader:
+            with BytesIO(body) as fp:
+                read_chunk = partial(fp.read, self.max_content_size)
+                for chunk in iter(read_chunk, b""):
                     # noinspection PyTypeChecker
-                    self.writer.write(
-                        pamqp.frame.marshal(ContentBody(chunk), self.number),
-                    )
+                    yield ContentBody(chunk)
 
-        if not self.publisher_confirms:
-            return None
+        async with countdown.enter_context(self.lock):
+            await countdown(
+                self.write_queue.put(
+                    ChannelFrame(
+                        frames=frame_generator(),
+                        channel_number=self.number,
+                    ),
+                ),
+            )
 
-        if confirmation is None:
-            return None
+            if not self.publisher_confirms:
+                return None
 
-        return await asyncio.wait_for(confirmation, timeout=timeout)
+            if confirmation is None:
+                return None
+
+            return await countdown(confirmation)
 
     async def basic_qos(
         self,

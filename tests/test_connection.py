@@ -19,8 +19,6 @@ CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
 
 
 async def test_simple(amqp_connection: aiormq.Connection):
-    assert amqp_connection.writer is not None
-
     channel1 = await amqp_connection.channel()
     await channel1.basic_qos(prefetch_count=1)
 
@@ -71,8 +69,6 @@ async def test_simple(amqp_connection: aiormq.Connection):
 
     with pytest.raises(RuntimeError):
         await amqp_connection.channel()
-
-    assert amqp_connection.writer is None
 
 
 async def test_channel_reuse(amqp_connection: aiormq.Connection):

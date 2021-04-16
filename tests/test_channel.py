@@ -102,7 +102,6 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
     message = await future
 
     assert message.body == b"urgent"
-    await channel.basic_ack(message.delivery.delivery_tag)
 
 
 async def test_ack_nack_reject(amqp_channel: aiormq.Channel):

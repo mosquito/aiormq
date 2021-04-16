@@ -411,23 +411,24 @@ class Connection(Base, AbstractConnection):
                 raise AMQPInternalError("Connection.OpenOk", frame)
 
             # noinspection PyAsyncCall
-            self._reader_task = self.create_task(
-                self.__reader(
-                frame_receiver,
-                ),
-            )
+            self._reader_task = self.create_task(self.__reader(frame_receiver))
             self._reader_task.add_done_callback(self._on_reader_done)
+
+            # noinspection PyAsyncCall
+            self._writer_task = self.create_task(self.__writer(writer))
         except Exception as e:
             await self.close(e)
             raise
 
-        self.writer = writer
         self.connection_tune = connection_tune
         self.server_properties = server_properties
         return True
 
     def _on_reader_done(self, task: asyncio.Task) -> None:
         log.debug("Reader exited for %r", self)
+
+        if not self._writer_task.done():
+            self._writer_task.cancel()
 
         if not task.cancelled() and task.exception() is not None:
             log.debug("Cancelling cause reader exited abnormally")
@@ -441,8 +442,8 @@ class Connection(Base, AbstractConnection):
 
         async for weight, channel, frame in frame_receiver:
             log.debug(
-                "Received frame %r weight=%s channel=%d",
-                frame, weight, channel,
+                "Received frame %r in channel #%d weight=%s on %r",
+                frame, channel, weight, self,
             )
 
             if channel == 0:
@@ -451,8 +452,16 @@ class Connection(Base, AbstractConnection):
 
                 if isinstance(frame, spec.Connection.Close):
                     log.exception(
-                        "Unexpected connection close from remote \"%s\", %r",
-                        self, frame,
+                        "Unexpected connection close from remote \"%s\", "
+                        "Connection.Close(reply_code=%r, reply_text=%r)",
+                        self, frame.reply_code, frame.reply_text,
+                    )
+
+                    self.write_queue.put_nowait(
+                        ChannelFrame(
+                            channel_number=0,
+                            frames=[spec.Connection.CloseOk()],
+                        ),
                     )
                     raise exception_by_code(frame)
                 elif isinstance(frame, Heartbeat):
@@ -474,6 +483,58 @@ class Connection(Base, AbstractConnection):
                 self.channels[channel] = None
 
             await ch.frames.put((weight, frame))
+
+    async def __writer(self, writer: asyncio.StreamWriter):
+        channel_frame: ChannelFrame = await self.write_queue.get()
+
+        closed = False
+        try:
+            while not closed:
+                log.debug("Prepare to send %r", channel_frame)
+
+                frame: FrameTypes
+
+                for frame in channel_frame.frames:
+                    log.debug(
+                        "Sending frame %r in channel #%d on %r",
+                        frame, channel_frame.channel_number, self,
+                    )
+                    writer.write(
+                        pamqp.frame.marshal(
+                            frame, channel_frame.channel_number,
+                        ),
+                    )
+
+                    if isinstance(frame, spec.Connection.CloseOk):
+                        closed = True
+                        break
+
+                if channel_frame.drain_future is not None:
+                    channel_frame.drain_future.set_result(
+                        await writer.drain(),
+                    )
+
+                self.write_queue.task_done()
+                channel_frame = await self.write_queue.get()
+        except asyncio.CancelledError:
+            if not self.__check_writer(writer):
+                raise
+
+            frame = spec.Connection.Close(
+                reply_code=self.__close_reply_code,
+                reply_text=self.__close_reply_text,
+                class_id=self.__close_class_id,
+                method_id=self.__close_method_id,
+            )
+
+            writer.write(pamqp.frame.marshal(frame, 0))
+            log.debug("Sending %r to %r", frame, self)
+
+            await writer.drain()
+            await self.__close_writer(writer)
+            raise
+        finally:
+            log.debug("Writer exited for %r", self)
 
     @staticmethod
     async def __close_writer(writer: asyncio.StreamWriter):
@@ -506,29 +567,6 @@ class Connection(Base, AbstractConnection):
         if not reader_task.done():
             reader_task.cancel()
 
-        writer = self.writer
-        self.writer = None
-
-        if not self.__check_writer(writer):
-            return
-
-        if isinstance(ex, exc.ConnectionClosed):
-            frame = spec.Connection.CloseOk()
-        else:
-            frame = spec.Connection.Close(
-                reply_code=self.__close_reply_code,
-                reply_text=self.__close_reply_text,
-                class_id=self.__close_class_id,
-                method_id=self.__close_method_id,
-            )
-
-        writer.write(pamqp.frame.marshal(frame, 0))
-        log.debug("Sending %r to %s", frame, self)
-
-        async with self.__drain_lock:
-            await writer.drain()
-
-        await self.__close_writer(writer)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
