@@ -173,8 +173,10 @@ class DeliveryError(AMQPError):
 
     reason = "Error when delivery message %r, frame %r"
 
-    def __init__(self, message: Optional[DeliveredMessage],
-                 frame: Frame, *args):
+    def __init__(
+        self, message: Optional[DeliveredMessage],
+        frame: Frame, *args
+    ):
         self.message = message
         self.frame = frame
 

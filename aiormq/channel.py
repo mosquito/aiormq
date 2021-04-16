@@ -7,27 +7,27 @@ from contextlib import suppress
 from functools import partial
 from io import BytesIO
 from types import MappingProxyType
-from typing import Any, Dict, Optional, Union, Mapping, Type
+from typing import Any, Dict, Mapping, Optional, Type, Union
 
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
+from pamqp.body import ContentBody
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
-from pamqp.body import ContentBody
 
-from aiormq.tools import LazyCoroutine, awaitable, Countdown
+from aiormq.tools import Countdown, LazyCoroutine, awaitable
 
-from .base import Base, task
-from .exceptions import (
-    ChannelAccessRefused, ChannelClosed, ChannelInvalidStateError,
-    ChannelLockedResource, ChannelNotFoundEntity, ChannelPreconditionFailed,
-    DeliveryError, DuplicateConsumerTag, InvalidFrameError,
-    MethodNotImplemented, PublishError, AMQPChannelError,
-)
 from .abc import (
     AbstractChannel, ArgumentsType, ConfirmationFrameType, ConsumerCallback,
     DeliveredMessage, DrainResult, FrameType, RpcReturnType, TimeoutType,
+)
+from .base import Base, task
+from .exceptions import (
+    AMQPChannelError, ChannelAccessRefused, ChannelClosed,
+    ChannelInvalidStateError, ChannelLockedResource, ChannelNotFoundEntity,
+    ChannelPreconditionFailed, DeliveryError, DuplicateConsumerTag,
+    InvalidFrameError, MethodNotImplemented, PublishError,
 )
 
 
@@ -92,7 +92,7 @@ class Channel(Base, AbstractChannel):
 
         self.delivery_tag = 0
 
-        self.getter = None  # type: Optional[asyncio.Future]
+        self.getter: Optional[asyncio.Future] = None
         self.getter_lock = asyncio.Lock()
 
         self.frames = asyncio.Queue(maxsize=frame_buffer)
@@ -118,8 +118,10 @@ class Channel(Base, AbstractChannel):
         self.__close_class_id = 0
         self.__close_method_id = 0
 
-    def set_close_reason(self, reply_code=REPLY_SUCCESS,
-                         reply_text='', class_id=0, method_id=0):
+    def set_close_reason(
+        self, reply_code=REPLY_SUCCESS,
+        reply_text="", class_id=0, method_id=0,
+    ):
         self.__close_reply_code = reply_code
         self.__close_reply_text = reply_text
         self.__close_class_id = class_id
@@ -209,7 +211,7 @@ class Channel(Base, AbstractChannel):
         if not isinstance(content_frame, ContentBody):
             raise ValueError(
                 "Unexpected frame {!r}".format(content_frame),
-                content_frame
+                content_frame,
             )
         return content_frame
 
@@ -239,7 +241,7 @@ class Channel(Base, AbstractChannel):
         if not isinstance(frame, ContentHeader):
             raise ValueError(
                 "Unexpected frame {!r} instead of ContentHeader".format(frame),
-                frame
+                frame,
             )
 
         return frame
@@ -300,8 +302,10 @@ class Channel(Base, AbstractChannel):
 
         confirmation.set_result(message)
 
-    def _confirm_delivery(self, delivery_tag: Optional[int],
-                          frame: ConfirmationFrameType):
+    def _confirm_delivery(
+        self, delivery_tag: Optional[int],
+        frame: ConfirmationFrameType,
+    ):
         if delivery_tag not in self.confirmations:
             return
 
@@ -613,7 +617,7 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_declare(
         self,
-        exchange: str = '',
+        exchange: str = "",
         *,
         exchange_type: str = "direct",
         passive: bool = False,
@@ -640,7 +644,7 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_delete(
         self,
-        exchange: str = '',
+        exchange: str = "",
         *,
         if_unused: bool = False,
         nowait: bool = False,
@@ -655,9 +659,9 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_bind(
         self,
-        destination: str = '',
-        source: str = '',
-        routing_key: str = '',
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
         *,
         nowait: bool = False,
         arguments: dict = None,
@@ -676,8 +680,8 @@ class Channel(Base, AbstractChannel):
 
     async def exchange_unbind(
         self,
-        destination: str = '',
-        source: str = '',
+        destination: str = "",
+        source: str = "",
         routing_key: str = "",
         *,
         nowait: bool = False,
@@ -778,9 +782,9 @@ class Channel(Base, AbstractChannel):
 
     async def queue_unbind(
         self,
-        queue: str = '',
-        exchange: str = '',
-        routing_key: str = '',
+        queue: str = "",
+        exchange: str = "",
+        routing_key: str = "",
         arguments: dict = None,
         timeout: TimeoutType = None
     ) -> spec.Queue.UnbindOk:

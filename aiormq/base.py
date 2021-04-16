@@ -1,8 +1,8 @@
 import abc
 import asyncio
-from typing import Set, Optional, Coroutine, Any, Union, Callable, Type, TypeVar
 from contextlib import suppress
 from functools import wraps
+from typing import Any, Callable, Coroutine, Optional, Set, Type, TypeVar, Union
 
 from .tools import shield
 
@@ -108,7 +108,7 @@ class Base:
     __slots__ = "loop", "__future_store", "closing"
 
     def __init__(self, *, loop, parent: "Base" = None):
-        self.loop = loop  # type: asyncio.AbstractEventLoop
+        self.loop: asyncio.AbstractEventLoop = loop
 
         if parent:
             self.__future_store = parent._future_store_child()

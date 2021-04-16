@@ -12,18 +12,18 @@ import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.constants import REPLY_SUCCESS
-from pamqp.exceptions import AMQPFrameError, AMQPSyntaxError, AMQPInternalError
+from pamqp.exceptions import AMQPFrameError, AMQPInternalError, AMQPSyntaxError
 from pamqp.frame import FrameTypes
 from pamqp.header import ProtocolHeader
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 from . import exceptions as exc
-from .auth import AuthMechanism
-from .base import Base, task, TaskType
-from .channel import Channel
-from .tools import censor_url, Countdown
 from .abc import AbstractChannel, ArgumentsType, SSLCerts, URLorStr
+from .auth import AuthMechanism
+from .base import Base, TaskType, task
+from .channel import Channel
+from .tools import Countdown, censor_url
 from .version import __version__
 
 
@@ -97,8 +97,10 @@ def parse_connection_name(conn_name: str):
 class FrameReceiver(AsyncIterable):
     _loop: asyncio.AbstractEventLoop
 
-    def __init__(self, reader: asyncio.StreamReader,
-                 receive_timeout: TimeType):
+    def __init__(
+        self, reader: asyncio.StreamReader,
+        receive_timeout: TimeType,
+    ):
         self.reader: asyncio.StreamReader = reader
         self.timeout: TimeType = receive_timeout
         self.started: bool = False
@@ -106,7 +108,7 @@ class FrameReceiver(AsyncIterable):
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
-        if not hasattr(self, '_loop'):
+        if not hasattr(self, "_loop"):
             self._loop = asyncio.get_event_loop()
         return self._loop
 
@@ -126,7 +128,7 @@ class FrameReceiver(AsyncIterable):
 
                 if frame_header == b"\0x00":
                     raise AMQPFrameError(
-                        await countdown(self.reader.read())
+                        await countdown(self.reader.read()),
                     )
 
                 if self.reader is None:
@@ -144,18 +146,18 @@ class FrameReceiver(AsyncIterable):
                     raise AMQPInternalError("No frame length", None)
 
                 frame_payload = await countdown(
-                    self.reader.readexactly(frame_length + 1)
+                    self.reader.readexactly(frame_length + 1),
                 )
             except asyncio.IncompleteReadError as e:
                 raise AMQPFrameError(
-                    "Server connection unexpectedly closed"
+                    "Server connection unexpectedly closed",
                 ) from e
             except asyncio.TimeoutError as e:
                 raise asyncio.TimeoutError(
                     "Server connection was stucked. "
                     "No frames were received in {} seconds.".format(
-                        self.timeout
-                    )
+                        self.timeout,
+                    ),
                 ) from e
         return pamqp.frame.unmarshal(frame_header + frame_payload)
 
@@ -231,9 +233,11 @@ class Connection(Base):
         self.__close_class_id = 0
         self.__close_method_id = 0
 
-    def set_close_reason(self, reply_code=REPLY_SUCCESS,
-                         reply_text='normally closed',
-                         class_id=0, method_id=0):
+    def set_close_reason(
+        self, reply_code=REPLY_SUCCESS,
+        reply_text="normally closed",
+        class_id=0, method_id=0,
+    ):
         self.__close_reply_code = reply_code
         self.__close_reply_text = reply_text
         self.__close_class_id = class_id
@@ -290,7 +294,7 @@ class Connection(Base):
 
     @staticmethod
     def _credentials_class(
-        start_frame: spec.Connection.Start
+        start_frame: spec.Connection.Start,
     ) -> AuthMechanism:
         for mechanism in start_frame.mechanisms.split():
             with suppress(KeyError):
@@ -301,9 +305,11 @@ class Connection(Base):
         )
 
     @staticmethod
-    async def _rpc(request: Frame, writer: asyncio.StreamWriter,
-                   frame_receiver: FrameReceiver,
-                   wait_response: bool = True) -> typing.Optional[FrameTypes]:
+    async def _rpc(
+        request: Frame, writer: asyncio.StreamWriter,
+        frame_receiver: FrameReceiver,
+        wait_response: bool = True
+    ) -> typing.Optional[FrameTypes]:
         writer.write(pamqp.frame.marshal(request, 0))
 
         if not wait_response:
@@ -313,7 +319,7 @@ class Connection(Base):
 
         if request.synchronous and frame.name not in request.valid_responses:
             raise AMQPInternalError(
-                "one of {!r}".format(request.valid_responses), frame
+                "one of {!r}".format(request.valid_responses), frame,
             )
         elif isinstance(frame, spec.Connection.Close):
             if frame.reply_code == 403:
@@ -341,7 +347,7 @@ class Connection(Base):
 
             frame_receiver = FrameReceiver(
                 reader,
-                (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
+                (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER,
             )
         except OSError as e:
             raise ConnectionError(*e.args) from e
@@ -405,8 +411,11 @@ class Connection(Base):
                 raise AMQPInternalError("Connection.OpenOk", frame)
 
             # noinspection PyAsyncCall
-            self._reader_task = self.create_task(self.__reader(
-                frame_receiver))
+            self._reader_task = self.create_task(
+                self.__reader(
+                frame_receiver,
+                ),
+            )
             self._reader_task.add_done_callback(self._on_reader_done)
         except Exception as e:
             await self.close(e)
@@ -423,7 +432,7 @@ class Connection(Base):
         if not task.cancelled() and task.exception() is not None:
             log.debug("Cancelling cause reader exited abnormally")
             self.set_close_reason(
-                reply_code=500, reply_text="reader unexpected closed"
+                reply_code=500, reply_text="reader unexpected closed",
             )
             self.create_task(self.close(task.exception()))
 
@@ -431,8 +440,10 @@ class Connection(Base):
         self.connected.set()
 
         async for weight, channel, frame in frame_receiver:
-            log.debug("Received frame %r weight=%s channel=%d",
-                      frame, weight, channel)
+            log.debug(
+                "Received frame %r weight=%s channel=%d",
+                frame, weight, channel,
+            )
 
             if channel == 0:
                 if isinstance(frame, spec.Connection.CloseOk):
@@ -441,7 +452,7 @@ class Connection(Base):
                 if isinstance(frame, spec.Connection.Close):
                     log.exception(
                         "Unexpected connection close from remote \"%s\", %r",
-                        self, frame
+                        self, frame,
                     )
                     raise exception_by_code(frame)
                 elif isinstance(frame, Heartbeat):
@@ -479,7 +490,7 @@ class Connection(Base):
         if writer is None:
             return False
 
-        if hasattr(writer, 'is_closing'):
+        if hasattr(writer, "is_closing"):
             return not writer.is_closing()
 
         if writer.transport:
