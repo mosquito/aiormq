@@ -2,51 +2,23 @@ import abc
 import asyncio
 from contextlib import suppress
 from functools import wraps
-from typing import Any, Callable, Coroutine, Optional, Set, Type, TypeVar, Union
+from typing import Any, Callable, Optional, Set, Type, TypeVar, Union
+from weakref import WeakSet
 
+from .abc import (
+    AbstractBase, AbstractFutureStore, CoroutineType, TaskType, TaskWrapper,
+)
 from .tools import shield
 
 
 T = TypeVar("T")
-CoroutineType = Coroutine[Any, None, Any]
 
 
-# noinspection PyShadowingNames
-class TaskWrapper:
-    def __init__(self, task: asyncio.Task):
-        self.task = task
-        self.exception = asyncio.CancelledError
-
-    def throw(self, exception) -> None:
-        self.exception = exception
-        self.task.cancel()
-
-    async def __inner(self) -> Any:
-        try:
-            return await self.task
-        except asyncio.CancelledError as e:
-            raise self.exception from e
-
-    def __await__(self, *args, **kwargs) -> Any:
-        return self.__inner().__await__()
-
-    def cancel(self) -> None:
-        return self.throw(asyncio.CancelledError)
-
-    def __getattr__(self, item: str) -> Any:
-        return getattr(self.task, item)
-
-    def __repr__(self) -> str:
-        return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
-
-
-TaskType = Union[asyncio.Task, TaskWrapper]
-
-
-class FutureStore:
+class FutureStore(AbstractFutureStore):
     __slots__ = "futures", "loop", "parent"
 
     futures: Set[Union[asyncio.Future, TaskType]]
+    weak_futures: WeakSet
     loop: asyncio.AbstractEventLoop
 
     def __init__(self, loop: asyncio.AbstractEventLoop):

@@ -1,18 +1,50 @@
 import asyncio
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, abstractproperty
 from typing import (
-    Any, Awaitable, Callable, Coroutine, Dict, NamedTuple, Optional, Tuple,
-    Union,
+    Any, Awaitable, Callable, Coroutine, Dict, Iterable, NamedTuple, Optional,
+    Set, Tuple, Type, Union,
 )
 
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
 from pamqp.commands import Basic, Channel, Exchange, Queue, Tx
+from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from yarl import URL
 
 
+# noinspection PyShadowingNames
+class TaskWrapper:
+    def __init__(self, task: asyncio.Task):
+        self.task = task
+        self.exception = asyncio.CancelledError
+
+    def throw(self, exception) -> None:
+        self.exception = exception
+        self.task.cancel()
+
+    async def __inner(self) -> Any:
+        try:
+            return await self.task
+        except asyncio.CancelledError as e:
+            raise self.exception from e
+
+    def __await__(self, *args, **kwargs) -> Any:
+        return self.__inner().__await__()
+
+    def cancel(self) -> None:
+        return self.throw(asyncio.CancelledError)
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self.task, item)
+
+    def __repr__(self) -> str:
+        return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
+
+
+TaskType = Union[asyncio.Task, TaskWrapper]
+CoroutineType = Coroutine[Any, None, Any]
 GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 DeliveredMessage = NamedTuple(
     "DeliveredMessage",
