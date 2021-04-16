@@ -2,15 +2,16 @@ import asyncio
 import logging
 import platform
 import ssl
-import typing
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
 from types import MappingProxyType
+from typing import Dict, Optional, Tuple, Union
 
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
+from pamqp.commands import Basic
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.exceptions import AMQPFrameError, AMQPInternalError, AMQPSyntaxError
 from pamqp.frame import FrameTypes
@@ -19,9 +20,12 @@ from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 from . import exceptions as exc
-from .abc import AbstractChannel, ArgumentsType, SSLCerts, URLorStr
+from .abc import (
+    AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame, SSLCerts,
+    TaskType, URLorStr,
+)
 from .auth import AuthMechanism
-from .base import Base, TaskType, task
+from .base import Base, task
 from .channel import Channel
 from .tools import Countdown, censor_url
 from .version import __version__
@@ -46,9 +50,9 @@ PLATFORM = "{} {} ({} build {})".format(
 )
 
 
-TimeType = typing.Union[float, int]
-TimeoutType = typing.Optional[TimeType]
-ReceivedFrame = typing.Tuple[int, int, FrameTypes]
+TimeType = Union[float, int]
+TimeoutType = Optional[TimeType]
+ReceivedFrame = Tuple[int, int, FrameTypes]
 
 
 EXCEPTION_MAPPING = MappingProxyType({
@@ -165,7 +169,7 @@ class FrameReceiver(AsyncIterable):
         return await self.get_frame()
 
 
-class Connection(Base):
+class Connection(Base, AbstractConnection):
     FRAME_BUFFER = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
     HEARTBEAT_INTERVAL_MULTIPLIER = 0.5
@@ -176,13 +180,14 @@ class Connection(Base):
     READER_CLOSE_TIMEOUT = 2
 
     _reader_task: TaskType
+    _writer_task: TaskType
+    write_queue: asyncio.Queue
     server_properties: ArgumentsType
     connection_tune: spec.Connection.Tune
-    writer: typing.Optional[asyncio.StreamWriter] = None
-    channels: typing.Dict[int, typing.Optional[AbstractChannel]]
+    channels: Dict[int, Optional[AbstractChannel]]
 
     @staticmethod
-    def _parse_ca_data(data) -> typing.Optional[bytes]:
+    def _parse_ca_data(data) -> Optional[bytes]:
         return b64decode(data) if data else data
 
     def __init__(
@@ -214,10 +219,11 @@ class Connection(Base):
             verify=self.url.query.get("no_verify_ssl", "0") == "0",
         )
 
-        self.__drain_lock = asyncio.Lock()
-
         self.started = False
         self.channels = {}
+        self.write_queue = asyncio.Queue(
+            maxsize=self.FRAME_BUFFER,
+        )
 
         self.last_channel = 1
 
@@ -243,15 +249,9 @@ class Connection(Base):
         self.__close_class_id = class_id
         self.__close_method_id = method_id
 
-    async def drain(self):
-        async with self.__drain_lock:
-            if not self.writer:
-                raise RuntimeError("Writer is %r" % self.writer)
-            return await self.writer.drain()
-
     @property
     def is_opened(self):
-        return self.writer is not None and not self.is_closed
+        return not self._writer_task.done() is not None and not self.is_closed
 
     def __str__(self):
         return str(censor_url(self.url))
@@ -309,7 +309,7 @@ class Connection(Base):
         request: Frame, writer: asyncio.StreamWriter,
         frame_receiver: FrameReceiver,
         wait_response: bool = True
-    ) -> typing.Optional[FrameTypes]:
+    ) -> Optional[FrameTypes]:
         writer.write(pamqp.frame.marshal(request, 0))
 
         if not wait_response:
@@ -329,8 +329,8 @@ class Connection(Base):
 
     @task
     async def connect(self, client_properties: dict = None):
-        if self.writer is not None:
-            raise RuntimeError("Already connected")
+        if hasattr(self, "_writer_task"):
+            raise RuntimeError("Connection already connected")
 
         ssl_context = self.ssl_context
 
@@ -352,7 +352,7 @@ class Connection(Base):
         except OSError as e:
             raise ConnectionError(*e.args) from e
 
-        frame: typing.Optional[FrameTypes]
+        frame: Optional[FrameTypes]
 
         try:
             protocol_header = ProtocolHeader()
@@ -463,7 +463,7 @@ class Connection(Base):
                 log.error("Unexpected frame %r", frame)
                 continue
 
-            ch: typing.Optional[AbstractChannel] = self.channels.get(channel)
+            ch: Optional[AbstractChannel] = self.channels.get(channel)
             if ch is None:
                 log.error(
                     "Got frame for closed channel %d: %r", channel, frame,

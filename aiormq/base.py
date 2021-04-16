@@ -93,7 +93,7 @@ class FutureStore:
         self.add(task)
         return task
 
-    def create_future(self):
+    def create_future(self, weak: bool = False):
         future = self.loop.create_future()
         self.add(future)
         return future
@@ -104,10 +104,13 @@ class FutureStore:
         return store
 
 
-class Base:
+class Base(AbstractBase):
     __slots__ = "loop", "__future_store", "closing"
 
-    def __init__(self, *, loop, parent: "Base" = None):
+    def __init__(
+        self, *, loop: asyncio.AbstractEventLoop,
+        parent: Optional[AbstractBase] = None
+    ):
         self.loop: asyncio.AbstractEventLoop = loop
 
         if parent:
@@ -125,7 +128,7 @@ class Base:
     def _cancel_tasks(self, exc: Union[Exception, Type[Exception]] = None):
         return self.__future_store.reject_all(exc)
 
-    def _future_store_child(self):
+    def _future_store_child(self) -> AbstractFutureStore:
         return self.__future_store.get_child()
 
     def create_task(self, coro: CoroutineType) -> TaskType:
@@ -156,7 +159,9 @@ class Base:
 
     def __repr__(self):
         cls_name = self.__class__.__name__
-        return '<{0}: "{1}">'.format(cls_name, str(self))
+        return '<{0}: "{1}" at 0x{2:02x}>'.format(
+            cls_name, str(self), id(self),
+        )
 
     @abc.abstractmethod
     def __str__(self):  # pragma: no cover

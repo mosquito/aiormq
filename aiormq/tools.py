@@ -1,6 +1,6 @@
 import asyncio
 from functools import wraps
-from typing import Any, Awaitable, Coroutine, TypeVar
+from typing import AsyncContextManager, Awaitable, TypeVar
 
 from yarl import URL
 

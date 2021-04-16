@@ -16,11 +16,12 @@ from pamqp.body import ContentBody
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 
-from aiormq.tools import Countdown, LazyCoroutine, awaitable
+from aiormq.tools import Countdown, awaitable
 
 from .abc import (
-    AbstractChannel, ArgumentsType, ConfirmationFrameType, ConsumerCallback,
-    DeliveredMessage, DrainResult, FrameType, RpcReturnType, TimeoutType,
+    AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
+    ConfirmationFrameType, ConsumerCallback, DeliveredMessage, DrainResult,
+    FrameType, RpcReturnType, TimeoutType,
 )
 from .base import Base, task
 from .exceptions import (
@@ -70,7 +71,7 @@ class Channel(Base, AbstractChannel):
 
     def __init__(
         self,
-        connector,
+        connector: AbstractConnection,
         number,
         publisher_confirms=True,
         frame_buffer=None,
@@ -86,9 +87,9 @@ class Channel(Base, AbstractChannel):
         ):  # pragma: no cover
             raise ValueError("Server does't support publisher confirms")
 
-        self.consumers = {}
+        self.consumers: Dict[str, ConsumerCallback] = {}
         self.confirmations = OrderedDict()
-        self.message_id_delivery_tag = dict()
+        self.message_id_delivery_tag: Dict[str, int] = dict()
 
         self.delivery_tag = 0
 
