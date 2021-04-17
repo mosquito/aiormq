@@ -7,7 +7,7 @@ from contextlib import suppress
 from functools import partial
 from io import BytesIO
 from types import MappingProxyType
-from typing import Any, Dict, Mapping, Optional, Type, Union, Set
+from typing import Any, Dict, Mapping, Optional, Set, Type, Union
 
 import pamqp.frame
 from pamqp import commands as spec

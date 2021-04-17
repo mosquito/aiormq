@@ -11,6 +11,7 @@ from pamqp.body import ContentBody
 from pamqp.commands import Basic, Channel, Exchange, Queue, Tx
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
+from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 
@@ -116,7 +117,7 @@ RpcReturnType = Optional[
 
 class ChannelFrame(NamedTuple):
     channel_number: int
-    frames: Iterable[FrameType]
+    frames: Iterable[Union[FrameType, Heartbeat]]
     drain_future: Optional[asyncio.Future] = None
 
 

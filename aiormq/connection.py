@@ -6,10 +6,8 @@ from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
 from types import MappingProxyType
-from typing import (
-    Dict, Optional, Tuple, Union,
-    AsyncIterable as AsyncIterableType
-)
+from typing import AsyncIterable as AsyncIterableType
+from typing import Dict, Optional, Tuple, Union
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -180,7 +178,7 @@ class Connection(Base, AbstractConnection):
     HEARTBEAT_GRACE_MULTIPLIER = 3
     _HEARTBEAT = ChannelFrame(
         frames=(Heartbeat(),),
-        channel_number=0
+        channel_number=0,
     )
 
     READER_CLOSE_TIMEOUT = 2
@@ -494,7 +492,7 @@ class Connection(Base, AbstractConnection):
         while not self.is_closed:
             try:
                 yield await asyncio.wait_for(
-                    self.write_queue.get(), timeout=self.heartbeat_timeout
+                    self.write_queue.get(), timeout=self.heartbeat_timeout,
                 )
                 self.write_queue.task_done()
             except asyncio.TimeoutError:
