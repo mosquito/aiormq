@@ -243,6 +243,9 @@ class Connection(Base, AbstractConnection):
         self.__close_class_id = 0
         self.__close_method_id = 0
 
+    async def ready(self):
+        await self.connected.wait()
+
     def set_close_reason(
         self, reply_code=REPLY_SUCCESS,
         reply_text="normally closed",
