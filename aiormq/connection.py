@@ -6,7 +6,10 @@ from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
 from types import MappingProxyType
-from typing import Dict, Optional, Tuple, Union
+from typing import (
+    Dict, Optional, Tuple, Union,
+    AsyncIterable as AsyncIterableType
+)
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -175,7 +178,10 @@ class Connection(Base, AbstractConnection):
     HEARTBEAT_INTERVAL_MULTIPLIER = 0.5
     # Allow three missed heartbeats (based on heartbeat(timeout)
     HEARTBEAT_GRACE_MULTIPLIER = 3
-    _HEARTBEAT = pamqp.frame.marshal(Heartbeat(), 0)
+    _HEARTBEAT = ChannelFrame(
+        frames=(Heartbeat(),),
+        channel_number=0
+    )
 
     READER_CLOSE_TIMEOUT = 2
 
@@ -484,12 +490,22 @@ class Connection(Base, AbstractConnection):
 
             await ch.frames.put((weight, frame))
 
-    async def __writer(self, writer: asyncio.StreamWriter):
-        channel_frame: ChannelFrame = await self.write_queue.get()
+    async def __frame_iterator(self) -> AsyncIterableType[ChannelFrame]:
+        while not self.is_closed:
+            try:
+                yield await asyncio.wait_for(
+                    self.write_queue.get(), timeout=self.heartbeat_timeout
+                )
+                self.write_queue.task_done()
+            except asyncio.TimeoutError:
+                yield self._HEARTBEAT
 
-        closed = False
+    async def __writer(self, writer: asyncio.StreamWriter):
+        channel_frame: ChannelFrame
+        closed: bool = False
+
         try:
-            while not closed:
+            async for channel_frame in self.__frame_iterator():
                 log.debug("Prepare to send %r", channel_frame)
 
                 frame: FrameTypes
@@ -506,16 +522,12 @@ class Connection(Base, AbstractConnection):
                     )
 
                     if isinstance(frame, spec.Connection.CloseOk):
-                        closed = True
-                        break
+                        return
 
-                if channel_frame.drain_future is not None:
-                    channel_frame.drain_future.set_result(
-                        await writer.drain(),
-                    )
-
-                self.write_queue.task_done()
-                channel_frame = await self.write_queue.get()
+                    if channel_frame.drain_future is not None:
+                        channel_frame.drain_future.set_result(
+                            await writer.drain(),
+                        )
         except asyncio.CancelledError:
             if not self.__check_writer(writer):
                 raise
