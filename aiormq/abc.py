@@ -8,11 +8,13 @@ from typing import (
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
+from pamqp.common import FieldTable, FieldValue, FieldArray
 from pamqp.commands import Basic, Channel, Exchange, Queue, Tx
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
+
 
 
 # noinspection PyShadowingNames
@@ -471,3 +473,14 @@ class AbstractConnection(AbstractBase):
     @abstractmethod
     async def __aenter__(self):
         raise NotImplementedError
+
+
+__all__ = (
+    "AbstractBase", "AbstractChannel", "AbstractConnection",
+    "AbstractFutureStore", "ArgumentsType", "CallbackCoro", "ChannelFrame",
+    "ChannelRType", "ConfirmationFrameType", "ConsumerCallback",
+    "CoroutineType", "DeliveredMessage", "DrainResult", "ExceptionType",
+    "FieldArray", "FieldTable", "FieldValue", "FrameReceived", "FrameType",
+    "GetResultType", "ReturnCallback", "RpcReturnType", "SSLCerts",
+    "TaskType", "TaskWrapper", "TimeoutType", "URLorStr",
+)
