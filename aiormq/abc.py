@@ -49,15 +49,14 @@ class TaskWrapper:
 TaskType = Union[asyncio.Task, TaskWrapper]
 CoroutineType = Coroutine[Any, None, Any]
 GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
-DeliveredMessage = NamedTuple(
-    "DeliveredMessage",
-    [
-        ("delivery", Union[Basic.Deliver, GetResultType]),
-        ("header", ContentHeader),
-        ("body", bytes),
-        ("channel", "AbstractChannel"),
-    ],
-)
+
+
+class DeliveredMessage(NamedTuple):
+    delivery: Union[Basic.Deliver, GetResultType]
+    header: ContentHeader
+    body: bytes
+    channel: "AbstractChannel"
+
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
