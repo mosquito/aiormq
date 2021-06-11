@@ -43,7 +43,7 @@ setup(
         "Programming Language :: Python :: Implementation :: PyPy",
         "Programming Language :: Python :: Implementation :: CPython",
     ],
-    python_requires=">3.6.*",
+    python_requires=">=3.6",
     package_data={"aiormq": ["py.typed"]},
     extras_require={
         "develop": [
