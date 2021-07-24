@@ -9,7 +9,7 @@ import pytest
 from pamqp.commands import Basic
 
 import aiormq
-from aiormq.auth import AuthBase, PlainAuth
+from aiormq.auth import AuthBase, PlainAuth, ExternalAuth
 from aiormq.abc import DeliveredMessage
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
@@ -166,6 +166,21 @@ async def test_auth_plain(amqp_connection, loop):
     auth.value = "boo"
 
     assert auth.marshal() == "boo"
+
+async def test_auth_external(loop):
+
+    url = AMQP_URL.with_scheme("amqps")
+    url.update_query(auth='external')
+
+    connection = aiormq.Connection
+
+    auth = ExternalAuth(connection).marshal()
+
+    auth = ExternalAuth(connection)
+    auth.value = ""
+
+    assert auth.marshal() == ""
+
 
 
 async def test_channel_closed(amqp_connection):
