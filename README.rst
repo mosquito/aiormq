@@ -114,9 +114,9 @@ Simple consumer
         channel = await connection.channel()
 
         # Declaring queue
-        deaclare_ok = await channel.queue_declare('helo')
+        declare_ok = await channel.queue_declare('helo')
         consume_ok = await channel.basic_consume(
-            deaclare_ok.queue, on_message, no_ack=True
+            declare_ok.queue, on_message, no_ack=True
         )
 
 
