@@ -299,14 +299,15 @@ class Connection(Base, AbstractConnection):
         properties.update(kwargs)
         return properties
 
-    @staticmethod
     def _credentials_class(
+        self,
         start_frame: spec.Connection.Start,
     ) -> AuthMechanism:
-        for mechanism in start_frame.mechanisms.split():
+        auth_requested = self.url.query.get('auth', 'plain').upper()
+        auth_available = start_frame.mechanisms.split()
+        if auth_requested in auth_available:
             with suppress(KeyError):
-                return AuthMechanism[mechanism]
-
+                return AuthMechanism[auth_requested]
         raise exc.AuthenticationError(
             start_frame.mechanisms, [m.name for m in AuthMechanism],
         )

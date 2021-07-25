@@ -27,5 +27,11 @@ class PlainAuth(AuthBase):
         )
 
 
+class ExternalAuth(AuthBase):
+    def encode(self) -> str:
+        return ("")
+
+
 class AuthMechanism(Enum):
     PLAIN = PlainAuth
+    EXTERNAL = ExternalAuth
