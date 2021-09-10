@@ -115,7 +115,8 @@ def memory_tracer():
     try:
         yield
 
-        gc.collect()
+        for i in range(3):
+            gc.collect(i)
 
         snapshot_after = tracemalloc.take_snapshot().filter_traces(filters)
 

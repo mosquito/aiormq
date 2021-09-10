@@ -350,9 +350,11 @@ class Connection(Base, AbstractConnection):
         family, kind, proto, _, sockaddr = addrinfo[0]
         sock = socket.socket(family, kind)
         sock.setblocking(False)
+
+        await self.loop.sock_connect(sock, sockaddr)
+
         if hasattr(socket, 'TCP_NODELAY'):
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        await self.loop.sock_connect(sock, sockaddr)
 
         finalize(self, sock.close)
         return sock
