@@ -9,6 +9,7 @@ import socket
 from types import MappingProxyType
 from typing import AsyncIterable as AsyncIterableType
 from typing import Dict, Optional, Tuple, Union
+from weakref import finalize
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -348,7 +349,12 @@ class Connection(Base, AbstractConnection):
 
         family, kind, proto, _, sockaddr = addrinfo[0]
         sock = socket.socket(family, kind)
+        sock.setblocking(False)
+        if hasattr(socket, 'TCP_NODELAY'):
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         await self.loop.sock_connect(sock, sockaddr)
+
+        finalize(self, sock.close)
         return sock
 
     @task
@@ -364,7 +370,6 @@ class Connection(Base, AbstractConnection):
             )
 
         sock = await self._create_socket()
-
         log.debug("Connecting to: %s", self)
         try:
             reader, writer = await asyncio.open_connection(
