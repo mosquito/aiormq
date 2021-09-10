@@ -452,18 +452,19 @@ class Connection(Base, AbstractConnection):
 
             # noinspection PyAsyncCall
             self._writer_task = self.create_task(self.__writer(writer))
-
-            set_keepalive(
-                sock,
-                connection_tune.heartbeat * 3,
-                connection_tune.heartbeat
-            )
         except Exception as e:
             await self.close(e)
             raise
 
         self.connection_tune = connection_tune
         self.server_properties = server_properties
+
+        set_keepalive(
+            sock,
+            connection_tune.heartbeat * self.HEARTBEAT_GRACE_MULTIPLIER,
+            connection_tune.heartbeat
+        )
+
         return True
 
     def _on_reader_done(self, task: asyncio.Task) -> None:
