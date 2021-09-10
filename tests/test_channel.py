@@ -153,7 +153,7 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
                 ))
                 for i in range(10)
             ]
-            _, pending = await asyncio.wait(messages, timeout=0.2)
+            _, pending = await asyncio.wait(messages, timeout=5)
             assert not pending, "not all publishes were completed (confirmed)"
             await asyncio.sleep(0.05)
     finally:
