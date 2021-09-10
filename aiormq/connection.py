@@ -5,6 +5,7 @@ import ssl
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
+import socket
 from types import MappingProxyType
 from typing import AsyncIterable as AsyncIterableType
 from typing import Dict, Optional, Tuple, Union
@@ -12,7 +13,6 @@ from typing import Dict, Optional, Tuple, Union
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
-from pamqp.commands import Basic
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.exceptions import AMQPFrameError, AMQPInternalError, AMQPSyntaxError
 from pamqp.frame import FrameTypes
@@ -28,6 +28,7 @@ from .abc import (
 from .auth import AuthMechanism
 from .base import Base, task
 from .channel import Channel
+from .compat import set_keepalive
 from .tools import Countdown, censor_url
 from .version import __version__
 
@@ -335,6 +336,21 @@ class Connection(Base, AbstractConnection):
             raise exc.ConnectionClosed(frame.reply_code, frame.reply_text)
         return frame
 
+    async def _create_socket(self) -> socket.socket:
+        addrinfo = await self.loop.getaddrinfo(
+            self.url.host, self.url.port,
+            proto=socket.SOL_TCP,
+            type=socket.SOCK_STREAM,
+        )
+
+        if not addrinfo:
+            raise ConnectionError(f"Can not connect to {self.url}")
+
+        family, kind, proto, _, sockaddr = addrinfo[0]
+        sock = socket.socket(family, kind)
+        await self.loop.sock_connect(sock, sockaddr)
+        return sock
+
     @task
     async def connect(self, client_properties: dict = None):
         if hasattr(self, "_writer_task"):
@@ -347,10 +363,13 @@ class Connection(Base, AbstractConnection):
                 None, self._get_ssl_context,
             )
 
+        sock = await self._create_socket()
+
         log.debug("Connecting to: %s", self)
         try:
             reader, writer = await asyncio.open_connection(
-                self.url.host, self.url.port, ssl=ssl_context,
+                ssl=ssl_context, sock=sock,
+                server_hostname=self.url.host if ssl_context else None
             )
 
             frame_receiver = FrameReceiver(
@@ -424,6 +443,12 @@ class Connection(Base, AbstractConnection):
 
             # noinspection PyAsyncCall
             self._writer_task = self.create_task(self.__writer(writer))
+
+            set_keepalive(
+                sock,
+                connection_tune.heartbeat * 3,
+                connection_tune.heartbeat
+            )
         except Exception as e:
             await self.close(e)
             raise
