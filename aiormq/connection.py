@@ -12,7 +12,7 @@ from typing import Dict, Optional, Tuple, Union
 from weakref import finalize
 
 import pamqp.frame
-from pamqp import commands as spec
+from pamqp import commands as spec, constants
 from pamqp.base import Frame
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.exceptions import AMQPFrameError, AMQPInternalError, AMQPSyntaxError
@@ -133,7 +133,7 @@ class FrameReceiver(AsyncIterable):
             try:
                 frame_header = await countdown(self.reader.readexactly(1))
 
-                if frame_header == b"\0x00":
+                if frame_header == b"\x00":
                     raise AMQPFrameError(
                         await countdown(self.reader.read()),
                     )
@@ -141,7 +141,9 @@ class FrameReceiver(AsyncIterable):
                 if self.reader is None:
                     raise ConnectionError
 
-                frame_header += await countdown(self.reader.readexactly(6))
+                frame_header += await countdown(self.reader.readexactly(
+                    constants.FRAME_HEADER_SIZE - 1
+                ))
 
                 if not self.started and frame_header.startswith(b"AMQP"):
                     raise AMQPSyntaxError
