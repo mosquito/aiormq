@@ -349,17 +349,23 @@ class Connection(Base, AbstractConnection):
         if not addrinfo:
             raise ConnectionError(f"Can not connect to {self.url}")
 
-        family, kind, proto, _, sockaddr = addrinfo[0]
-        sock = socket.socket(family, kind)
-        sock.setblocking(False)
+        last_exc = None
 
-        await self.loop.sock_connect(sock, sockaddr)
+        for family, kind, proto, _, sockaddr in addrinfo:
+            sock = socket.socket(family, kind)
+            sock.setblocking(False)
+            finalize(self, sock.close)
 
-        if hasattr(socket, 'TCP_NODELAY'):
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if hasattr(socket, 'TCP_NODELAY'):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
-        finalize(self, sock.close)
-        return sock
+            try:
+                await self.loop.sock_connect(sock, sockaddr)
+                return sock
+            except ConnectionError as e:
+                last_exc = e
+
+        raise last_exc
 
     @task
     async def connect(self, client_properties: dict = None):
