@@ -544,7 +544,6 @@ class Connection(Base, AbstractConnection):
 
     async def __writer(self, writer: asyncio.StreamWriter):
         channel_frame: ChannelFrame
-        closed: bool = False
 
         try:
             async for channel_frame in self.__frame_iterator():
