@@ -568,9 +568,11 @@ class Connection(Base, AbstractConnection):
 
                     if channel_frame.drain_future is not None:
                         channel_frame.drain_future.set_result(
-                            await writer.drain(),
+                            await asyncio.wait_for(
+                                writer.drain(), timeout=self.heartbeat_timeout
+                            )
                         )
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as e:
             if not self.__check_writer(writer):
                 raise
 
@@ -584,8 +586,20 @@ class Connection(Base, AbstractConnection):
             writer.write(pamqp.frame.marshal(frame, 0))
             log.debug("Sending %r to %r", frame, self)
 
-            await writer.drain()
-            await self.__close_writer(writer)
+            await asyncio.gather(
+                asyncio.wait_for(
+                    writer.drain(),
+                    timeout=self.heartbeat_timeout
+                ), return_exceptions=True
+            )
+            await asyncio.gather(
+                asyncio.wait_for(
+                    self.__close_writer(writer),
+                    timeout=self.heartbeat_timeout
+                ), return_exceptions=True
+            )
+
+            self.closing.set_exception(e)
             raise
         finally:
             log.debug("Writer exited for %r", self)
