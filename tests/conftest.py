@@ -144,7 +144,10 @@ async def proxy_connection(proxy: TCPProxy, amqp_url: URL, loop):
         "localhost"
     ).with_port(
         proxy.proxy_port
+    ).update_query(
+        keepalive=0
     )
+
     connection = Connection(url, loop=loop)
 
     await connection.connect()

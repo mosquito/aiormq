@@ -459,11 +459,16 @@ class Connection(Base, AbstractConnection):
         self.connection_tune = connection_tune
         self.server_properties = server_properties
 
-        set_keepalive(
-            sock,
-            connection_tune.heartbeat * self.HEARTBEAT_GRACE_MULTIPLIER,
-            connection_tune.heartbeat
+        keepalive_time = int(
+            self.url.query.get("keepalive", str(connection_tune.heartbeat))
         )
+
+        if keepalive_time > 0:
+            set_keepalive(
+                sock,
+                int(keepalive_time * self.HEARTBEAT_GRACE_MULTIPLIER),
+                keepalive_time
+            )
 
         return True
 
