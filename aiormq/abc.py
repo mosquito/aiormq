@@ -16,7 +16,6 @@ from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 
-
 # noinspection PyShadowingNames
 class TaskWrapper:
     def __init__(self, task: asyncio.Task):

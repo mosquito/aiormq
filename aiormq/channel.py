@@ -20,8 +20,8 @@ from aiormq.tools import Countdown, awaitable
 
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ConfirmationFrameType, ConsumerCallback, DeliveredMessage, DrainResult,
-    FrameType, RpcReturnType, TimeoutType,
+    ConfirmationFrameType, ConsumerCallback, DeliveredMessage, FrameType,
+    RpcReturnType, TimeoutType,
 )
 from .base import Base, task
 from .exceptions import (

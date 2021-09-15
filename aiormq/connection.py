@@ -150,7 +150,9 @@ class FrameReceiver(AsyncIterable):
                 else:
                     self.started = True
 
-                frame_type, _, frame_length = pamqp.frame.frame_parts(frame_header)
+                frame_type, _, frame_length = pamqp.frame.frame_parts(
+                    frame_header
+                )
                 if frame_length is None:
                     raise AMQPInternalError("No frame length", None)
 
@@ -639,7 +641,6 @@ class Connection(Base, AbstractConnection):
 
         if not reader_task.done():
             reader_task.cancel()
-
 
     @property
     def server_capabilities(self) -> ArgumentsType:

@@ -34,7 +34,7 @@ def set_keepalive_windows(
         1,
         int(keepalive_time) * 1000,
         int(interval) * 1000
-    ))
+    ))      # NOQA
 
 
 PLATFORM = platform()
