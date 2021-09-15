@@ -351,7 +351,7 @@ class Connection(Base, AbstractConnection):
         if not addrinfo:
             raise ConnectionError(f"Can not connect to {self.url}")
 
-        last_exc = None
+        last_exc: Exception = RuntimeError("Unknown connection error")
 
         for family, kind, proto, _, sockaddr in addrinfo:
             sock = socket.socket(family, kind)
