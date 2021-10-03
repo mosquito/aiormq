@@ -9,21 +9,20 @@ from io import BytesIO
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional, Set, Type, Union
 
+import async_class
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
-from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 
 from aiormq.tools import Countdown, awaitable
 
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ConfirmationFrameType, ConsumerCallback, DeliveredMessage, FrameType,
-    RpcReturnType, TimeoutType,
+    CloseReason, ConfirmationFrameType, ConsumerCallback, DeliveredMessage,
+    FrameType, RpcReturnType, TimeoutType,
 )
-from .base import Base, task
 from .exceptions import (
     AMQPChannelError, ChannelAccessRefused, ChannelClosed,
     ChannelInvalidStateError, ChannelLockedResource, ChannelNotFoundEntity,
@@ -62,14 +61,15 @@ class Returning(asyncio.Future):
 ConfirmationType = Union[asyncio.Future, Returning]
 
 
-class Channel(Base, AbstractChannel):
+# noinspection PyAttributeOutsideInit,PyAsyncCall
+class Channel(AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
     CLOSE_TIMEOUT = 2
 
     confirmations: Dict[int, ConfirmationType]
 
-    def __init__(
+    async def __ainit__(
         self,
         connector: AbstractConnection,
         number,
@@ -77,15 +77,14 @@ class Channel(Base, AbstractChannel):
         frame_buffer=None,
         on_return_raises=True,
     ):
-
-        super().__init__(loop=connector.loop, parent=connector)
+        async_class.link(self, connector)
 
         self.connection = connector
 
         if (
-            publisher_confirms and not connector.publisher_confirms
+            publisher_confirms and not self.connection.publisher_confirms
         ):  # pragma: no cover
-            raise ValueError("Server does't support publisher confirms")
+            raise ValueError("Server doesn't support publisher confirms")
 
         self.consumers: Dict[str, ConsumerCallback] = {}
         self.confirmations = OrderedDict()
@@ -112,26 +111,13 @@ class Channel(Base, AbstractChannel):
         self._close_exception = None
 
         self.create_task(self._reader())
-
-        self.__close_reply_code = REPLY_SUCCESS
-        self.__close_reply_text = 0
-        self.__close_class_id = 0
-        self.__close_method_id = 0
-
-    def set_close_reason(
-        self, reply_code=REPLY_SUCCESS,
-        reply_text="", class_id=0, method_id=0,
-    ):
-        self.__close_reply_code = reply_code
-        self.__close_reply_text = reply_text
-        self.__close_class_id = class_id
-        self.__close_method_id = method_id
+        self.__tasks__.add_close_callback(self._on_close)
+        self.close_reason = CloseReason()
 
     @property
     def lock(self) -> asyncio.Lock:
         if self.is_closed:
             raise ChannelInvalidStateError("%r closed" % self)
-
         return self.__lock
 
     async def _get_frame(self) -> FrameType:
@@ -142,7 +128,7 @@ class Channel(Base, AbstractChannel):
     def __str__(self):
         return str(self.number)
 
-    @task
+    @async_class.task
     async def rpc(
         self, frame: Frame, timeout: TimeoutType = None
     ) -> RpcReturnType:
@@ -178,13 +164,13 @@ class Channel(Base, AbstractChannel):
                         "Closing channel %r because RPC call %s cancelled",
                         self, frame,
                     )
-                    self.set_close_reason(
+                    self.close_reason = CloseReason(
                         reply_code=504,
                         reply_text="RPC timeout on frame {!s}".format(frame),
                     )
 
                     # noinspection PyAsyncCall
-                    self.create_task(self.close())
+                    self.loop.create_task(self.close())
                 raise e
 
     async def open(self):
@@ -377,25 +363,33 @@ class Channel(Base, AbstractChannel):
                     )
 
                     self.connection.channels.pop(self.number, None)
-                    return await self._cancel_tasks(exc)
+                    return await self.close(exc)
 
                 await self.rpc_frames.put(frame)
             except asyncio.CancelledError:
                 return
             except Exception as e:  # pragma: nocover
                 log.debug("Channel reader exception %r", exc_info=e)
-                await self._cancel_tasks(e)
+                await self.close(e)
                 raise
 
-    async def _on_close(self, exc=None) -> None:
+    async def _on_close(self) -> None:
+        if not self.connection.is_opened:
+            return
+
         await self.rpc(
             spec.Channel.Close(
-                reply_code=self.__close_reply_code,
-                class_id=self.__close_class_id,
-                method_id=self.__close_method_id,
+                reply_code=self.close_reason.reply_code,
+                class_id=self.close_reason.class_id,
+                method_id=self.close_reason.method_id,
             ),
         )
-        self.connection.channels.pop(self.number, None)
+
+    async def __adel__(self) -> None:
+        try:
+            await self._on_close()
+        finally:
+            self.connection.channels.pop(self.number, None)
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,

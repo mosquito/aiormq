@@ -1,51 +1,24 @@
 import asyncio
-from abc import ABC, abstractmethod, abstractproperty
+from abc import abstractmethod, abstractproperty
+from dataclasses import dataclass, field
 from typing import (
     Any, Awaitable, Callable, Coroutine, Dict, Iterable, NamedTuple, Optional,
-    Set, Tuple, Type, Union,
+    Tuple, Type, Union,
 )
 
+from async_class import AsyncObject
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
-from pamqp.common import FieldTable, FieldValue, FieldArray
 from pamqp.commands import Basic, Channel, Exchange, Queue, Tx
+from pamqp.common import FieldArray, FieldTable, FieldValue
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 
-# noinspection PyShadowingNames
-class TaskWrapper:
-    def __init__(self, task: asyncio.Task):
-        self.task = task
-        self.exception = asyncio.CancelledError
-
-    def throw(self, exception) -> None:
-        self.exception = exception
-        self.task.cancel()
-
-    async def __inner(self) -> Any:
-        try:
-            return await self.task
-        except asyncio.CancelledError as e:
-            raise self.exception from e
-
-    def __await__(self, *args, **kwargs) -> Any:
-        return self.__inner().__await__()
-
-    def cancel(self) -> None:
-        return self.throw(asyncio.CancelledError)
-
-    def __getattr__(self, item: str) -> Any:
-        return getattr(self.task, item)
-
-    def __repr__(self) -> str:
-        return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
-
-
-TaskType = Union[asyncio.Task, TaskWrapper]
+TaskType = asyncio.Task
 CoroutineType = Coroutine[Any, None, Any]
 GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 
@@ -124,63 +97,7 @@ class ChannelFrame(NamedTuple):
 ExceptionType = Union[Exception, Type[Exception]]
 
 
-class AbstractFutureStore:
-    futures: Set[Union[asyncio.Future, TaskType]]
-    loop: asyncio.AbstractEventLoop
-
-    @abstractmethod
-    def add(self, future: Union[asyncio.Future, TaskWrapper]):
-        raise NotImplementedError
-
-    @abstractmethod
-    async def reject_all(self, exception: Optional[ExceptionType]) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def create_task(self, coro: CoroutineType) -> TaskType:
-        raise NotImplementedError
-
-    @abstractmethod
-    def create_future(self):
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_child(self) -> "AbstractFutureStore":
-        raise NotImplementedError
-
-
-class AbstractBase(ABC):
-    loop: asyncio.AbstractEventLoop
-
-    @abstractmethod
-    def _future_store_child(self) -> AbstractFutureStore:
-        raise NotImplementedError
-
-    @abstractmethod
-    def create_task(self, coro: CoroutineType) -> TaskType:
-        raise NotImplementedError
-
-    def create_future(self) -> asyncio.Future:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def _on_close(self, exc: Optional[Exception] = None):
-        raise NotImplementedError
-
-    @abstractmethod
-    async def close(self, exc=asyncio.CancelledError()) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def __str__(self) -> str:
-        raise NotImplementedError
-
-    @abstractproperty
-    def is_closed(self) -> bool:
-        raise NotImplementedError
-
-
-class AbstractChannel(AbstractBase):
+class AbstractChannel(AsyncObject):
     frames: asyncio.Queue
 
     @abstractmethod
@@ -406,7 +323,7 @@ class AbstractChannel(AbstractBase):
         raise NotImplementedError
 
 
-class AbstractConnection(AbstractBase):
+class AbstractConnection(AsyncObject):
     FRAME_BUFFER: int = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
     HEARTBEAT_INTERVAL_MULTIPLIER: Union[int, float]
@@ -418,14 +335,6 @@ class AbstractConnection(AbstractBase):
     connection_tune: spec.Connection.Tune
     channels: Dict[int, Optional[AbstractChannel]]
     write_queue: asyncio.Queue
-
-    @abstractmethod
-    def set_close_reason(
-        self, reply_code=REPLY_SUCCESS,
-        reply_text="normally closed",
-        class_id=0, method_id=0,
-    ):
-        raise NotImplementedError
 
     @abstractproperty
     def is_opened(self) -> bool:
@@ -473,12 +382,20 @@ class AbstractConnection(AbstractBase):
         raise NotImplementedError
 
 
+@dataclass(frozen=False)
+class CloseReason:
+    reply_code: int = field(default=REPLY_SUCCESS)
+    reply_text: str = field(default="")
+    class_id: int = field(default=0)
+    method_id: int = field(default=0)
+
+
 __all__ = (
-    "AbstractBase", "AbstractChannel", "AbstractConnection",
-    "AbstractFutureStore", "ArgumentsType", "CallbackCoro", "ChannelFrame",
+    "AbstractChannel", "AbstractConnection",
+    "ArgumentsType", "CallbackCoro", "CloseReason", "ChannelFrame",
     "ChannelRType", "ConfirmationFrameType", "ConsumerCallback",
     "CoroutineType", "DeliveredMessage", "DrainResult", "ExceptionType",
     "FieldArray", "FieldTable", "FieldValue", "FrameReceived", "FrameType",
     "GetResultType", "ReturnCallback", "RpcReturnType", "SSLCerts",
-    "TaskType", "TaskWrapper", "TimeoutType", "URLorStr",
+    "TaskType", "TimeoutType", "URLorStr",
 )
