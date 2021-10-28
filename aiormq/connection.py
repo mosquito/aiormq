@@ -92,6 +92,11 @@ def parse_int(v: str):
         return 0
 
 
+def parse_heartbeat(v: str):
+    v = parse_int(v)
+    return v if 0 <= v < 65535 else 0
+
+
 def parse_connection_name(conn_name: str):
     if not conn_name or not isinstance(conn_name, str):
         return {}
@@ -231,7 +236,8 @@ class Connection(Base, AbstractConnection):
 
         self.last_channel = 1
 
-        self.heartbeat_timeout = parse_int(
+        self.timeout = parse_int(self.url.query.get("timeout", "60"))
+        self.heartbeat_timeout = parse_heartbeat(
             self.url.query.get("heartbeat", "60"),
         )
         self.last_channel_lock = asyncio.Lock()
@@ -355,7 +361,7 @@ class Connection(Base, AbstractConnection):
 
             frame_receiver = FrameReceiver(
                 reader,
-                (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER,
+                (self.timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER,
             )
         except OSError as e:
             raise ConnectionError(*e.args) from e
@@ -394,9 +400,7 @@ class Connection(Base, AbstractConnection):
                 raise AMQPInternalError("Connection.Tune", frame)
 
             connection_tune: spec.Connection.Tune = frame
-
-            if self.heartbeat_timeout > 0:
-                connection_tune.heartbeat = self.heartbeat_timeout
+            connection_tune.heartbeat = self.heartbeat_timeout
 
             await self._rpc(
                 spec.Connection.TuneOk(
@@ -496,7 +500,7 @@ class Connection(Base, AbstractConnection):
         while not self.is_closed:
             try:
                 yield await asyncio.wait_for(
-                    self.write_queue.get(), timeout=self.heartbeat_timeout,
+                    self.write_queue.get(), timeout=self.timeout,
                 )
                 self.write_queue.task_done()
             except asyncio.TimeoutError:

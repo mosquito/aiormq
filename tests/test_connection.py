@@ -201,6 +201,60 @@ async def test_channel_closed(amqp_connection):
     await amqp_connection.close()
 
 
+async def test_timeout_default(loop):
+    connection = aiormq.Connection(AMQP_URL, loop=loop)
+    await connection.connect()
+    assert connection.timeout == 60
+    await connection.close()
+
+
+async def test_timeout_1000(loop):
+    url = AMQP_URL.update_query(timeout=1000)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.timeout
+    await connection.close()
+
+
+async def test_heartbeat_0(loop):
+    url = AMQP_URL.update_query(heartbeat=0)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
+async def test_heartbeat_default(loop):
+    connection = aiormq.Connection(AMQP_URL, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 60
+    await connection.close()
+
+
+async def test_heartbeat_above_range(loop):
+    url = AMQP_URL.update_query(heartbeat=70000)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
+async def test_heartbeat_under_range(loop):
+    url = AMQP_URL.update_query(heartbeat=-1)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
+async def test_heartbeat_not_int(loop):
+    url = AMQP_URL.update_query(heartbeat="None")
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
 async def test_bad_credentials(amqp_connection, loop):
     connection = aiormq.Connection(
         amqp_connection.url.with_password(uuid.uuid4().hex), loop=loop,
