@@ -85,16 +85,16 @@ def parse_bool(v: str):
     return v == "1" or v.lower() in ("true", "yes", "y", "enable", "on")
 
 
-def parse_int(v: str):
+def parse_int(v: str) -> int:
     try:
         return int(v)
     except ValueError:
         return 0
 
 
-def parse_heartbeat(v: str):
-    v = parse_int(v)
-    return v if 0 <= v < 65535 else 0
+def parse_heartbeat(v: str) -> int:
+    result = parse_int(v)
+    return result if 0 <= result < 65535 else 0
 
 
 def parse_connection_name(conn_name: str):
