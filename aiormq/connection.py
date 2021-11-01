@@ -517,11 +517,20 @@ class Connection(Base, AbstractConnection):
                         "Sending frame %r in channel #%d on %r",
                         frame, channel_frame.channel_number, self,
                     )
-                    writer.write(
-                        pamqp.frame.marshal(
+
+                    try:
+                        frame_bytes = pamqp.frame.marshal(
                             frame, channel_frame.channel_number,
-                        ),
-                    )
+                        )
+                        writer.write(frame_bytes)
+                        del frame_bytes
+                    except Exception as e:
+                        log.exception(
+                            "Failed to write frame to channel %d: %r",
+                            channel_frame.channel_number,
+                            frame,
+                        )
+                        raise asyncio.CancelledError from e
 
                     if isinstance(frame, spec.Connection.CloseOk):
                         return
