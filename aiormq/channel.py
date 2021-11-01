@@ -187,14 +187,17 @@ class Channel(Base, AbstractChannel):
                     self.create_task(self.close())
                 raise e
 
-    async def open(self):
-        frame = await self.rpc(spec.Channel.Open())
+    async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
+        frame: spec.Channel.OpenOk = await self.rpc(
+            spec.Channel.Open(), timeout=timeout
+        )
 
         if self.publisher_confirms:
             await self.rpc(spec.Confirm.Select())
 
         if frame is None:  # pragma: no cover
             raise spec.AMQPFrameError(frame)
+        return frame
 
     async def __get_content_frame(self) -> ContentBody:
         content_frame = await self._get_frame()
@@ -830,9 +833,9 @@ class Channel(Base, AbstractChannel):
         return await self.rpc(spec.Tx.Select(), timeout=timeout)
 
     async def confirm_delivery(
-        self, nowait=False,
+        self, nowait: bool = False,
         timeout: TimeoutType = None
-    ):
+    ) -> spec.Confirm.SelectOk:
         return await self.rpc(
             spec.Confirm.Select(nowait=nowait),
             timeout=timeout,

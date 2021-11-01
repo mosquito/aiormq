@@ -1,9 +1,14 @@
 import abc
 from enum import Enum
+from typing import Optional
+
+from .abc import AbstractConnection
 
 
 class AuthBase:
-    def __init__(self, connector):
+    value: Optional[str]
+
+    def __init__(self, connector: AbstractConnection):
         self.connector = connector
         self.value = None
 
@@ -29,7 +34,7 @@ class PlainAuth(AuthBase):
 
 class ExternalAuth(AuthBase):
     def encode(self) -> str:
-        return ("")
+        return ""
 
 
 class AuthMechanism(Enum):

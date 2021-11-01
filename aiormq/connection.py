@@ -599,7 +599,7 @@ class Connection(Base, AbstractConnection):
         return bool(self.server_capabilities.get("exchange_exchange_bindings"))
 
     @property
-    def publisher_confirms(self):
+    def publisher_confirms(self) -> Optional[bool]:
         return self.server_capabilities.get("publisher_confirms")
 
     async def channel(
@@ -607,6 +607,7 @@ class Connection(Base, AbstractConnection):
         channel_number: int = None,
         publisher_confirms=True,
         frame_buffer=FRAME_BUFFER,
+        timeout: TimeoutType = None,
         **kwargs
     ) -> AbstractChannel:
 
@@ -650,7 +651,7 @@ class Connection(Base, AbstractConnection):
         self.channels[channel_number] = channel
 
         try:
-            await channel.open()
+            await channel.open(timeout=timeout)
         except Exception:
             self.channels[channel_number] = None
             raise

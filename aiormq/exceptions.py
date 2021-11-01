@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any
 
 from pamqp.base import Frame
 from pamqp.commands import Basic
@@ -9,7 +9,7 @@ from .abc import DeliveredMessage
 class AMQPError(Exception):
     reason = "An unspecified AMQP error has occurred: %s"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<%s: %s>" % (self.__class__.__name__, self.reason % self.args)
 
 
@@ -175,7 +175,7 @@ class DeliveryError(AMQPError):
 
     def __init__(
         self, message: Optional[DeliveredMessage],
-        frame: Frame, *args
+        frame: Frame, *args: Any
     ):
         self.message = message
         self.frame = frame
@@ -186,7 +186,7 @@ class DeliveryError(AMQPError):
 class PublishError(DeliveryError):
     reason = "%r for routing key %r"
 
-    def __init__(self, message: DeliveredMessage, frame: Frame, *args):
+    def __init__(self, message: DeliveredMessage, frame: Frame, *args: Any):
         assert isinstance(message.delivery, Basic.Return)
 
         self.message = message
