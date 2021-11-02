@@ -8,22 +8,29 @@ from typing import (
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
-from pamqp.common import FieldTable, FieldValue, FieldArray
-from pamqp.commands import Basic, Channel, Exchange, Queue, Tx
+from pamqp.commands import Basic, Channel, Confirm, Exchange, Queue, Tx
+from pamqp.common import FieldArray, FieldTable, FieldValue
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 
+ExceptionType = Union[BaseException, Type[BaseException]]
+
 
 # noinspection PyShadowingNames
 class TaskWrapper:
+    __slots__ = "exception", "task"
+
+    exception: Union[BaseException, Type[BaseException]]
+    task: asyncio.Task
+
     def __init__(self, task: asyncio.Task):
         self.task = task
         self.exception = asyncio.CancelledError
 
-    def throw(self, exception) -> None:
+    def throw(self, exception: ExceptionType) -> None:
         self.exception = exception
         self.task.cancel()
 
@@ -33,11 +40,11 @@ class TaskWrapper:
         except asyncio.CancelledError as e:
             raise self.exception from e
 
-    def __await__(self, *args, **kwargs) -> Any:
+    def __await__(self, *args: Any, **kwargs: Any) -> Any:
         return self.__inner().__await__()
 
     def cancel(self) -> None:
-        return self.throw(asyncio.CancelledError)
+        return self.throw(asyncio.CancelledError())
 
     def __getattr__(self, item: str) -> Any:
         return getattr(self.task, item)
@@ -52,7 +59,7 @@ GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 
 
 class DeliveredMessage(NamedTuple):
-    delivery: Union[Basic.Deliver, GetResultType]
+    delivery: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType]
     header: ContentHeader
     body: bytes
     channel: "AbstractChannel"
@@ -60,7 +67,7 @@ class DeliveredMessage(NamedTuple):
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
-CallbackCoro = Coroutine[Any, None, Any]
+CallbackCoro = Coroutine[Any, Any, Any]
 ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[], CallbackCoro]
 
@@ -89,29 +96,31 @@ class FrameReceived(NamedTuple):
 
 URLorStr = Union[URL, str]
 DrainResult = Awaitable[None]
-TimeoutType = Optional[Union[int, float]]
+TimeoutType = Optional[Union[float, int]]
 FrameType = Union[Frame, ContentHeader, ContentBody]
 RpcReturnType = Optional[
     Union[
+        Basic.CancelOk,
+        Basic.ConsumeOk,
+        Basic.GetOk,
+        Basic.QosOk,
+        Basic.RecoverOk,
+        Channel.CloseOk,
+        Channel.FlowOk,
+        Channel.OpenOk,
+        Confirm.SelectOk,
+        Exchange.BindOk,
+        Exchange.DeclareOk,
+        Exchange.DeleteOk,
+        Exchange.UnbindOk,
+        Queue.BindOk,
+        Queue.DeleteOk,
+        Queue.DeleteOk,
+        Queue.PurgeOk,
+        Queue.UnbindOk,
         Tx.CommitOk,
         Tx.RollbackOk,
         Tx.SelectOk,
-        Basic.RecoverOk,
-        Basic.QosOk,
-        Basic.CancelOk,
-        Channel.CloseOk,
-        Basic.ConsumeOk,
-        Basic.GetOk,
-        Exchange.DeclareOk,
-        Exchange.UnbindOk,
-        Exchange.BindOk,
-        Exchange.DeleteOk,
-        Queue.DeleteOk,
-        Queue.BindOk,
-        Queue.UnbindOk,
-        Queue.PurgeOk,
-        Queue.DeleteOk,
-        Channel.FlowOk,
     ]
 ]
 
@@ -122,19 +131,16 @@ class ChannelFrame(NamedTuple):
     drain_future: Optional[asyncio.Future] = None
 
 
-ExceptionType = Union[Exception, Type[Exception]]
-
-
 class AbstractFutureStore:
     futures: Set[Union[asyncio.Future, TaskType]]
     loop: asyncio.AbstractEventLoop
 
     @abstractmethod
-    def add(self, future: Union[asyncio.Future, TaskWrapper]):
+    def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def reject_all(self, exception: Optional[ExceptionType]) -> None:
+    def reject_all(self, exception: Optional[ExceptionType]) -> Any:
         raise NotImplementedError
 
     @abstractmethod
@@ -142,7 +148,7 @@ class AbstractFutureStore:
         raise NotImplementedError
 
     @abstractmethod
-    def create_future(self):
+    def create_future(self) -> asyncio.Future:
         raise NotImplementedError
 
     @abstractmethod
@@ -165,11 +171,13 @@ class AbstractBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def _on_close(self, exc: Optional[Exception] = None):
+    async def _on_close(self, exc: Optional[Exception] = None) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    async def close(self, exc=asyncio.CancelledError()) -> None:
+    async def close(
+        self, exc: BaseException = asyncio.CancelledError()
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -185,20 +193,20 @@ class AbstractChannel(AbstractBase):
     frames: asyncio.Queue
 
     @abstractmethod
-    async def open(self):
+    async def open(self) -> spec.Channel.OpenOk:
         pass
 
     @abstractmethod
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> DeliveredMessage:
         raise NotImplementedError
 
     @abstractmethod
     async def basic_cancel(
-        self, consumer_tag, *, nowait: bool = False,
-        timeout: Union[int, float] = None
+        self, consumer_tag: str, *, nowait: bool = False,
+        timeout: TimeoutType = None
     ) -> spec.Basic.CancelOk:
         raise NotImplementedError
 
@@ -212,13 +220,13 @@ class AbstractChannel(AbstractBase):
         exclusive: bool = False,
         arguments: ArgumentsType = None,
         consumer_tag: str = None,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> spec.Basic.ConsumeOk:
         raise NotImplementedError
 
     @abstractmethod
     def basic_ack(
-        self, delivery_tag, multiple=False,
+        self, delivery_tag: int, multiple: bool = False,
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -232,7 +240,9 @@ class AbstractChannel(AbstractBase):
         raise NotImplementedError
 
     @abstractmethod
-    def basic_reject(self, delivery_tag, *, requeue=True) -> DrainResult:
+    def basic_reject(
+        self, delivery_tag: int, *, requeue: bool = True
+    ) -> DrainResult:
         raise NotImplementedError
 
     @abstractmethod
@@ -245,7 +255,7 @@ class AbstractChannel(AbstractBase):
         properties: spec.Basic.Properties = None,
         mandatory: bool = False,
         immediate: bool = False,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> Optional[ConfirmationFrameType]:
         raise NotImplementedError
 
@@ -256,14 +266,14 @@ class AbstractChannel(AbstractBase):
         prefetch_size: int = None,
         prefetch_count: int = None,
         global_: bool = False,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> spec.Basic.QosOk:
         raise NotImplementedError
 
     @abstractmethod
     async def basic_recover(
-        self, *, nowait: bool = False, requeue=False,
-        timeout: Union[int, float] = None
+        self, *, nowait: bool = False, requeue: bool = False,
+        timeout: TimeoutType = None
     ) -> spec.Basic.RecoverOk:
         raise NotImplementedError
 
@@ -360,7 +370,7 @@ class AbstractChannel(AbstractBase):
         queue: str = "",
         if_unused: bool = False,
         if_empty: bool = False,
-        nowait=False,
+        nowait: bool = False,
         timeout: TimeoutType = None
     ) -> spec.Queue.DeleteOk:
         raise NotImplementedError
@@ -401,16 +411,16 @@ class AbstractChannel(AbstractBase):
 
     @abstractmethod
     async def confirm_delivery(
-        self, nowait=False,
+        self, nowait: bool = False,
         timeout: TimeoutType = None
-    ):
+    ) -> spec.Confirm.SelectOk:
         raise NotImplementedError
 
 
 class AbstractConnection(AbstractBase):
-    FRAME_BUFFER: int = 10
+    FRAME_BUFFER_SIZE: int = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
-    HEARTBEAT_INTERVAL_MULTIPLIER: Union[int, float]
+    HEARTBEAT_INTERVAL_MULTIPLIER: TimeoutType
 
     # Allow three missed heartbeats (based on heartbeat(timeout)
     HEARTBEAT_GRACE_MULTIPLIER: int
@@ -419,13 +429,14 @@ class AbstractConnection(AbstractBase):
     connection_tune: spec.Connection.Tune
     channels: Dict[int, Optional[AbstractChannel]]
     write_queue: asyncio.Queue
+    url: URL
 
     @abstractmethod
     def set_close_reason(
-        self, reply_code=REPLY_SUCCESS,
-        reply_text="normally closed",
-        class_id=0, method_id=0,
-    ):
+        self, reply_code: int = REPLY_SUCCESS,
+        reply_text: str = "normally closed",
+        class_id: int = 0, method_id: int = 0,
+    ) -> None:
         raise NotImplementedError
 
     @abstractproperty
@@ -433,11 +444,11 @@ class AbstractConnection(AbstractBase):
         raise NotImplementedError
 
     @abstractmethod
-    def __str__(self):
+    def __str__(self) -> str:
         raise NotImplementedError
 
     @abstractmethod
-    async def connect(self, client_properties: dict = None) -> bool:
+    async def connect(self, client_properties: Dict[str, Any] = None) -> bool:
         raise NotImplementedError
 
     @abstractproperty
@@ -457,20 +468,20 @@ class AbstractConnection(AbstractBase):
         raise NotImplementedError
 
     @abstractproperty
-    def publisher_confirms(self):
+    def publisher_confirms(self) -> Optional[bool]:
         raise NotImplementedError
 
     async def channel(
         self,
         channel_number: int = None,
-        publisher_confirms=True,
-        frame_buffer: int = FRAME_BUFFER,
-        **kwargs
+        publisher_confirms: bool = True,
+        frame_buffer_size: int = FRAME_BUFFER_SIZE,
+        **kwargs: Any
     ) -> AbstractChannel:
         raise NotImplementedError
 
     @abstractmethod
-    async def __aenter__(self):
+    async def __aenter__(self) -> "AbstractConnection":
         raise NotImplementedError
 
 

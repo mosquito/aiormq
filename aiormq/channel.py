@@ -7,7 +7,7 @@ from contextlib import suppress
 from functools import partial
 from io import BytesIO
 from types import MappingProxyType
-from typing import Any, Dict, Mapping, Optional, Set, Type, Union
+from typing import Any, Dict, Generator, Mapping, Optional, Set, Type, Union
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -20,12 +20,12 @@ from aiormq.tools import Countdown, awaitable
 
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ConfirmationFrameType, ConsumerCallback, DeliveredMessage, DrainResult,
-    FrameType, RpcReturnType, TimeoutType,
+    ConfirmationFrameType, ConsumerCallback, DeliveredMessage, ExceptionType,
+    FrameType, GetResultType, RpcReturnType, TimeoutType,
 )
 from .base import Base, task
 from .exceptions import (
-    AMQPChannelError, ChannelAccessRefused, ChannelClosed,
+    AMQPChannelError, AMQPError, ChannelAccessRefused, ChannelClosed,
     ChannelInvalidStateError, ChannelLockedResource, ChannelNotFoundEntity,
     ChannelPreconditionFailed, DeliveryError, DuplicateConsumerTag,
     InvalidFrameError, MethodNotImplemented, PublishError,
@@ -43,7 +43,7 @@ EXCEPTION_MAPPING: Mapping[int, Type[AMQPChannelError]] = MappingProxyType({
 })
 
 
-def exception_by_code(frame: spec.Connection.Close):
+def exception_by_code(frame: spec.Channel.Close) -> AMQPError:
     if frame.reply_code is None:
         return ChannelClosed(frame.reply_code, frame.reply_text)
 
@@ -72,10 +72,10 @@ class Channel(Base, AbstractChannel):
     def __init__(
         self,
         connector: AbstractConnection,
-        number,
-        publisher_confirms=True,
-        frame_buffer=None,
-        on_return_raises=True,
+        number: int,
+        publisher_confirms: bool = True,
+        frame_buffer: Optional[int] = None,
+        on_return_raises: bool = True,
     ):
 
         super().__init__(loop=connector.loop, parent=connector)
@@ -96,16 +96,18 @@ class Channel(Base, AbstractChannel):
         self.getter: Optional[asyncio.Future] = None
         self.getter_lock = asyncio.Lock()
 
-        self.frames = asyncio.Queue(maxsize=frame_buffer)
+        self.frames: asyncio.Queue = asyncio.Queue(maxsize=frame_buffer or 0)
 
         self.max_content_size = (
             connector.connection_tune.frame_max - self.CONTENT_FRAME_SIZE
         )
 
         self.__lock = asyncio.Lock()
-        self.number = number
+        self.number: int = number
         self.publisher_confirms = publisher_confirms
-        self.rpc_frames: asyncio.Queue = asyncio.Queue(maxsize=frame_buffer)
+        self.rpc_frames: asyncio.Queue = asyncio.Queue(
+            maxsize=frame_buffer or 0,
+        )
         self.write_queue = connector.write_queue
         self.on_return_raises = on_return_raises
         self.on_return_callbacks: Set[ConsumerCallback] = set()
@@ -113,15 +115,15 @@ class Channel(Base, AbstractChannel):
 
         self.create_task(self._reader())
 
-        self.__close_reply_code = REPLY_SUCCESS
-        self.__close_reply_text = 0
-        self.__close_class_id = 0
-        self.__close_method_id = 0
+        self.__close_reply_code: int = REPLY_SUCCESS
+        self.__close_reply_text: str = ""
+        self.__close_class_id: int = 0
+        self.__close_method_id: int = 0
 
     def set_close_reason(
-        self, reply_code=REPLY_SUCCESS,
-        reply_text="", class_id=0, method_id=0,
-    ):
+        self, reply_code: int = REPLY_SUCCESS,
+        reply_text: str = "", class_id: int = 0, method_id: int = 0,
+    ) -> None:
         self.__close_reply_code = reply_code
         self.__close_reply_text = reply_text
         self.__close_class_id = class_id
@@ -139,7 +141,7 @@ class Channel(Base, AbstractChannel):
         self.frames.task_done()
         return frame
 
-    def __str__(self):
+    def __str__(self) -> str:
         return str(self.number)
 
     @task
@@ -187,14 +189,17 @@ class Channel(Base, AbstractChannel):
                     self.create_task(self.close())
                 raise e
 
-    async def open(self):
-        frame = await self.rpc(spec.Channel.Open())
+    async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
+        frame: spec.Channel.OpenOk = await self.rpc(
+            spec.Channel.Open(), timeout=timeout,
+        )
 
         if self.publisher_confirms:
             await self.rpc(spec.Confirm.Select())
 
         if frame is None:  # pragma: no cover
             raise spec.AMQPFrameError(frame)
+        return frame
 
     async def __get_content_frame(self) -> ContentBody:
         content_frame = await self._get_frame()
@@ -205,7 +210,11 @@ class Channel(Base, AbstractChannel):
             )
         return content_frame
 
-    async def _read_content(self, frame, header: ContentHeader):
+    async def _read_content(
+        self,
+        frame: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType],
+        header: ContentHeader
+    ) -> DeliveredMessage:
         with BytesIO() as body:
             content: Optional[ContentBody] = None
 
@@ -236,7 +245,7 @@ class Channel(Base, AbstractChannel):
 
         return frame
 
-    async def _on_deliver(self, frame: spec.Basic.Deliver):
+    async def _on_deliver(self, frame: spec.Basic.Deliver) -> None:
         header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
 
@@ -251,7 +260,7 @@ class Channel(Base, AbstractChannel):
 
     async def _on_get(
         self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty]
-    ):
+    ) -> None:
         message = None
         if isinstance(frame, spec.Basic.GetOk):
             header: ContentHeader = await self.__get_content_header()
@@ -264,12 +273,17 @@ class Channel(Base, AbstractChannel):
             log.error("Got message but no active getter")
             return
 
-        return self.getter.set_result((frame, message))
+        self.getter.set_result((frame, message))
+        return
 
-    async def _on_return(self, frame: spec.Basic.Return):
+    async def _on_return(self, frame: spec.Basic.Return) -> None:
         header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
         message_id = message.header.properties.message_id
+
+        if message_id is None:
+            log.error("message_id if None on returned message %r", message)
+            return
 
         delivery_tag = self.message_id_delivery_tag.get(message_id)
 
@@ -299,7 +313,7 @@ class Channel(Base, AbstractChannel):
     def _confirm_delivery(
         self, delivery_tag: Optional[int],
         frame: ConfirmationFrameType,
-    ):
+    ) -> None:
         if delivery_tag not in self.confirmations:
             return
 
@@ -320,7 +334,7 @@ class Channel(Base, AbstractChannel):
             DeliveryError(None, frame),
         )  # pragma: nocover
 
-    async def _on_confirm(self, frame: ConfirmationFrameType):
+    async def _on_confirm(self, frame: ConfirmationFrameType) -> None:
         if not self.publisher_confirms:  # pragma: nocover
             return
 
@@ -340,7 +354,7 @@ class Channel(Base, AbstractChannel):
         else:
             self._confirm_delivery(frame.delivery_tag, frame)
 
-    async def _reader(self):
+    async def _reader(self) -> None:
         while True:
             try:
                 frame = await self._get_frame()
@@ -359,16 +373,19 @@ class Channel(Base, AbstractChannel):
                         await self._on_return(frame)
                     continue
                 elif isinstance(frame, spec.Basic.Cancel):
+                    if frame.consumer_tag is None:
+                        continue
                     self.consumers.pop(frame.consumer_tag, None)
                     continue
                 elif isinstance(frame, spec.Basic.CancelOk):
-                    self.consumers.pop(frame.consumer_tag, None)
+                    if frame.consumer_tag is not None:
+                        self.consumers.pop(frame.consumer_tag, None)
                 elif isinstance(frame, (spec.Basic.Ack, spec.Basic.Nack)):
                     with suppress(Exception):
                         await self._on_confirm(frame)
                     continue
                 elif isinstance(frame, spec.Channel.Close):
-                    exc = exception_by_code(frame)
+                    exc: BaseException = exception_by_code(frame)
                     self.write_queue.put_nowait(
                         ChannelFrame(
                             channel_number=self.number,
@@ -377,7 +394,8 @@ class Channel(Base, AbstractChannel):
                     )
 
                     self.connection.channels.pop(self.number, None)
-                    return await self._cancel_tasks(exc)
+                    await self._cancel_tasks(exc)
+                    return
 
                 await self.rpc_frames.put(frame)
             except asyncio.CancelledError:
@@ -387,7 +405,7 @@ class Channel(Base, AbstractChannel):
                 await self._cancel_tasks(e)
                 raise
 
-    async def _on_close(self, exc=None) -> None:
+    async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
         await self.rpc(
             spec.Channel.Close(
                 reply_code=self.__close_reply_code,
@@ -399,7 +417,7 @@ class Channel(Base, AbstractChannel):
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> DeliveredMessage:
 
         async with self.getter_lock:
@@ -417,8 +435,8 @@ class Channel(Base, AbstractChannel):
         return message
 
     async def basic_cancel(
-        self, consumer_tag, *, nowait: bool = False,
-        timeout: Union[int, float] = None
+        self, consumer_tag: str, *, nowait: bool = False,
+        timeout: TimeoutType = None
     ) -> spec.Basic.CancelOk:
         return await self.rpc(
             spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
@@ -434,7 +452,7 @@ class Channel(Base, AbstractChannel):
         exclusive: bool = False,
         arguments: ArgumentsType = None,
         consumer_tag: str = None,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> spec.Basic.ConsumeOk:
 
         consumer_tag = consumer_tag or "ctag%i.%s" % (
@@ -459,7 +477,7 @@ class Channel(Base, AbstractChannel):
         )
 
     async def basic_ack(
-        self, delivery_tag, multiple=False,
+        self, delivery_tag: int, multiple: bool = False,
     ) -> None:
         drain_future = self.create_future()
 
@@ -505,7 +523,9 @@ class Channel(Base, AbstractChannel):
 
         await drain_future
 
-    async def basic_reject(self, delivery_tag, *, requeue=True) -> None:
+    async def basic_reject(
+        self, delivery_tag: int, *, requeue: bool = True
+    ) -> None:
         drain_future = self.create_future()
         await self.write_queue.put(
             ChannelFrame(
@@ -531,7 +551,7 @@ class Channel(Base, AbstractChannel):
         properties: spec.Basic.Properties = None,
         mandatory: bool = False,
         immediate: bool = False,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> Optional[ConfirmationFrameType]:
         countdown = Countdown(timeout=timeout)
 
@@ -576,14 +596,13 @@ class Channel(Base, AbstractChannel):
                 ),
             )
 
-        def frame_generator():
+        def frame_generator() -> Generator[FrameType, Any, None]:
             yield publish_frame
             yield content_header
 
             with BytesIO(body) as fp:
                 read_chunk = partial(fp.read, self.max_content_size)
                 for chunk in iter(read_chunk, b""):
-                    # noinspection PyTypeChecker
                     yield ContentBody(chunk)
 
         async with countdown.enter_context(self.lock):
@@ -610,7 +629,7 @@ class Channel(Base, AbstractChannel):
         prefetch_size: int = None,
         prefetch_count: int = None,
         global_: bool = False,
-        timeout: Union[int, float] = None
+        timeout: TimeoutType = None
     ) -> spec.Basic.QosOk:
         return await self.rpc(
             spec.Basic.Qos(
@@ -622,8 +641,8 @@ class Channel(Base, AbstractChannel):
         )
 
     async def basic_recover(
-        self, *, nowait: bool = False, requeue=False,
-        timeout: Union[int, float] = None
+        self, *, nowait: bool = False, requeue: bool = False,
+        timeout: TimeoutType = None
     ) -> spec.Basic.RecoverOk:
         frame: Union[spec.Basic.RecoverAsync, spec.Basic.Recover]
         if nowait:
@@ -776,7 +795,7 @@ class Channel(Base, AbstractChannel):
         queue: str = "",
         if_unused: bool = False,
         if_empty: bool = False,
-        nowait=False,
+        nowait: bool = False,
         timeout: TimeoutType = None
     ) -> spec.Queue.DeleteOk:
         return await self.rpc(
@@ -830,9 +849,9 @@ class Channel(Base, AbstractChannel):
         return await self.rpc(spec.Tx.Select(), timeout=timeout)
 
     async def confirm_delivery(
-        self, nowait=False,
+        self, nowait: bool = False,
         timeout: TimeoutType = None
-    ):
+    ) -> spec.Confirm.SelectOk:
         return await self.rpc(
             spec.Confirm.Select(nowait=nowait),
             timeout=timeout,
