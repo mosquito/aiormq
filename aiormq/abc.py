@@ -191,6 +191,7 @@ class AbstractBase(ABC):
 
 class AbstractChannel(AbstractBase):
     frames: asyncio.Queue
+    connection: AbstractConnection
 
     @abstractmethod
     async def open(self) -> spec.Channel.OpenOk:

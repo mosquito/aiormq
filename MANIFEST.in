@@ -1,0 +1,6 @@
+recursive-exclude tests *
+recursive-exclude __pycache__ *
+exclude .*
+
+include README.rst
+include aiormq/py.typed
