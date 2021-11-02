@@ -531,11 +531,11 @@ class Connection(Base, AbstractConnection):
                     )
 
                     try:
-                        frame_bytes = pamqp.frame.marshal(
-                            frame, channel_frame.channel_number,
+                        writer.write(
+                            pamqp.frame.marshal(
+                                frame, channel_frame.channel_number,
+                            )
                         )
-                        writer.write(frame_bytes)
-                        del frame_bytes
                     except Exception as e:
                         log.exception(
                             "Failed to write frame to channel %d: %r",
