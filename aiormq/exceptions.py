@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Any, Optional
 
 from pamqp.base import Frame
 from pamqp.commands import Basic

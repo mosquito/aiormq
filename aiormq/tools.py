@@ -1,8 +1,10 @@
 import asyncio
 from functools import wraps
 from types import TracebackType
-from typing import AsyncContextManager, Awaitable, TypeVar, Callable, Any, \
-    Union, Type, Optional
+from typing import (
+    Any, AsyncContextManager, Awaitable, Callable, Coroutine, Optional, Type,
+    TypeVar, Union,
+)
 
 from yarl import URL
 
@@ -18,19 +20,17 @@ def censor_url(url: URL) -> URL:
     return url
 
 
-def shield(
-    func: Callable[..., Callable[..., Union[T, Awaitable[T]]]]
-) -> Callable[..., Awaitable[T]]:
+def shield(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
     @wraps(func)
-    def wrap(*args: Any, **kwargs: Any) -> asyncio.Future:
-        return asyncio.shield(awaitable(func)(*args, **kwargs))
+    def wrap(*args: Any, **kwargs: Any) -> Awaitable[T]:
+        return asyncio.shield(func(*args, **kwargs))
 
     return wrap
 
 
 def awaitable(
-    func: Callable[..., Union[T, Awaitable[T]]]
-) -> Callable[..., Awaitable[T]]:
+    func: Callable[..., Union[T, Awaitable[T]]],
+) -> Callable[..., Coroutine[Any, Any, T]]:
     # Avoid python 3.8+ warning
     if asyncio.iscoroutinefunction(func):
         return func     # type: ignore
@@ -92,7 +92,7 @@ class CountdownContext(AsyncContextManager):
 
     def __aexit__(
         self, exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]
+        exc_val: Optional[BaseException], exc_tb: Optional[TracebackType],
     ) -> Awaitable[Any]:
         if self.countdown.deadline is None:
             return self.ctx.__aexit__(exc_type, exc_val, exc_tb)

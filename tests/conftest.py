@@ -63,10 +63,10 @@ async def amqp_connection(amqp_url, loop):
 
 
 channel_params = [
-    dict(channel_number=None, frame_buffer=10, publisher_confirms=True),
-    dict(channel_number=None, frame_buffer=1, publisher_confirms=True),
-    dict(channel_number=None, frame_buffer=10, publisher_confirms=False),
-    dict(channel_number=None, frame_buffer=1, publisher_confirms=False),
+    dict(channel_number=None, frame_buffer_size=10, publisher_confirms=True),
+    dict(channel_number=None, frame_buffer_size=1, publisher_confirms=True),
+    dict(channel_number=None, frame_buffer_size=10, publisher_confirms=False),
+    dict(channel_number=None, frame_buffer_size=1, publisher_confirms=False),
 ]
 
 

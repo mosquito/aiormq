@@ -8,12 +8,15 @@ from typing import (
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
-from pamqp.common import FieldTable, FieldValue, FieldArray
-from pamqp.commands import Basic, Channel, Exchange, Queue, Tx, Confirm
+from pamqp.commands import Basic, Channel, Confirm, Exchange, Queue, Tx
+from pamqp.common import FieldArray, FieldTable, FieldValue
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.header import ContentHeader
 from pamqp.heartbeat import Heartbeat
 from yarl import URL
+
+
+ExceptionType = Union[BaseException, Type[BaseException]]
 
 
 # noinspection PyShadowingNames
@@ -27,7 +30,7 @@ class TaskWrapper:
         self.task = task
         self.exception = asyncio.CancelledError
 
-    def throw(self, exception: BaseException) -> None:
+    def throw(self, exception: ExceptionType) -> None:
         self.exception = exception
         self.task.cancel()
 
@@ -56,7 +59,7 @@ GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 
 
 class DeliveredMessage(NamedTuple):
-    delivery: Union[Basic.Deliver, GetResultType]
+    delivery: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType]
     header: ContentHeader
     body: bytes
     channel: "AbstractChannel"
@@ -64,7 +67,7 @@ class DeliveredMessage(NamedTuple):
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
-CallbackCoro = Coroutine[Any, None, Any]
+CallbackCoro = Coroutine[Any, Any, Any]
 ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[], CallbackCoro]
 
@@ -128,9 +131,6 @@ class ChannelFrame(NamedTuple):
     drain_future: Optional[asyncio.Future] = None
 
 
-ExceptionType = Union[Exception, Type[Exception]]
-
-
 class AbstractFutureStore:
     futures: Set[Union[asyncio.Future, TaskType]]
     loop: asyncio.AbstractEventLoop
@@ -140,7 +140,7 @@ class AbstractFutureStore:
         raise NotImplementedError
 
     @abstractmethod
-    async def reject_all(self, exception: Optional[ExceptionType]) -> None:
+    def reject_all(self, exception: Optional[ExceptionType]) -> Any:
         raise NotImplementedError
 
     @abstractmethod
@@ -226,7 +226,7 @@ class AbstractChannel(AbstractBase):
 
     @abstractmethod
     def basic_ack(
-        self, delivery_tag: str, multiple: bool = False,
+        self, delivery_tag: int, multiple: bool = False,
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -241,7 +241,7 @@ class AbstractChannel(AbstractBase):
 
     @abstractmethod
     def basic_reject(
-        self, delivery_tag: str, *, requeue: bool = True
+        self, delivery_tag: int, *, requeue: bool = True
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -418,7 +418,7 @@ class AbstractChannel(AbstractBase):
 
 
 class AbstractConnection(AbstractBase):
-    FRAME_BUFFER: int = 10
+    FRAME_BUFFER_SIZE: int = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
     HEARTBEAT_INTERVAL_MULTIPLIER: TimeoutType
 
@@ -475,7 +475,7 @@ class AbstractConnection(AbstractBase):
         self,
         channel_number: int = None,
         publisher_confirms: bool = True,
-        frame_buffer: int = FRAME_BUFFER,
+        frame_buffer_size: int = FRAME_BUFFER_SIZE,
         **kwargs: Any
     ) -> AbstractChannel:
         raise NotImplementedError
