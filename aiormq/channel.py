@@ -21,7 +21,7 @@ from aiormq.tools import Countdown, awaitable
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
     ConfirmationFrameType, ConsumerCallback, DeliveredMessage, ExceptionType,
-    FrameType, GetResultType, RpcReturnType, TimeoutType,
+    FrameType, GetResultType, RpcReturnType, TimeoutType, ReturnCallback,
 )
 from .base import Base, task
 from .exceptions import (
@@ -110,7 +110,7 @@ class Channel(Base, AbstractChannel):
         )
         self.write_queue = connector.write_queue
         self.on_return_raises = on_return_raises
-        self.on_return_callbacks: Set[ConsumerCallback] = set()
+        self.on_return_callbacks: Set[ReturnCallback] = set()
         self._close_exception = None
 
         self.create_task(self._reader())
