@@ -6,8 +6,12 @@ from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
+from random import getrandbits
 from types import MappingProxyType
-from typing import Any, Dict, Generator, Mapping, Optional, Set, Type, Union
+from typing import (
+    Any, Awaitable, Dict, Generator, Mapping, Optional, Set, Type, Union,
+)
+from uuid import UUID
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -21,7 +25,7 @@ from aiormq.tools import Countdown, awaitable
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
     ConfirmationFrameType, ConsumerCallback, DeliveredMessage, ExceptionType,
-    FrameType, GetResultType, RpcReturnType, TimeoutType, ReturnCallback,
+    FrameType, GetResultType, ReturnCallback, RpcReturnType, TimeoutType,
 )
 from .base import Base, task
 from .exceptions import (

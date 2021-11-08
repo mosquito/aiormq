@@ -191,7 +191,7 @@ class AbstractBase(ABC):
 
 class AbstractChannel(AbstractBase):
     frames: asyncio.Queue
-    connection: AbstractConnection
+    connection: "AbstractConnection"
     number: int
     on_return_callbacks: Set[ReturnCallback]
     closing: asyncio.Future
