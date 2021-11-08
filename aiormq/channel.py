@@ -622,6 +622,9 @@ class Channel(Base, AbstractChannel):
                 ),
             )
 
+            if drain_future:
+                await drain_future
+
             if not self.publisher_confirms:
                 return None
 
