@@ -265,15 +265,24 @@ class Channel(Base, AbstractChannel):
         if isinstance(frame, spec.Basic.GetOk):
             header: ContentHeader = await self.__get_content_header()
             message = await self._read_content(frame, header)
+        if isinstance(frame, spec.Basic.GetEmpty):
+            message = DeliveredMessage(
+                delivery=frame,
+                header=ContentHeader(),
+                body=b"",
+                channel=self,
+            )
 
-        if self.getter is None:
+        getter = getattr(self, "getter", None)
+
+        if getter is None:
             raise RuntimeError("Getter is None")
 
-        if self.getter.done():
+        if getter.done():
             log.error("Got message but no active getter")
             return
 
-        self.getter.set_result((frame, message))
+        getter.set_result((frame, message))
         return
 
     async def _on_return(self, frame: spec.Basic.Return) -> None:
@@ -420,17 +429,20 @@ class Channel(Base, AbstractChannel):
         timeout: TimeoutType = None
     ) -> DeliveredMessage:
 
-        async with self.getter_lock:
+        countdown = Countdown(timeout)
+        async with countdown.enter_context(self.getter_lock):
             self.getter = self.create_future()
+
             await self.rpc(
-                spec.Basic.Get(queue=queue, no_ack=no_ack), timeout=timeout,
+                spec.Basic.Get(queue=queue, no_ack=no_ack),
+                timeout=countdown.get_timeout(),
             )
 
-            if self.getter is None:
-                raise RuntimeError("Getter is None")
+            frame: Union[spec.Basic.GetEmpty, spec.Basic.GetOk]
+            message: DeliveredMessage
 
-            frame, message = await self.getter
-            self.getter = None
+            frame, message = await countdown(self.getter)
+            del self.getter
 
         return message
 
