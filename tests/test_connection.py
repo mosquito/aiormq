@@ -9,8 +9,8 @@ import pytest
 from pamqp.commands import Basic
 
 import aiormq
-from aiormq.auth import AuthBase, PlainAuth, ExternalAuth
 from aiormq.abc import DeliveredMessage
+from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
@@ -170,7 +170,7 @@ async def test_auth_plain(amqp_connection, loop):
 async def test_auth_external(loop):
 
     url = AMQP_URL.with_scheme("amqps")
-    url.update_query(auth='external')
+    url.update_query(auth="external")
 
     connection = aiormq.Connection
 
@@ -368,7 +368,7 @@ async def test_ssl_context():
     url = AMQP_URL.with_scheme("amqps")
     context = ssl.create_default_context(
         purpose=ssl.Purpose.SERVER_AUTH,
-        cafile=cert_path("ca.pem")
+        cafile=cert_path("ca.pem"),
     )
     context.load_cert_chain(cert_path("client.pem"), cert_path("client.key"))
     context.check_hostname = False
