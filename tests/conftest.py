@@ -140,9 +140,9 @@ async def proxy(tcp_proxy, localhost, amqp_url: URL):
 @pytest.fixture
 async def proxy_connection(proxy: TCPProxy, amqp_url: URL, loop):
     url = amqp_url.with_host(
-        "localhost"
+        "localhost",
     ).with_port(
-        proxy.proxy_port
+        proxy.proxy_port,
     )
     connection = Connection(url, loop=loop)
 

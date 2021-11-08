@@ -148,9 +148,11 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
 
         for i in range(10):
             messages = [
-                asyncio.ensure_future(channel.basic_publish(
-                    b"test", exchange=exchange, routing_key="test.{}".format(i),
-                ))
+                asyncio.ensure_future(
+                    channel.basic_publish(
+                        b"test", exchange=exchange, routing_key="test.{}".format(i),
+                    ),
+                )
                 for i in range(10)
             ]
             _, pending = await asyncio.wait(messages, timeout=0.2)
@@ -202,5 +204,5 @@ async def test_declare_queue_timeout(proxy_connection, proxy: TCPProxy):
         with proxy.slowdown(read_delay=5, write_delay=0):
             with pytest.raises(asyncio.TimeoutError):
                 await channel.queue_declare(
-                    qname, auto_delete=True, timeout=0.5
+                    qname, auto_delete=True, timeout=0.5,
                 )

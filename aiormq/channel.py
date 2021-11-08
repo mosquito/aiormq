@@ -6,8 +6,12 @@ from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
+from random import getrandbits
 from types import MappingProxyType
-from typing import Any, Dict, Generator, Mapping, Optional, Set, Type, Union
+from typing import (
+    Any, Awaitable, Dict, Generator, Mapping, Optional, Set, Type, Union,
+)
+from uuid import UUID
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -21,7 +25,7 @@ from aiormq.tools import Countdown, awaitable
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
     ConfirmationFrameType, ConsumerCallback, DeliveredMessage, ExceptionType,
-    FrameType, GetResultType, RpcReturnType, TimeoutType,
+    FrameType, GetResultType, ReturnCallback, RpcReturnType, TimeoutType,
 )
 from .base import Base, task
 from .exceptions import (
@@ -110,7 +114,7 @@ class Channel(Base, AbstractChannel):
         )
         self.write_queue = connector.write_queue
         self.on_return_raises = on_return_raises
-        self.on_return_callbacks: Set[ConsumerCallback] = set()
+        self.on_return_callbacks: Set[ReturnCallback] = set()
         self._close_exception = None
 
         self.create_task(self._reader())
@@ -265,15 +269,24 @@ class Channel(Base, AbstractChannel):
         if isinstance(frame, spec.Basic.GetOk):
             header: ContentHeader = await self.__get_content_header()
             message = await self._read_content(frame, header)
+        if isinstance(frame, spec.Basic.GetEmpty):
+            message = DeliveredMessage(
+                delivery=frame,
+                header=ContentHeader(),
+                body=b"",
+                channel=self,
+            )
 
-        if self.getter is None:
+        getter = getattr(self, "getter", None)
+
+        if getter is None:
             raise RuntimeError("Getter is None")
 
-        if self.getter.done():
+        if getter.done():
             log.error("Got message but no active getter")
             return
 
-        self.getter.set_result((frame, message))
+        getter.set_result((frame, message))
         return
 
     async def _on_return(self, frame: spec.Basic.Return) -> None:
@@ -420,17 +433,20 @@ class Channel(Base, AbstractChannel):
         timeout: TimeoutType = None
     ) -> DeliveredMessage:
 
-        async with self.getter_lock:
+        countdown = Countdown(timeout)
+        async with countdown.enter_context(self.getter_lock):
             self.getter = self.create_future()
+
             await self.rpc(
-                spec.Basic.Get(queue=queue, no_ack=no_ack), timeout=timeout,
+                spec.Basic.Get(queue=queue, no_ack=no_ack),
+                timeout=countdown.get_timeout(),
             )
 
-            if self.getter is None:
-                raise RuntimeError("Getter is None")
+            frame: Union[spec.Basic.GetEmpty, spec.Basic.GetOk]
+            message: DeliveredMessage
 
-            frame, message = await self.getter
-            self.getter = None
+            frame, message = await countdown(self.getter)
+            del self.getter
 
         return message
 
@@ -457,7 +473,7 @@ class Channel(Base, AbstractChannel):
 
         consumer_tag = consumer_tag or "ctag%i.%s" % (
             self.number,
-            hexlify(os.urandom(16)).decode(),
+            UUID(int=getrandbits(128), version=4).hex,
         )
 
         if consumer_tag in self.consumers:
@@ -477,9 +493,9 @@ class Channel(Base, AbstractChannel):
         )
 
     async def basic_ack(
-        self, delivery_tag: int, multiple: bool = False,
+        self, delivery_tag: int, multiple: bool = False, wait: bool = True
     ) -> None:
-        drain_future = self.create_future()
+        drain_future = self.create_future() if wait else None
 
         await self.write_queue.put(
             ChannelFrame(
@@ -494,18 +510,20 @@ class Channel(Base, AbstractChannel):
             ),
         )
 
-        await drain_future
+        if drain_future is not None:
+            await drain_future
 
     async def basic_nack(
         self,
         delivery_tag: int,
         multiple: bool = False,
         requeue: bool = True,
+        wait: bool = True,
     ) -> None:
         if not self.connection.basic_nack:
             raise MethodNotImplemented
 
-        drain_future = self.create_future()
+        drain_future = self.create_future() if wait else None
 
         await self.write_queue.put(
             ChannelFrame(
@@ -521,10 +539,11 @@ class Channel(Base, AbstractChannel):
             ),
         )
 
-        await drain_future
+        if drain_future is not None:
+            await drain_future
 
     async def basic_reject(
-        self, delivery_tag: int, *, requeue: bool = True
+        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True
     ) -> None:
         drain_future = self.create_future()
         await self.write_queue.put(
@@ -540,7 +559,8 @@ class Channel(Base, AbstractChannel):
             ),
         )
 
-        await drain_future
+        if drain_future is not None:
+            await drain_future
 
     async def basic_publish(
         self,
@@ -551,8 +571,10 @@ class Channel(Base, AbstractChannel):
         properties: spec.Basic.Properties = None,
         mandatory: bool = False,
         immediate: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
+        wait: bool = True,
     ) -> Optional[ConfirmationFrameType]:
+        drain_future = self.create_future() if wait else None
         countdown = Countdown(timeout=timeout)
 
         publish_frame = spec.Basic.Publish(
@@ -569,51 +591,55 @@ class Channel(Base, AbstractChannel):
 
         if not content_header.properties.message_id:
             # UUID compatible random bytes
-            rnd_id = os.urandom(16)
-            content_header.properties.message_id = hexlify(rnd_id).decode()
+            rnd_uuid = UUID(int=getrandbits(128), version=4)
+            content_header.properties.message_id = rnd_uuid.hex
 
         confirmation: Optional[ConfirmationType] = None
 
-        self.delivery_tag += 1
-
-        if self.publisher_confirms:
-            message_id = content_header.properties.message_id
-
-            if self.delivery_tag not in self.confirmations:
-                self.confirmations[
-                    self.delivery_tag
-                ] = self.create_future()
-
-            confirmation = self.confirmations[self.delivery_tag]
-            self.message_id_delivery_tag[message_id] = self.delivery_tag
-
-            if confirmation is None:
-                return
-
-            confirmation.add_done_callback(
-                lambda _: self.message_id_delivery_tag.pop(
-                    message_id, None,
-                ),
-            )
-
-        def frame_generator() -> Generator[FrameType, Any, None]:
-            yield publish_frame
-            yield content_header
-
-            with BytesIO(body) as fp:
-                read_chunk = partial(fp.read, self.max_content_size)
-                for chunk in iter(read_chunk, b""):
-                    yield ContentBody(chunk)
-
         async with countdown.enter_context(self.lock):
+            self.delivery_tag += 1
+
+            if self.publisher_confirms:
+                message_id = content_header.properties.message_id
+
+                if self.delivery_tag not in self.confirmations:
+                    self.confirmations[
+                        self.delivery_tag
+                    ] = self.create_future()
+
+                confirmation = self.confirmations[self.delivery_tag]
+                self.message_id_delivery_tag[message_id] = self.delivery_tag
+
+                if confirmation is None:
+                    return
+
+                confirmation.add_done_callback(
+                    lambda _: self.message_id_delivery_tag.pop(
+                        message_id, None,
+                    ),
+                )
+
+            def frame_generator() -> Generator[FrameType, Any, None]:
+                yield publish_frame
+                yield content_header
+
+                with BytesIO(body) as fp:
+                    read_chunk = partial(fp.read, self.max_content_size)
+                    for chunk in iter(read_chunk, b""):
+                        yield ContentBody(chunk)
+
             await countdown(
                 self.write_queue.put(
                     ChannelFrame(
                         frames=frame_generator(),
                         channel_number=self.number,
+                        drain_future=drain_future,
                     ),
                 ),
             )
+
+            if drain_future:
+                await drain_future
 
             if not self.publisher_confirms:
                 return None

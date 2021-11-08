@@ -69,7 +69,7 @@ ChannelRType = Tuple[int, Channel.OpenOk]
 
 CallbackCoro = Coroutine[Any, Any, Any]
 ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
-ReturnCallback = Callable[[], CallbackCoro]
+ReturnCallback = Callable[[DeliveredMessage], Any]
 
 ArgumentsType = Dict[
     str, Union[str, int, bool, Dict[str, Union[str, int, bool]]],
@@ -176,7 +176,7 @@ class AbstractBase(ABC):
 
     @abstractmethod
     async def close(
-        self, exc: BaseException = asyncio.CancelledError()
+        self, exc: Optional[ExceptionType] = asyncio.CancelledError()
     ) -> None:
         raise NotImplementedError
 
@@ -191,6 +191,10 @@ class AbstractBase(ABC):
 
 class AbstractChannel(AbstractBase):
     frames: asyncio.Queue
+    connection: "AbstractConnection"
+    number: int
+    on_return_callbacks: Set[ReturnCallback]
+    closing: asyncio.Future
 
     @abstractmethod
     async def open(self) -> spec.Channel.OpenOk:
@@ -226,7 +230,7 @@ class AbstractChannel(AbstractBase):
 
     @abstractmethod
     def basic_ack(
-        self, delivery_tag: int, multiple: bool = False,
+        self, delivery_tag: int, multiple: bool = False, wait: bool = True,
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -236,12 +240,13 @@ class AbstractChannel(AbstractBase):
         delivery_tag: int,
         multiple: bool = False,
         requeue: bool = True,
+        wait: bool = True,
     ) -> DrainResult:
         raise NotImplementedError
 
     @abstractmethod
     def basic_reject(
-        self, delivery_tag: int, *, requeue: bool = True
+        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -430,6 +435,7 @@ class AbstractConnection(AbstractBase):
     channels: Dict[int, Optional[AbstractChannel]]
     write_queue: asyncio.Queue
     url: URL
+    closing: asyncio.Future
 
     @abstractmethod
     def set_close_reason(
@@ -476,12 +482,17 @@ class AbstractConnection(AbstractBase):
         channel_number: int = None,
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
+        timeout: TimeoutType = None,
         **kwargs: Any
     ) -> AbstractChannel:
         raise NotImplementedError
 
     @abstractmethod
     async def __aenter__(self) -> "AbstractConnection":
+        raise NotImplementedError
+
+    @abstractmethod
+    async def ready(self) -> None:
         raise NotImplementedError
 
 
