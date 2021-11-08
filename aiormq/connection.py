@@ -534,9 +534,9 @@ class Connection(Base, AbstractConnection):
                         writer.write(
                             pamqp.frame.marshal(
                                 frame, channel_frame.channel_number,
-                            )
+                            ),
                         )
-                    except Exception as e:
+                    except BaseException as e:
                         log.exception(
                             "Failed to write frame to channel %d: %r",
                             channel_frame.channel_number,
