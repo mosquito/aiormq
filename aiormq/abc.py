@@ -230,7 +230,7 @@ class AbstractChannel(AbstractBase):
 
     @abstractmethod
     def basic_ack(
-        self, delivery_tag: int, multiple: bool = False,
+        self, delivery_tag: int, multiple: bool = False, wait: bool = True,
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -240,12 +240,13 @@ class AbstractChannel(AbstractBase):
         delivery_tag: int,
         multiple: bool = False,
         requeue: bool = True,
+        wait: bool = True,
     ) -> DrainResult:
         raise NotImplementedError
 
     @abstractmethod
     def basic_reject(
-        self, delivery_tag: int, *, requeue: bool = True
+        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True
     ) -> DrainResult:
         raise NotImplementedError
 

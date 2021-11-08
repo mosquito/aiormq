@@ -547,7 +547,10 @@ class Connection(Base, AbstractConnection):
                     if isinstance(frame, spec.Connection.CloseOk):
                         return
 
-                    if channel_frame.drain_future is not None:
+                    if (
+                        channel_frame.drain_future is not None and
+                        not channel_frame.drain_future.done()
+                    ):
                         channel_frame.drain_future.set_result(
                             await writer.drain(),
                         )
