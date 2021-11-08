@@ -473,7 +473,7 @@ class Channel(Base, AbstractChannel):
 
         consumer_tag = consumer_tag or "ctag%i.%s" % (
             self.number,
-            hexlify(os.urandom(16)).decode(),
+            UUID(int=getrandbits(128), version=4).hex,
         )
 
         if consumer_tag in self.consumers:
