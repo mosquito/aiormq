@@ -566,7 +566,7 @@ RPC server
         await message.channel.basic_publish(
             response, routing_key=message.header.properties.reply_to,
             properties=aiormq.spec.Basic.Properties(
-                correlation_id=message..header.properties.correlation_id
+                correlation_id=message.header.properties.correlation_id
             ),
 
         )
@@ -632,7 +632,7 @@ RPC client
             return self
 
         async def on_response(self, message: aiormq.types.DeliveredMessage):
-            future = self.futures.pop(message..header.properties.correlation_id)
+            future = self.futures.pop(message.header.properties.correlation_id)
             future.set_result(message.body)
 
         async def call(self, n):
