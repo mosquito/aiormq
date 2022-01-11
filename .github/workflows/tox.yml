@@ -58,6 +58,7 @@ jobs:
         uses: docker://snakepacker/python:all
         env:
           TOXENV: ${{ matrix.toxenv }}
+          FORCE_COLOR: yes
           AMQP_URL: amqp://guest:guest@rabbitmq
           COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
         with:
