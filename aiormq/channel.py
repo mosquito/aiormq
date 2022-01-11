@@ -574,6 +574,7 @@ class Channel(Base, AbstractChannel):
         timeout: TimeoutType = None,
         wait: bool = True,
     ) -> Optional[ConfirmationFrameType]:
+        body_io = BytesIO(body)
         drain_future = self.create_future() if wait else None
         countdown = Countdown(timeout=timeout)
 
@@ -623,7 +624,7 @@ class Channel(Base, AbstractChannel):
                 yield publish_frame
                 yield content_header
 
-                with BytesIO(body) as fp:
+                with body_io as fp:
                     read_chunk = partial(fp.read, self.max_content_size)
                     for chunk in iter(read_chunk, b""):
                         yield ContentBody(chunk)
