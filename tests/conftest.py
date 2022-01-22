@@ -53,13 +53,8 @@ async def amqp_url(request):
 @pytest.fixture
 async def amqp_connection(amqp_url, loop):
     connection = Connection(amqp_url, loop=loop)
-
-    await connection.connect()
-
-    try:
+    async with connection:
         yield connection
-    finally:
-        await connection.close()
 
 
 channel_params = [
