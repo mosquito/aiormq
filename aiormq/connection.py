@@ -271,7 +271,11 @@ class Connection(Base, AbstractConnection):
 
     @property
     def is_opened(self) -> bool:
-        return not self._writer_task.done() is not None and not self.is_closed
+        return (
+            hasattr(self, "_writer_task") and
+            not self._writer_task.done() and
+            not self.is_closed
+        )
 
     def __str__(self) -> str:
         return str(censor_url(self.url))
