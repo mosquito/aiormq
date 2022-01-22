@@ -5,10 +5,10 @@ import ssl
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
-from types import MappingProxyType
+from types import MappingProxyType, TracebackType
 from typing import Any
 from typing import AsyncIterable as AsyncIterableType
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Type, Union
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -690,6 +690,14 @@ class Connection(Base, AbstractConnection):
     async def __aenter__(self) -> AbstractConnection:
         await self.connect()
         return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        await self.close(exc_val)
 
 
 async def connect(

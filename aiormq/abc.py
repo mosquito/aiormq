@@ -1,5 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod, abstractproperty
+from types import TracebackType
 from typing import (
     Any, Awaitable, Callable, Coroutine, Dict, Iterable, NamedTuple, Optional,
     Set, Tuple, Type, Union,
@@ -489,6 +490,15 @@ class AbstractConnection(AbstractBase):
 
     @abstractmethod
     async def __aenter__(self) -> "AbstractConnection":
+        raise NotImplementedError
+
+    @abstractmethod
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
         raise NotImplementedError
 
     @abstractmethod
