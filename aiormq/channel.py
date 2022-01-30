@@ -1,7 +1,5 @@
 import asyncio
 import logging
-import os
-from binascii import hexlify
 from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
@@ -9,7 +7,7 @@ from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
 from typing import (
-    Any, Awaitable, Dict, Generator, Mapping, Optional, Set, Type, Union,
+    Any, Dict, Generator, Mapping, Optional, Set, Type, Union,
 )
 from uuid import UUID
 
@@ -260,7 +258,10 @@ class Channel(Base, AbstractChannel):
         consumer = self.consumers.get(frame.consumer_tag)
         if consumer is not None:
             # noinspection PyAsyncCall
-            self.create_task(consumer(message))
+            try:
+                self.create_task(consumer(message))
+            except Exception:
+                log.exception('Unhandled consumer exception')
 
     async def _on_get(
         self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty]
@@ -414,7 +415,7 @@ class Channel(Base, AbstractChannel):
             except asyncio.CancelledError:
                 return
             except Exception as e:  # pragma: nocover
-                log.debug("Channel reader exception %r", exc_info=e)
+                log.exception("Channel reader exception")
                 await self._cancel_tasks(e)
                 raise
 
@@ -422,6 +423,7 @@ class Channel(Base, AbstractChannel):
         await self.rpc(
             spec.Channel.Close(
                 reply_code=self.__close_reply_code,
+                reply_text=self.__close_reply_text,
                 class_id=self.__close_class_id,
                 method_id=self.__close_method_id,
             ),
