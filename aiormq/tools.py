@@ -107,5 +107,5 @@ class CountdownContext(AsyncContextManager):
         exc_val: Optional[BaseException], exc_tb: Optional[TracebackType],
     ) -> Awaitable[Any]:
         return self.countdown(
-            self.ctx.__aexit__(exc_type, exc_val, exc_tb)
+            self.ctx.__aexit__(exc_type, exc_val, exc_tb),
         )
