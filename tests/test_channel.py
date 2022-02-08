@@ -5,6 +5,7 @@ import pytest
 from aiomisc_pytest.pytest_plugin import TCPProxy
 
 import aiormq
+from aiormq.abc import DeliveredMessage
 
 
 async def test_simple(amqp_channel: aiormq.Channel):
@@ -21,7 +22,7 @@ async def test_simple(amqp_channel: aiormq.Channel):
         properties=aiormq.spec.Basic.Properties(message_id="123"),
     )
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == b"foo"
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
@@ -50,7 +51,7 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
         properties=aiormq.spec.Basic.Properties(message_id="123"),
     )
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == b""
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
@@ -67,7 +68,7 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
 
 @pytest.mark.no_catch_loop_exceptions
 async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
-    channel = amqp_channel  # type: aiormq.Channel
+    channel: aiormq.Channel = amqp_channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare()
@@ -105,7 +106,7 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
 
 
 async def test_ack_nack_reject(amqp_channel: aiormq.Channel):
-    channel = amqp_channel  # type: aiormq.Channel
+    channel: aiormq.Channel = amqp_channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare(auto_delete=True)
@@ -137,7 +138,7 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
     This test is probably inconsequential without publisher_confirms
     This is a regression for https://github.com/mosquito/aiormq/issues/10
     """
-    channel = amqp_channel  # type: aiormq.Channel
+    channel: aiormq.Channel = amqp_channel
     exchange = uuid.uuid4().hex
     await channel.exchange_declare(exchange, exchange_type="topic")
     try:
@@ -192,13 +193,13 @@ async def test_remove_writer_when_closed(amqp_channel: aiormq.Channel):
 
 
 async def test_proxy_connection(proxy_connection, proxy: TCPProxy):
-    channel = await proxy_connection.channel()  # type: aiormq.Channel
+    channel: aiormq.Channel = await proxy_connection.channel()
     await channel.queue_declare(auto_delete=True)
 
 
 async def test_declare_queue_timeout(proxy_connection, proxy: TCPProxy):
     for _ in range(3):
-        channel = await proxy_connection.channel()  # type: aiormq.Channel
+        channel: aiormq.Channel = await proxy_connection.channel()
 
         qname = str(uuid.uuid4())
 

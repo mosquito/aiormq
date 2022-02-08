@@ -38,7 +38,7 @@ async def test_simple(amqp_connection: aiormq.Connection):
     consume_ok = await channel.basic_consume(deaclare_ok.queue, queue.put)
     await channel.basic_publish(b"foo", routing_key=deaclare_ok.queue)
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == b"foo"
 
     with pytest.raises(aiormq.exceptions.PublishError) as e:
@@ -290,9 +290,9 @@ async def test_no_free_channels(amqp_connection: aiormq.Connection):
 
 
 async def test_huge_message(amqp_connection: aiormq.Connection):
-    conn = amqp_connection  # type: aiormq.Connection
+    conn: aiormq.Connection = amqp_connection
     body = os.urandom(int(conn.connection_tune.frame_max * 2.5))
-    channel = await conn.channel()  # type: aiormq.Channel
+    channel: aiormq.Channel = await conn.channel()
 
     queue = asyncio.Queue()
 
@@ -305,7 +305,7 @@ async def test_huge_message(amqp_connection: aiormq.Connection):
 
 
 async def test_return_message(amqp_connection: aiormq.Connection):
-    conn = amqp_connection  # type: aiormq.Connection
+    conn: aiormq.Connection = amqp_connection
     body = os.urandom(512)
     routing_key = hexlify(os.urandom(16)).decode()
 
@@ -324,8 +324,8 @@ async def test_return_message(amqp_connection: aiormq.Connection):
 
 
 async def test_cancel_on_queue_deleted(amqp_connection, loop):
-    conn = amqp_connection  # type: aiormq.Connection
-    channel = await conn.channel()  # type: aiormq.Channel
+    conn: aiormq.Connection = amqp_connection
+    channel: aiormq.Channel = await conn.channel()
     deaclare_ok = await channel.queue_declare(auto_delete=True)
     consume_ok = await channel.basic_consume(deaclare_ok.queue, print)
 
