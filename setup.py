@@ -47,7 +47,7 @@ setup(
     python_requires=">=3.6",
     package_data={"aiormq": ["py.typed"]},
     extras_require={
-        ":python_version<'3.7'": ["pamqp==3.0.1"],
+        ":python_version<'3.7'": ["pamqp==3.0.2"],
         ":python_version>='3.7'": ["pamqp==3.1.0"],
         "develop": [
             "aiomisc~=11.0",
