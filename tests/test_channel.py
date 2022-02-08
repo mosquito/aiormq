@@ -150,7 +150,8 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
             messages = [
                 asyncio.ensure_future(
                     channel.basic_publish(
-                        b"test", exchange=exchange, routing_key="test.{}".format(i),
+                        b"test", exchange=exchange,
+                        routing_key="test.{}".format(i),
                     ),
                 )
                 for i in range(10)

@@ -1,16 +1,12 @@
 import asyncio
 import logging
-import os
-from binascii import hexlify
 from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
-from typing import (
-    Any, Awaitable, Dict, Generator, Mapping, Optional, Set, Type, Union,
-)
+from typing import Any, Dict, Generator, Mapping, Optional, Set, Type, Union
 from uuid import UUID
 
 import pamqp.frame
@@ -418,6 +414,7 @@ class Channel(Base, AbstractChannel):
                 await self._cancel_tasks(e)
                 raise
 
+    @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
         await self.rpc(
             spec.Channel.Close(

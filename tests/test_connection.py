@@ -167,6 +167,7 @@ async def test_auth_plain(amqp_connection, loop):
 
     assert auth.marshal() == "boo"
 
+
 async def test_auth_external(loop):
 
     url = AMQP_URL.with_scheme("amqps")
@@ -180,7 +181,6 @@ async def test_auth_external(loop):
     auth.value = ""
 
     assert auth.marshal() == ""
-
 
 
 async def test_channel_closed(amqp_connection):
