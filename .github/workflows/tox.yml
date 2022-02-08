@@ -18,6 +18,7 @@ jobs:
       matrix:
         linter:
           - checkdoc
+          - pylava
           - mypy
 
     steps:
