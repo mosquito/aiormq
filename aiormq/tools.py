@@ -1,4 +1,6 @@
 import asyncio
+import platform
+import time
 from functools import wraps
 from types import TracebackType
 from typing import (
@@ -52,27 +54,39 @@ def awaitable(
 class Countdown:
     __slots__ = "loop", "deadline"
 
+    if platform.system() == "Windows":
+        @staticmethod
+        def _now() -> float:
+            # windows monotonic timer resolution is not enough.
+            # Have to use time.time()
+            return time.time()
+    else:
+        @staticmethod
+        def _now() -> float:
+            return time.monotonic()
+
     def __init__(self, timeout: TimeoutType = None):
         self.loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
         self.deadline: TimeoutType = None
 
         if timeout is not None:
-            self.deadline = self.loop.time() + timeout
+            self.deadline = self._now() + timeout
 
     def get_timeout(self) -> TimeoutType:
         if self.deadline is None:
             return None
 
-        current = self.loop.time()
+        current = self._now()
         if current >= self.deadline:
             raise asyncio.TimeoutError
 
         return self.deadline - current
 
     def __call__(self, coro: Awaitable[T]) -> Awaitable[T]:
-        if self.deadline is None:
+        timeout = self.get_timeout()
+        if self.deadline is None and not timeout:
             return coro
-        return asyncio.wait_for(coro, timeout=self.get_timeout())
+        return asyncio.wait_for(coro, timeout=timeout)
 
     def enter_context(
         self, ctx: AsyncContextManager[T],
@@ -82,19 +96,16 @@ class Countdown:
 
 class CountdownContext(AsyncContextManager):
     def __init__(self, countdown: Countdown, ctx: AsyncContextManager):
-        self.countdown = countdown
-        self.ctx = ctx
+        self.countdown: Countdown = countdown
+        self.ctx: AsyncContextManager = ctx
 
     def __aenter__(self) -> Awaitable[T]:
-        if self.countdown.deadline is None:
-            return self.ctx.__aenter__()
         return self.countdown(self.ctx.__aenter__())
 
     def __aexit__(
         self, exc_type: Optional[Type[BaseException]],
         exc_val: Optional[BaseException], exc_tb: Optional[TracebackType],
     ) -> Awaitable[Any]:
-        if self.countdown.deadline is None:
-            return self.ctx.__aexit__(exc_type, exc_val, exc_tb)
-
-        return self.countdown(self.ctx.__aexit__(exc_type, exc_val, exc_tb))
+        return self.countdown(
+            self.ctx.__aexit__(exc_type, exc_val, exc_tb),
+        )

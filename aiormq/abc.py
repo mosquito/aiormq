@@ -65,6 +65,18 @@ class DeliveredMessage(NamedTuple):
     body: bytes
     channel: "AbstractChannel"
 
+    @property
+    def routing_key(self) -> Optional[str]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.Return,
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.routing_key
+        return None
+
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
