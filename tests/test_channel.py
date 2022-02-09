@@ -103,6 +103,9 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
     message = await future
 
     assert message.body == b"urgent"
+    assert message.delivery_tag is not None
+    assert message.exchange is not None
+    assert message.redelivered
 
 
 async def test_ack_nack_reject(amqp_channel: aiormq.Channel):
@@ -115,8 +118,11 @@ async def test_ack_nack_reject(amqp_channel: aiormq.Channel):
     await channel.basic_consume(declare_ok.queue, queue.put, no_ack=False)
 
     await channel.basic_publish(b"rejected", routing_key=declare_ok.queue)
-    message = await queue.get()
+    message: DeliveredMessage = await queue.get()
     assert message.body == b"rejected"
+    assert message.delivery_tag is not None
+    assert message.exchange is not None
+    assert not message.redelivered
     await channel.basic_reject(message.delivery.delivery_tag, requeue=False)
 
     await channel.basic_publish(b"nacked", routing_key=declare_ok.queue)

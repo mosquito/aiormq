@@ -77,6 +77,39 @@ class DeliveredMessage(NamedTuple):
             return self.delivery.routing_key
         return None
 
+    @property
+    def exchange(self) -> Optional[str]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.Return,
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.exchange
+
+    @property
+    def delivery_tag(self) -> Optional[int]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.delivery_tag
+        return None
+
+    @property
+    def redelivered(self) -> Optional[bool]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.redelivered
+        return None
+
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
