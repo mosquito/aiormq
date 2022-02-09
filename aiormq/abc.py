@@ -87,6 +87,7 @@ class DeliveredMessage(NamedTuple):
             ),
         ):
             return self.delivery.exchange
+        return None
 
     @property
     def delivery_tag(self) -> Optional[int]:
@@ -108,6 +109,18 @@ class DeliveredMessage(NamedTuple):
             ),
         ):
             return self.delivery.redelivered
+        return None
+
+    @property
+    def consumer_tag(self) -> Optional[str]:
+        if isinstance(self.delivery, spec.Basic.Deliver):
+            return self.delivery.consumer_tag
+        return None
+
+    @property
+    def message_count(self) -> Optional[int]:
+        if isinstance(self.delivery, spec.Basic.GetOk):
+            return self.delivery.message_count
         return None
 
 
