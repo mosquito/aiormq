@@ -271,7 +271,18 @@ class Connection(Base, AbstractConnection):
 
     @property
     def is_opened(self) -> bool:
-        return not self._writer_task.done() is not None and not self.is_closed
+        is_reader_running = (
+            hasattr(self, "_reader_task") and not self._reader_task.done()
+        )
+        is_writer_running = (
+            hasattr(self, "_writer_task") and not self._writer_task.done()
+        )
+
+        return (
+            is_reader_running and
+            is_writer_running and
+            not self.is_closed
+        )
 
     def __str__(self) -> str:
         return str(censor_url(self.url))
@@ -448,15 +459,21 @@ class Connection(Base, AbstractConnection):
     def _on_reader_done(self, task: asyncio.Task) -> None:
         log.debug("Reader exited for %r", self)
 
-        if not self._writer_task.done():
-            self._writer_task.cancel()
-
         if not task.cancelled() and task.exception() is not None:
             log.debug("Cancelling cause reader exited abnormally")
             self.set_close_reason(
                 reply_code=500, reply_text="reader unexpected closed",
             )
-            self.create_task(self.close(task.exception()))
+
+        async def close_writer_task():
+            if not self._writer_task.done():
+                self._writer_task.cancel()
+
+            with suppress(Exception):
+                await self._writer_task
+            await self.close(task.exception())
+
+        self.create_task(close_writer_task())
 
     async def __reader(self, frame_receiver: FrameReceiver) -> None:
         self.connected.set()
@@ -576,9 +593,6 @@ class Connection(Base, AbstractConnection):
 
     @staticmethod
     async def __close_writer(writer: asyncio.StreamWriter) -> None:
-        if writer is None:
-            return
-
         writer.close()
 
         if hasattr(writer, "wait_closed"):
@@ -688,7 +702,8 @@ class Connection(Base, AbstractConnection):
         return channel
 
     async def __aenter__(self) -> AbstractConnection:
-        await self.connect()
+        if not self.is_opened:
+            await self.connect()
         return self
 
     async def __aexit__(
@@ -701,7 +716,7 @@ class Connection(Base, AbstractConnection):
 
 
 async def connect(
-    url: URL, *args: Any, client_properties: Dict[str, Any] = None,
+    url: URLorStr, *args: Any, client_properties: Dict[str, Any] = None,
     **kwargs: Any
 ) -> AbstractConnection:
     connection = Connection(url, *args, **kwargs)
