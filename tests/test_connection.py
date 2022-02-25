@@ -7,6 +7,7 @@ from typing import Optional
 
 import pytest
 from pamqp.commands import Basic
+from yarl import URL
 
 import aiormq
 from aiormq.abc import DeliveredMessage
@@ -255,13 +256,9 @@ async def test_heartbeat_not_int(loop):
     await connection.close()
 
 
-async def test_bad_credentials(amqp_connection, loop):
-    connection = aiormq.Connection(
-        amqp_connection.url.with_password(uuid.uuid4().hex), loop=loop,
-    )
-
+async def test_bad_credentials(amqp_url: URL):
     with pytest.raises(aiormq.exceptions.ProbableAuthenticationError):
-        await connection.connect()
+        await aiormq.connect(amqp_url.with_password(uuid.uuid4().hex))
 
 
 async def test_non_publisher_confirms(amqp_connection):

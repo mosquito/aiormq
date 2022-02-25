@@ -2,6 +2,7 @@ import asyncio
 import logging
 import platform
 import ssl
+import sys
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
@@ -271,7 +272,18 @@ class Connection(Base, AbstractConnection):
 
     @property
     def is_opened(self) -> bool:
-        return not self._writer_task.done() is not None and not self.is_closed
+        is_reader_running = (
+            hasattr(self, "_reader_task") and not self._reader_task.done()
+        )
+        is_writer_running = (
+            hasattr(self, "_writer_task") and not self._writer_task.done()
+        )
+
+        return (
+            is_reader_running and
+            is_writer_running and
+            not self.is_closed
+        )
 
     def __str__(self) -> str:
         return str(censor_url(self.url))
@@ -352,8 +364,8 @@ class Connection(Base, AbstractConnection):
 
     @task
     async def connect(self, client_properties: dict = None) -> bool:
-        if hasattr(self, "_writer_task"):
-            raise RuntimeError("Connection already connected")
+        if self.is_opened:
+            raise RuntimeError("Connection already opened")
 
         ssl_context = self.ssl_context
 
@@ -361,6 +373,7 @@ class Connection(Base, AbstractConnection):
             ssl_context = await self.loop.run_in_executor(
                 None, self._get_ssl_context,
             )
+            self.ssl_context = ssl_context
 
         log.debug("Connecting to: %s", self)
         try:
@@ -430,16 +443,17 @@ class Connection(Base, AbstractConnection):
 
             if not isinstance(frame, spec.Connection.OpenOk):
                 raise AMQPInternalError("Connection.OpenOk", frame)
-
-            # noinspection PyAsyncCall
-            self._reader_task = self.create_task(self.__reader(frame_receiver))
-            self._reader_task.add_done_callback(self._on_reader_done)
-
-            # noinspection PyAsyncCall
-            self._writer_task = self.create_task(self.__writer(writer))
         except Exception as e:
+            await self.__close_writer(writer)
             await self.close(e)
             raise
+
+        # noinspection PyAsyncCall
+        self._reader_task = self.create_task(self.__reader(frame_receiver))
+        self._reader_task.add_done_callback(self._on_reader_done)
+
+        # noinspection PyAsyncCall
+        self._writer_task = self.create_task(self.__writer(writer))
 
         self.connection_tune = connection_tune
         self.server_properties = server_properties
@@ -448,15 +462,20 @@ class Connection(Base, AbstractConnection):
     def _on_reader_done(self, task: asyncio.Task) -> None:
         log.debug("Reader exited for %r", self)
 
-        if not self._writer_task.done():
-            self._writer_task.cancel()
-
         if not task.cancelled() and task.exception() is not None:
             log.debug("Cancelling cause reader exited abnormally")
             self.set_close_reason(
                 reply_code=500, reply_text="reader unexpected closed",
             )
-            self.create_task(self.close(task.exception()))
+
+        async def close_writer_task() -> None:
+            if not self._writer_task.done():
+                self._writer_task.cancel()
+            with suppress(BaseException):
+                await self._writer_task
+            await self.close(task.exception())
+
+        self.loop.create_task(close_writer_task())
 
     async def __reader(self, frame_receiver: FrameReceiver) -> None:
         self.connected.set()
@@ -574,14 +593,16 @@ class Connection(Base, AbstractConnection):
         finally:
             log.debug("Writer exited for %r", self)
 
-    @staticmethod
-    async def __close_writer(writer: asyncio.StreamWriter) -> None:
-        if writer is None:
-            return
-
-        writer.close()
-
-        if hasattr(writer, "wait_closed"):
+    if sys.version_info < (3, 7):
+        async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
+            log.debug("Writer on connection %s closed", self)
+            writer.close()
+    else:
+        async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
+            log.debug("Writer on connection %s closed", self)
+            if writer.can_write_eof():
+                writer.write_eof()
+            writer.close()
             await writer.wait_closed()
 
     @staticmethod
@@ -688,7 +709,8 @@ class Connection(Base, AbstractConnection):
         return channel
 
     async def __aenter__(self) -> AbstractConnection:
-        await self.connect()
+        if not self.is_opened:
+            await self.connect()
         return self
 
     async def __aexit__(
@@ -701,7 +723,7 @@ class Connection(Base, AbstractConnection):
 
 
 async def connect(
-    url: URL, *args: Any, client_properties: Dict[str, Any] = None,
+    url: URLorStr, *args: Any, client_properties: Dict[str, Any] = None,
     **kwargs: Any
 ) -> AbstractConnection:
     connection = Connection(url, *args, **kwargs)

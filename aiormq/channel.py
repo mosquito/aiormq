@@ -416,13 +416,14 @@ class Channel(Base, AbstractChannel):
 
     @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
-        await self.rpc(
-            spec.Channel.Close(
-                reply_code=self.__close_reply_code,
-                class_id=self.__close_class_id,
-                method_id=self.__close_method_id,
-            ),
-        )
+        if self.connection.is_opened:
+            await self.rpc(
+                spec.Channel.Close(
+                    reply_code=self.__close_reply_code,
+                    class_id=self.__close_class_id,
+                    method_id=self.__close_method_id,
+                ),
+            )
         self.connection.channels.pop(self.number, None)
 
     async def basic_get(
