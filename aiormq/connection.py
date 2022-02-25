@@ -363,8 +363,8 @@ class Connection(Base, AbstractConnection):
 
     @task
     async def connect(self, client_properties: dict = None) -> bool:
-        if hasattr(self, "_writer_task"):
-            raise RuntimeError("Connection already connected")
+        if self.is_opened:
+            raise RuntimeError("Connection already opened")
 
         ssl_context = self.ssl_context
 
@@ -372,6 +372,7 @@ class Connection(Base, AbstractConnection):
             ssl_context = await self.loop.run_in_executor(
                 None, self._get_ssl_context,
             )
+            self.ssl_context = ssl_context
 
         log.debug("Connecting to: %s", self)
         try:
@@ -441,16 +442,17 @@ class Connection(Base, AbstractConnection):
 
             if not isinstance(frame, spec.Connection.OpenOk):
                 raise AMQPInternalError("Connection.OpenOk", frame)
-
-            # noinspection PyAsyncCall
-            self._reader_task = self.create_task(self.__reader(frame_receiver))
-            self._reader_task.add_done_callback(self._on_reader_done)
-
-            # noinspection PyAsyncCall
-            self._writer_task = self.create_task(self.__writer(writer))
         except Exception as e:
+            await self.__close_writer(writer)
             await self.close(e)
             raise
+
+        # noinspection PyAsyncCall
+        self._reader_task = self.create_task(self.__reader(frame_receiver))
+        self._reader_task.add_done_callback(self._on_reader_done)
+
+        # noinspection PyAsyncCall
+        self._writer_task = self.create_task(self.__writer(writer))
 
         self.connection_tune = connection_tune
         self.server_properties = server_properties
@@ -591,12 +593,14 @@ class Connection(Base, AbstractConnection):
         finally:
             log.debug("Writer exited for %r", self)
 
-    @staticmethod
-    async def __close_writer(writer: asyncio.StreamWriter) -> None:
-        writer.close()
+    async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
+        log.debug("Writer on connection %s closed", self)
 
-        if hasattr(writer, "wait_closed"):
-            await writer.wait_closed()
+        if writer.can_write_eof():
+            writer.write_eof()
+
+        writer.close()
+        await writer.wait_closed()
 
     @staticmethod
     def __check_writer(writer: asyncio.StreamWriter) -> bool:
