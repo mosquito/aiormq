@@ -471,12 +471,11 @@ class Connection(Base, AbstractConnection):
         async def close_writer_task() -> None:
             if not self._writer_task.done():
                 self._writer_task.cancel()
-
-            with suppress(Exception):
+            with suppress(BaseException):
                 await self._writer_task
             await self.close(task.exception())
 
-        self.create_task(close_writer_task())
+        self.loop.create_task(close_writer_task())
 
     async def __reader(self, frame_receiver: FrameReceiver) -> None:
         self.connected.set()
