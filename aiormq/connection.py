@@ -2,6 +2,7 @@ import asyncio
 import logging
 import platform
 import ssl
+import sys
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
@@ -593,14 +594,17 @@ class Connection(Base, AbstractConnection):
         finally:
             log.debug("Writer exited for %r", self)
 
-    async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
-        log.debug("Writer on connection %s closed", self)
-
-        if writer.can_write_eof():
-            writer.write_eof()
-
-        writer.close()
-        await writer.wait_closed()
+    if sys.version_info < (3, 7):
+        async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
+            log.debug("Writer on connection %s closed", self)
+            writer.close()
+    else:
+        async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
+            log.debug("Writer on connection %s closed", self)
+            if writer.can_write_eof():
+                writer.write_eof()
+            writer.close()
+            await writer.wait_closed()
 
     @staticmethod
     def __check_writer(writer: asyncio.StreamWriter) -> bool:
