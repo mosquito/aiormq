@@ -467,7 +467,7 @@ class Connection(Base, AbstractConnection):
                 reply_code=500, reply_text="reader unexpected closed",
             )
 
-        async def close_writer_task():
+        async def close_writer_task() -> None:
             if not self._writer_task.done():
                 self._writer_task.cancel()
 
