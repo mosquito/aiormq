@@ -554,14 +554,12 @@ class Connection(Base, AbstractConnection):
             await ch.frames.put((weight, frame))
 
     async def __heartbeat(self):
+        heartbeat_timeout = max(1, self.heartbeat_timeout // 2)
+        heartbeat = ChannelFrame(frames=[Heartbeat()], channel_number=0)
+
         while not self.closing.done():
-            await asyncio.sleep(self.heartbeat_timeout)
-            await self.write_queue.put(
-                ChannelFrame(
-                    frames=(Heartbeat(),),
-                    channel_number=0,
-                ),
-            )
+            await asyncio.sleep(heartbeat_timeout)
+            await self.write_queue.put(heartbeat)
 
     def marshall(self, channel_number, frames: FrameTypes) -> bytes:
         with BytesIO() as fp:
