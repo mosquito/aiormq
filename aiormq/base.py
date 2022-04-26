@@ -116,7 +116,7 @@ class Base(AbstractBase):
 
     @abc.abstractmethod
     async def _on_close(
-        self, exc: Optional[ExceptionType] = None
+        self, exc: Optional[ExceptionType] = None,
     ) -> None:  # pragma: no cover
         return
 
@@ -131,7 +131,7 @@ class Base(AbstractBase):
             await self._cancel_tasks(exc)
 
     async def close(
-        self, exc: Optional[ExceptionType] = asyncio.CancelledError
+        self, exc: Optional[ExceptionType] = asyncio.CancelledError,
     ) -> None:
         if self.is_closed:
             return None

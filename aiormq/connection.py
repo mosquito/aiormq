@@ -8,8 +8,7 @@ from collections.abc import AsyncIterable
 from contextlib import suppress
 from io import BytesIO
 from types import MappingProxyType, TracebackType
-from typing import Any
-from typing import Dict, Optional, Tuple, Type, Union
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -23,7 +22,7 @@ from yarl import URL
 
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ExceptionType, SSLCerts, TaskType, URLorStr
+    ExceptionType, SSLCerts, TaskType, URLorStr,
 )
 from .auth import AuthMechanism
 from .base import Base, task
@@ -370,7 +369,7 @@ class Connection(Base, AbstractConnection):
     async def _rpc(
         request: Frame, writer: asyncio.StreamWriter,
         frame_receiver: FrameReceiver,
-        wait_response: bool = True
+        wait_response: bool = True,
     ) -> Optional[FrameTypes]:
         writer.write(pamqp.frame.marshal(request, 0))
 
@@ -561,7 +560,7 @@ class Connection(Base, AbstractConnection):
                 ChannelFrame(
                     frames=(Heartbeat(),),
                     channel_number=0,
-                )
+                ),
             )
 
     def marshall(self, channel_number, frames: FrameTypes) -> bytes:
@@ -576,7 +575,7 @@ class Connection(Base, AbstractConnection):
         try:
             frame_iterator = FrameGenerator(self.write_queue)
             self.closing.add_done_callback(
-                lambda _: frame_iterator.close_event.set()
+                lambda _: frame_iterator.close_event.set(),
             )
 
             async for channel_frame in frame_iterator:
@@ -588,7 +587,7 @@ class Connection(Base, AbstractConnection):
                         fp.write(
                             pamqp.frame.marshal(
                                 frame, channel_frame.channel_number,
-                            )
+                            ),
                         )
 
                         if isinstance(frame, spec.Connection.CloseOk):
@@ -621,7 +620,7 @@ class Connection(Base, AbstractConnection):
             await asyncio.gather(
                 writer.drain(),
                 self.__close_writer(writer),
-                return_exceptions=True
+                return_exceptions=True,
             )
             raise
         finally:
@@ -654,7 +653,7 @@ class Connection(Base, AbstractConnection):
 
     async def _on_close(
         self,
-        ex: Optional[ExceptionType] = ConnectionClosed(0, "normal closed")
+        ex: Optional[ExceptionType] = ConnectionClosed(0, "normal closed"),
     ) -> None:
         log.debug("Closing connection %r cause: %r", self, ex)
         if not self._reader_task.done():
@@ -663,7 +662,7 @@ class Connection(Base, AbstractConnection):
             self._writer_task.cancel()
 
         await asyncio.gather(
-            self._reader_task, self._writer_task, return_exceptions=True
+            self._reader_task, self._writer_task, return_exceptions=True,
         )
 
     @property

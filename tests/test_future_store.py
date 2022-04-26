@@ -28,7 +28,7 @@ def child_store(loop, root_store):
 
 
 async def test_reject_all(
-    loop, root_store: FutureStore, child_store: FutureStore
+    loop, root_store: FutureStore, child_store: FutureStore,
 ):
 
     future1 = root_store.create_future()
@@ -47,7 +47,7 @@ async def test_reject_all(
 
 
 async def test_result(
-    loop, root_store: FutureStore, child_store: FutureStore
+    loop, root_store: FutureStore, child_store: FutureStore,
 ):
     async def result():
         await asyncio.sleep(0.1)
@@ -57,7 +57,7 @@ async def test_result(
 
 
 async def test_siblings(
-    loop, root_store: FutureStore, child_store: FutureStore
+    loop, root_store: FutureStore, child_store: FutureStore,
 ):
     async def coro(store):
         await asyncio.sleep(0.1)

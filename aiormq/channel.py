@@ -8,8 +8,8 @@ from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
 from typing import (
-    Any, Dict, Mapping, Optional, Set, Type, Union,
-    AsyncIterable, AsyncIterator, Deque, List
+    Any, AsyncIterable, AsyncIterator, Deque, Dict, List, Mapping, Optional,
+    Set, Type, Union,
 )
 from uuid import UUID
 
@@ -150,7 +150,7 @@ class Channel(Base, AbstractChannel):
 
     @task
     async def rpc(
-        self, frame: Frame, timeout: TimeoutType = None
+        self, frame: Frame, timeout: TimeoutType = None,
     ) -> RpcReturnType:
 
         countdown = Countdown(timeout)
@@ -217,7 +217,7 @@ class Channel(Base, AbstractChannel):
     async def _read_content(
         self,
         frame: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType],
-        header: ContentHeader
+        header: ContentHeader,
     ) -> DeliveredMessage:
         with BytesIO() as body:
             content: Optional[ContentBody] = None
@@ -263,7 +263,7 @@ class Channel(Base, AbstractChannel):
             self.create_task(consumer(message))
 
     async def _on_get(
-        self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty]
+        self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty],
     ) -> None:
         message = None
         if isinstance(frame, spec.Basic.GetOk):
@@ -432,7 +432,7 @@ class Channel(Base, AbstractChannel):
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> DeliveredMessage:
 
         countdown = Countdown(timeout)
@@ -495,7 +495,7 @@ class Channel(Base, AbstractChannel):
         )
 
     async def basic_ack(
-        self, delivery_tag: int, multiple: bool = False, wait: bool = True
+        self, delivery_tag: int, multiple: bool = False, wait: bool = True,
     ) -> None:
         drain_future = self.create_future() if wait else None
 
@@ -775,7 +775,7 @@ class Channel(Base, AbstractChannel):
 
     async def flow(
         self, active: bool,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Channel.FlowOk:
         return await self.rpc(
             spec.Channel.Flow(active=active),
@@ -789,7 +789,7 @@ class Channel(Base, AbstractChannel):
         routing_key: str = "",
         nowait: bool = False,
         arguments: dict = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.BindOk:
         return await self.rpc(
             spec.Queue.Bind(
@@ -833,7 +833,7 @@ class Channel(Base, AbstractChannel):
         if_unused: bool = False,
         if_empty: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeleteOk:
         return await self.rpc(
             spec.Queue.Delete(
@@ -847,7 +847,7 @@ class Channel(Base, AbstractChannel):
 
     async def queue_purge(
         self, queue: str = "", nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.PurgeOk:
         return await self.rpc(
             spec.Queue.Purge(queue=queue, nowait=nowait),
@@ -860,7 +860,7 @@ class Channel(Base, AbstractChannel):
         exchange: str = "",
         routing_key: str = "",
         arguments: dict = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
         return await self.rpc(
             spec.Queue.Unbind(
@@ -873,12 +873,12 @@ class Channel(Base, AbstractChannel):
         )
 
     async def tx_commit(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.CommitOk:
         return await self.rpc(spec.Tx.Commit(), timeout=timeout)
 
     async def tx_rollback(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.RollbackOk:
         return await self.rpc(spec.Tx.Rollback(), timeout=timeout)
 
@@ -887,7 +887,7 @@ class Channel(Base, AbstractChannel):
 
     async def confirm_delivery(
         self, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Confirm.SelectOk:
         return await self.rpc(
             spec.Confirm.Select(nowait=nowait),
