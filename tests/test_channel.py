@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from os import urandom
 
 import pytest
 from aiomisc_pytest.pytest_plugin import TCPProxy
@@ -214,3 +215,9 @@ async def test_declare_queue_timeout(proxy_connection, proxy: TCPProxy):
                 await channel.queue_declare(
                     qname, auto_delete=True, timeout=0.5,
                 )
+
+
+async def test_big_message(amqp_channel: aiormq.Channel):
+    size = 20 * 1024 * 1024
+    message = urandom(size)
+    await amqp_channel.basic_publish(message)

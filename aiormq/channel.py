@@ -1,12 +1,16 @@
 import asyncio
+import io
 import logging
-from collections import OrderedDict
+import math
+from collections import OrderedDict, deque
 from contextlib import suppress
-from functools import partial
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
-from typing import Any, Dict, Generator, Mapping, Optional, Set, Type, Union
+from typing import (
+    Any, Dict, Mapping, Optional, Set, Type, Union,
+    AsyncIterable, AsyncIterator, Deque, List
+)
 from uuid import UUID
 
 import pamqp.frame
@@ -560,9 +564,24 @@ class Channel(Base, AbstractChannel):
         if drain_future is not None:
             await drain_future
 
+    def _split_body(self, body: bytes) -> List[ContentBody]:
+        if not body:
+            return []
+
+        if len(body) < self.max_content_size:
+            return [ContentBody(body)]
+
+        result = []
+        with io.BytesIO(body) as fp:
+            data = fp.read(self.max_content_size)
+            while data:
+                result.append(ContentBody(data))
+                data = fp.read(self.max_content_size)
+        return result
+
     async def basic_publish(
         self,
-        body: bytes,
+        body: Union[bytes, AsyncIterable[bytes]],
         *,
         exchange: str = "",
         routing_key: str = "",
@@ -572,7 +591,6 @@ class Channel(Base, AbstractChannel):
         timeout: TimeoutType = None,
         wait: bool = True,
     ) -> Optional[ConfirmationFrameType]:
-        body_io = BytesIO(body)
         drain_future = self.create_future() if wait else None
         countdown = Countdown(timeout=timeout)
 
@@ -618,19 +636,13 @@ class Channel(Base, AbstractChannel):
                     ),
                 )
 
-            def frame_generator() -> Generator[FrameType, Any, None]:
-                yield publish_frame
-                yield content_header
-
-                with body_io as fp:
-                    read_chunk = partial(fp.read, self.max_content_size)
-                    for chunk in iter(read_chunk, b""):
-                        yield ContentBody(chunk)
-
             await countdown(
                 self.write_queue.put(
                     ChannelFrame(
-                        frames=frame_generator(),
+                        frames=(
+                            [publish_frame, content_header] +
+                            self._split_body(body)
+                        ),
                         channel_number=self.number,
                         drain_future=drain_future,
                     ),
