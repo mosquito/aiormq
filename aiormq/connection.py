@@ -561,12 +561,6 @@ class Connection(Base, AbstractConnection):
             await asyncio.sleep(heartbeat_timeout)
             await self.write_queue.put(heartbeat)
 
-    def marshall(self, channel_number, frames: FrameTypes) -> bytes:
-        with BytesIO() as fp:
-            for frame in frames:
-                fp.write(pamqp.frame.marshal(frame, channel_number))
-            return fp.get
-
     async def __writer(self, writer: asyncio.StreamWriter) -> None:
         channel_frame: ChannelFrame
 
