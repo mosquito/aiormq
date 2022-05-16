@@ -44,7 +44,7 @@ def awaitable(
         if hasattr(result, "__await__"):
             return await result     # type: ignore
         if asyncio.iscoroutine(result) or asyncio.isfuture(result):
-            return await result     # type: ignore
+            return await result
 
         return result               # type: ignore
 
@@ -99,13 +99,13 @@ class CountdownContext(AsyncContextManager):
         self.countdown: Countdown = countdown
         self.ctx: AsyncContextManager = ctx
 
-    def __aenter__(self) -> Awaitable[T]:
-        return self.countdown(self.ctx.__aenter__())
+    async def __aenter__(self) -> T:
+        return await self.countdown(self.ctx.__aenter__())
 
-    def __aexit__(
+    async def __aexit__(
         self, exc_type: Optional[Type[BaseException]],
         exc_val: Optional[BaseException], exc_tb: Optional[TracebackType],
-    ) -> Awaitable[Any]:
-        return self.countdown(
+    ) -> Any:
+        return await self.countdown(
             self.ctx.__aexit__(exc_type, exc_val, exc_tb),
         )

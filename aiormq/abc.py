@@ -186,7 +186,7 @@ RpcReturnType = Optional[
 
 class ChannelFrame(NamedTuple):
     channel_number: int
-    frames: Iterable[Union[FrameType, Heartbeat]]
+    frames: Iterable[Union[FrameType, Heartbeat, ContentBody]]
     drain_future: Optional[asyncio.Future] = None
 
 
@@ -235,7 +235,7 @@ class AbstractBase(ABC):
 
     @abstractmethod
     async def close(
-        self, exc: Optional[ExceptionType] = asyncio.CancelledError()
+        self, exc: Optional[ExceptionType] = asyncio.CancelledError(),
     ) -> None:
         raise NotImplementedError
 
@@ -262,7 +262,7 @@ class AbstractChannel(AbstractBase):
     @abstractmethod
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> DeliveredMessage:
         raise NotImplementedError
 
@@ -397,7 +397,7 @@ class AbstractChannel(AbstractBase):
     @abstractmethod
     async def flow(
         self, active: bool,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Channel.FlowOk:
         raise NotImplementedError
 
@@ -409,7 +409,7 @@ class AbstractChannel(AbstractBase):
         routing_key: str = "",
         nowait: bool = False,
         arguments: dict = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.BindOk:
         raise NotImplementedError
 
@@ -435,14 +435,14 @@ class AbstractChannel(AbstractBase):
         if_unused: bool = False,
         if_empty: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeleteOk:
         raise NotImplementedError
 
     @abstractmethod
     async def queue_purge(
         self, queue: str = "", nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.PurgeOk:
         raise NotImplementedError
 
@@ -453,19 +453,19 @@ class AbstractChannel(AbstractBase):
         exchange: str = "",
         routing_key: str = "",
         arguments: dict = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
         raise NotImplementedError
 
     @abstractmethod
     async def tx_commit(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.CommitOk:
         raise NotImplementedError
 
     @abstractmethod
     async def tx_rollback(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.RollbackOk:
         raise NotImplementedError
 
@@ -476,7 +476,7 @@ class AbstractChannel(AbstractBase):
     @abstractmethod
     async def confirm_delivery(
         self, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Confirm.SelectOk:
         raise NotImplementedError
 

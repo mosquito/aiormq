@@ -6,10 +6,9 @@ import sys
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
+from io import BytesIO
 from types import MappingProxyType, TracebackType
-from typing import Any
-from typing import AsyncIterable as AsyncIterableType
-from typing import Dict, Optional, Tuple, Type, Union
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -99,6 +98,15 @@ def parse_int(v: str) -> int:
         return 0
 
 
+def parse_timeout(v: str) -> TimeoutType:
+    try:
+        if "." in v:
+            return float(v)
+        return int(v)
+    except ValueError:
+        return 0
+
+
 def parse_heartbeat(v: str) -> int:
     result = parse_int(v)
     return result if 0 <= result < 65535 else 0
@@ -138,7 +146,7 @@ class FrameReceiver(AsyncIterable):
 
         countdown = Countdown(self.timeout)
 
-        async with self.lock:
+        async with countdown.enter_context(self.lock):
             try:
                 frame_header = await countdown(self.reader.readexactly(1))
 
@@ -183,16 +191,29 @@ class FrameReceiver(AsyncIterable):
         return await self.get_frame()
 
 
+class FrameGenerator(AsyncIterable):
+    def __init__(self, queue: asyncio.Queue):
+        self.queue: asyncio.Queue = queue
+        self.close_event: asyncio.Event = asyncio.Event()
+
+    def __aiter__(self) -> "FrameGenerator":
+        return self
+
+    async def __anext__(self) -> ChannelFrame:
+        if self.close_event.is_set():
+            raise StopAsyncIteration
+
+        frame: ChannelFrame = await self.queue.get()
+        self.queue.task_done()
+        return frame
+
+
 class Connection(Base, AbstractConnection):
     FRAME_BUFFER_SIZE = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
     HEARTBEAT_INTERVAL_MULTIPLIER = 0.5
     # Allow three missed heartbeats (based on heartbeat(timeout)
     HEARTBEAT_GRACE_MULTIPLIER = 3
-    _HEARTBEAT = ChannelFrame(
-        frames=(Heartbeat(),),
-        channel_number=0,
-    )
 
     READER_CLOSE_TIMEOUT = 2
 
@@ -343,7 +364,7 @@ class Connection(Base, AbstractConnection):
     async def _rpc(
         request: Frame, writer: asyncio.StreamWriter,
         frame_receiver: FrameReceiver,
-        wait_response: bool = True
+        wait_response: bool = True,
     ) -> Optional[FrameTypes]:
         writer.write(pamqp.frame.marshal(request, 0))
 
@@ -455,6 +476,10 @@ class Connection(Base, AbstractConnection):
         # noinspection PyAsyncCall
         self._writer_task = self.create_task(self.__writer(writer))
 
+        # Not very optimal, but avoid creating a task for each frame sending
+        # noinspection PyAsyncCall
+        self.create_task(self.__heartbeat())
+
         self.connection_tune = connection_tune
         self.server_properties = server_properties
         return True
@@ -471,8 +496,7 @@ class Connection(Base, AbstractConnection):
         async def close_writer_task() -> None:
             if not self._writer_task.done():
                 self._writer_task.cancel()
-            with suppress(BaseException):
-                await self._writer_task
+                await asyncio.gather(self._writer_task, return_exceptions=True)
             await self.close(task.exception())
 
         self.loop.create_task(close_writer_task())
@@ -524,55 +548,48 @@ class Connection(Base, AbstractConnection):
 
             await ch.frames.put((weight, frame))
 
-    async def __frame_iterator(self) -> AsyncIterableType[ChannelFrame]:
-        while not self.is_closed:
-            try:
-                yield await asyncio.wait_for(
-                    self.write_queue.get(), timeout=self.timeout,
-                )
-                self.write_queue.task_done()
-            except asyncio.TimeoutError:
-                yield self._HEARTBEAT
+    async def __heartbeat(self) -> None:
+        heartbeat_timeout = max(1, self.heartbeat_timeout // 2)
+        heartbeat = ChannelFrame(frames=[Heartbeat()], channel_number=0)
+
+        while not self.closing.done():
+            await asyncio.sleep(heartbeat_timeout)
+            await self.write_queue.put(heartbeat)
 
     async def __writer(self, writer: asyncio.StreamWriter) -> None:
         channel_frame: ChannelFrame
 
         try:
-            async for channel_frame in self.__frame_iterator():
+            frame_iterator = FrameGenerator(self.write_queue)
+            self.closing.add_done_callback(
+                lambda _: frame_iterator.close_event.set(),
+            )
+
+            async for channel_frame in frame_iterator:
                 log.debug("Prepare to send %r", channel_frame)
 
                 frame: FrameTypes
-
-                for frame in channel_frame.frames:
-                    log.debug(
-                        "Sending frame %r in channel #%d on %r",
-                        frame, channel_frame.channel_number, self,
-                    )
-
-                    try:
-                        writer.write(
+                with BytesIO() as fp:
+                    for frame in channel_frame.frames:
+                        fp.write(
                             pamqp.frame.marshal(
                                 frame, channel_frame.channel_number,
                             ),
                         )
-                    except BaseException as e:
-                        log.exception(
-                            "Failed to write frame to channel %d: %r",
-                            channel_frame.channel_number,
-                            frame,
-                        )
-                        raise asyncio.CancelledError from e
 
-                    if isinstance(frame, spec.Connection.CloseOk):
-                        return
+                        if isinstance(frame, spec.Connection.CloseOk):
+                            writer.write(fp.getvalue())
+                            return
 
-                    if (
-                        channel_frame.drain_future is not None and
-                        not channel_frame.drain_future.done()
-                    ):
-                        channel_frame.drain_future.set_result(
-                            await writer.drain(),
-                        )
+                    writer.write(fp.getvalue())
+
+                if (
+                    channel_frame.drain_future is not None and
+                    not channel_frame.drain_future.done()
+                ):
+                    channel_frame.drain_future.set_result(
+                        await writer.drain(),
+                    )
         except asyncio.CancelledError:
             if not self.__check_writer(writer):
                 raise
@@ -587,8 +604,11 @@ class Connection(Base, AbstractConnection):
             writer.write(pamqp.frame.marshal(frame, 0))
             log.debug("Sending %r to %r", frame, self)
 
-            await writer.drain()
-            await self.__close_writer(writer)
+            await asyncio.gather(
+                writer.drain(),
+                self.__close_writer(writer),
+                return_exceptions=True,
+            )
             raise
         finally:
             log.debug("Writer exited for %r", self)
@@ -620,14 +640,17 @@ class Connection(Base, AbstractConnection):
 
     async def _on_close(
         self,
-        ex: Optional[ExceptionType] = ConnectionClosed(0, "normal closed")
+        ex: Optional[ExceptionType] = ConnectionClosed(0, "normal closed"),
     ) -> None:
         log.debug("Closing connection %r cause: %r", self, ex)
-        reader_task = self._reader_task
-        del self._reader_task
+        if not self._reader_task.done():
+            self._reader_task.cancel()
+        if not self._writer_task.done():
+            self._writer_task.cancel()
 
-        if not reader_task.done():
-            reader_task.cancel()
+        await asyncio.gather(
+            self._reader_task, self._writer_task, return_exceptions=True,
+        )
 
     @property
     def server_capabilities(self) -> ArgumentsType:
