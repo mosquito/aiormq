@@ -186,7 +186,7 @@ RpcReturnType = Optional[
 
 class ChannelFrame(NamedTuple):
     channel_number: int
-    frames: Iterable[Union[FrameType, Heartbeat]]
+    frames: Iterable[Union[FrameType, Heartbeat, ContentBody]]
     drain_future: Optional[asyncio.Future] = None
 
 

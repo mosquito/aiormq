@@ -146,7 +146,7 @@ class FrameReceiver(AsyncIterable):
 
         countdown = Countdown(self.timeout)
 
-        async with self.lock:
+        async with countdown.enter_context(self.lock):
             try:
                 frame_header = await countdown(self.reader.readexactly(1))
 
@@ -192,11 +192,6 @@ class FrameReceiver(AsyncIterable):
 
 
 class FrameGenerator(AsyncIterable):
-    _HEARTBEAT = ChannelFrame(
-        frames=(Heartbeat(),),
-        channel_number=0,
-    )
-
     def __init__(self, queue: asyncio.Queue):
         self.queue: asyncio.Queue = queue
         self.close_event: asyncio.Event = asyncio.Event()
@@ -553,7 +548,7 @@ class Connection(Base, AbstractConnection):
 
             await ch.frames.put((weight, frame))
 
-    async def __heartbeat(self):
+    async def __heartbeat(self) -> None:
         heartbeat_timeout = max(1, self.heartbeat_timeout // 2)
         heartbeat = ChannelFrame(frames=[Heartbeat()], channel_number=0)
 

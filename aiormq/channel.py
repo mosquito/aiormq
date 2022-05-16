@@ -1,14 +1,13 @@
 import asyncio
 import io
 import logging
-import math
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from contextlib import suppress
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
 from typing import (
-    Any, AsyncIterable, AsyncIterator, Deque, Dict, List, Mapping, Optional,
+    Any, Dict, List, Mapping, Optional,
     Set, Type, Union,
 )
 from uuid import UUID
@@ -581,7 +580,7 @@ class Channel(Base, AbstractChannel):
 
     async def basic_publish(
         self,
-        body: Union[bytes, AsyncIterable[bytes]],
+        body: bytes,
         *,
         exchange: str = "",
         routing_key: str = "",
@@ -636,13 +635,14 @@ class Channel(Base, AbstractChannel):
                     ),
                 )
 
+            body_frames: List[Union[FrameType, ContentBody]]
+            body_frames = [publish_frame, content_header]
+            body_frames += self._split_body(body)
+
             await countdown(
                 self.write_queue.put(
                     ChannelFrame(
-                        frames=(
-                            [publish_frame, content_header] +
-                            self._split_body(body)
-                        ),
+                        frames=body_frames,
                         channel_number=self.number,
                         drain_future=drain_future,
                     ),
