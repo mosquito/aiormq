@@ -3,6 +3,7 @@ import io
 import logging
 from collections import OrderedDict
 from contextlib import suppress
+from functools import partial
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
@@ -570,13 +571,9 @@ class Channel(Base, AbstractChannel):
         if len(body) < self.max_content_size:
             return [ContentBody(body)]
 
-        result = []
         with io.BytesIO(body) as fp:
-            data = fp.read(self.max_content_size)
-            while data:
-                result.append(ContentBody(data))
-                data = fp.read(self.max_content_size)
-        return result
+            reader = partial(fp.read, self.max_content_size)
+            return list(map(ContentBody, iter(reader, b"")))
 
     async def basic_publish(
         self,
