@@ -7,7 +7,7 @@ from weakref import WeakSet
 
 from .abc import (
     AbstractBase, AbstractFutureStore, CoroutineType, ExceptionType, TaskType,
-    TaskWrapper,
+    TaskWrapper, TimeoutType,
 )
 from .tools import shield
 
@@ -132,11 +132,15 @@ class Base(AbstractBase):
 
     async def close(
         self, exc: Optional[ExceptionType] = asyncio.CancelledError,
+        timeout: TimeoutType = None
     ) -> None:
         if self.is_closed:
             return None
 
-        await self.loop.create_task(self.__closer(exc))
+        await asyncio.wait_for(
+            self.loop.create_task(self.__closer(exc)),
+            timeout=timeout
+        )
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__

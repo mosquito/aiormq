@@ -50,7 +50,7 @@ setup(
     package_data={"aiormq": ["py.typed"]},
     extras_require={
         "develop": [
-            "aiomisc~=11.0",
+            "aiomisc~=16.0",
             "coverage!=4.3",
             "coveralls",
             "pylava",

@@ -69,7 +69,6 @@ ConfirmationType = Union[asyncio.Future, Returning]
 class Channel(Base, AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
-    CLOSE_TIMEOUT = 2
 
     confirmations: Dict[int, ConfirmationType]
 
@@ -123,6 +122,7 @@ class Channel(Base, AbstractChannel):
         self.__close_reply_text: str = ""
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
+        self.__close_event: asyncio.Event = asyncio.Event()
 
     def set_close_reason(
         self, reply_code: int = REPLY_SUCCESS,
@@ -178,20 +178,33 @@ class Channel(Base, AbstractChannel):
                     raise InvalidFrameError(frame)
 
                 return result
-            except (asyncio.CancelledError, asyncio.TimeoutError) as e:
-                if not self.is_closed:
-                    log.warning(
-                        "Closing channel %r because RPC call %s cancelled",
-                        self, frame,
-                    )
-                    self.set_close_reason(
-                        reply_code=504,
-                        reply_text="RPC timeout on frame {!s}".format(frame),
-                    )
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                if self.is_closed:
+                    raise
 
-                    # noinspection PyAsyncCall
-                    self.create_task(self.close())
-                raise e
+                log.warning(
+                    "Closing channel %r because RPC call %s cancelled",
+                    self, frame,
+                )
+
+                self.__close_event.set()
+                self.write_queue.put_nowait(
+                    ChannelFrame(
+                        channel_number=self.number,
+                        frames=[
+                            spec.Channel.Close(
+                                class_id=0,
+                                method_id=0,
+                                reply_code=504,
+                                reply_text=(
+                                    "RPC timeout on frame {!s}".format(frame)
+                                ),
+                            )
+                        ],
+                    ),
+                )
+
+                raise
 
     async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
         frame: spec.Channel.OpenOk = await self.rpc(
@@ -409,6 +422,11 @@ class Channel(Base, AbstractChannel):
                     self.connection.channels.pop(self.number, None)
                     await self._cancel_tasks(exc)
                     return
+                elif isinstance(frame, spec.Channel.CloseOk):
+                    if self.__close_event.is_set():
+                        await self._cancel_tasks(asyncio.TimeoutError())
+                        self.connection.channels.pop(self.number, None)
+                        return
 
                 await self.rpc_frames.put(frame)
             except asyncio.CancelledError:
@@ -420,13 +438,14 @@ class Channel(Base, AbstractChannel):
 
     @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
-        if self.connection.is_opened:
+        if self.connection.is_opened and not self.__close_event.is_set():
             await self.rpc(
                 spec.Channel.Close(
                     reply_code=self.__close_reply_code,
                     class_id=self.__close_class_id,
                     method_id=self.__close_method_id,
                 ),
+                timeout=self.connection.connection_tune.heartbeat or None,
             )
         self.connection.channels.pop(self.number, None)
 
