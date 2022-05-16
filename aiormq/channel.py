@@ -153,6 +153,9 @@ class Channel(Base, AbstractChannel):
         self, frame: Frame, timeout: TimeoutType = None,
     ) -> RpcReturnType:
 
+        if self.__close_event.is_set():
+            raise ChannelInvalidStateError("Channel closed by RPC timeout")
+
         countdown = Countdown(timeout)
         lock = self.lock
 
