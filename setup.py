@@ -19,7 +19,10 @@ setup(
     url="https://github.com/mosquito/aiormq",
     author=module.__author__,
     author_email=module.team_email,
-    install_requires=["yarl"],
+    install_requires=[
+        "pamqp==3.1.0",
+        "yarl",
+    ],
     keywords=["rabbitmq", "asyncio", "amqp", "amqp 0.9.1", "driver", "pamqp"],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -36,7 +39,6 @@ setup(
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3 :: Only",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
@@ -44,11 +46,9 @@ setup(
         "Programming Language :: Python :: Implementation :: PyPy",
         "Programming Language :: Python :: Implementation :: CPython",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.7",
     package_data={"aiormq": ["py.typed"]},
     extras_require={
-        ":python_version<'3.7'": ["pamqp==3.0.1"],
-        ":python_version>='3.7'": ["pamqp==3.1.0"],
         "develop": [
             "aiomisc~=11.0",
             "coverage!=4.3",
