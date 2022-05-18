@@ -59,6 +59,11 @@ def exception_by_code(frame: spec.Channel.Close) -> AMQPError:
     return exception_class(frame.reply_text)
 
 
+def _check_routing_key(key: str) -> None:
+    if len(key) > 255:
+        raise ValueError("Routing key too long (max 255 bytes)")
+
+
 class Returning(asyncio.Future):
     pass
 
@@ -609,6 +614,7 @@ class Channel(Base, AbstractChannel):
         timeout: TimeoutType = None,
         wait: bool = True,
     ) -> Optional[ConfirmationFrameType]:
+        _check_routing_key(routing_key)
         drain_future = self.create_future() if wait else None
         countdown = Countdown(timeout=timeout)
 
@@ -760,6 +766,7 @@ class Channel(Base, AbstractChannel):
         arguments: dict = None,
         timeout: TimeoutType = None
     ) -> spec.Exchange.BindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Exchange.Bind(
                 destination=destination,
@@ -781,6 +788,7 @@ class Channel(Base, AbstractChannel):
         arguments: dict = None,
         timeout: TimeoutType = None
     ) -> spec.Exchange.UnbindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Exchange.Unbind(
                 destination=destination,
@@ -810,6 +818,7 @@ class Channel(Base, AbstractChannel):
         arguments: dict = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.BindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Queue.Bind(
                 queue=queue,
@@ -881,6 +890,7 @@ class Channel(Base, AbstractChannel):
         arguments: dict = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Queue.Unbind(
                 routing_key=routing_key,
