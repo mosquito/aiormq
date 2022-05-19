@@ -221,3 +221,29 @@ async def test_big_message(amqp_channel: aiormq.Channel):
     size = 20 * 1024 * 1024
     message = urandom(size)
     await amqp_channel.basic_publish(message)
+
+
+async def test_routing_key_too_large(amqp_channel: aiormq.Channel):
+    routing_key = "x" * 256
+
+    with pytest.raises(ValueError):
+        await amqp_channel.basic_publish(b"foo bar", routing_key=routing_key)
+
+    exchange = uuid.uuid4().hex
+    await amqp_channel.exchange_declare(exchange, exchange_type="topic")
+
+    with pytest.raises(ValueError):
+        await amqp_channel.exchange_bind(exchange, exchange, routing_key)
+
+    with pytest.raises(ValueError):
+        await amqp_channel.exchange_unbind(exchange, exchange, routing_key)
+
+    queue = await amqp_channel.queue_declare(exclusive=True)
+
+    with pytest.raises(ValueError):
+        await amqp_channel.queue_bind(queue.queue, exchange, routing_key)
+
+    with pytest.raises(ValueError):
+        await amqp_channel.queue_unbind(queue.queue, exchange, routing_key)
+
+    await amqp_channel.exchange_delete(exchange)
