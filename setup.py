@@ -20,7 +20,7 @@ setup(
     author=module.__author__,
     author_email=module.team_email,
     install_requires=[
-        "pamqp==3.1.0",
+        "pamqp==3.2.0",
         "yarl",
     ],
     keywords=["rabbitmq", "asyncio", "amqp", "amqp 0.9.1", "driver", "pamqp"],
