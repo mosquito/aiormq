@@ -662,3 +662,8 @@ RPC client
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
+
+
+Also you can use Carrot RPC (little sugar over aiormq RPC server/client)  
+https://github.com/Sobolev5/carrot-rpc
+
