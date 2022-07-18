@@ -283,6 +283,7 @@ class Connection(Base, AbstractConnection):
 
     async def ready(self) -> None:
         await self.connected.wait()
+        await self.__connection_unblocked.wait()
 
     def set_close_reason(
         self, reply_code: int = REPLY_SUCCESS,
