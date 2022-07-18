@@ -563,6 +563,13 @@ class AbstractConnection(AbstractBase):
     async def ready(self) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    async def update_secret(
+        self, new_secret: str, *,
+        reason: str = '', timeout: TimeoutType = None,
+    ) -> spec.Connection.UpdateSecretOk:
+        raise NotImplementedError
+
 
 __all__ = (
     "AbstractBase", "AbstractChannel", "AbstractConnection",

@@ -277,6 +277,8 @@ class Connection(Base, AbstractConnection):
         self.__close_reply_text: str = "normally closed"
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
+        self.__update_secret_lock: asyncio.Lock = asyncio.Lock()
+        self.__update_secret_future: Optional[asyncio.Future] = None
 
     async def ready(self) -> None:
         await self.connected.wait()
@@ -532,6 +534,15 @@ class Connection(Base, AbstractConnection):
                     continue
                 elif isinstance(frame, spec.Channel.CloseOk):
                     self.channels.pop(channel, None)
+                elif isinstance(frame, spec.Connection.UpdateSecretOk):
+                    if (
+                        self.__update_secret_future is not None and
+                        not self.__update_secret_future.done()
+                    ):
+                        self.__update_secret_future.set_result(frame)
+                    else:
+                        log.warning("Got unexpected UpdateSecretOk frame")
+                    continue
 
                 log.error("Unexpected frame %r", frame)
                 continue
@@ -730,6 +741,32 @@ class Connection(Base, AbstractConnection):
             raise
 
         return channel
+
+    async def update_secret(
+        self, new_secret: str, *,
+        reason: str = '', timeout: TimeoutType = None,
+    ) -> spec.Connection.UpdateSecretOk:
+        channel_frame = ChannelFrame(
+            channel_number=0,
+            frames=[
+                spec.Connection.UpdateSecret(
+                    new_secret=new_secret, reason=reason
+                )
+            ]
+        )
+
+        async with self.__update_secret_lock:
+            self.__update_secret_future = self.loop.create_future()
+            await self.write_queue.put(channel_frame)
+            try:
+                response: spec.Connection.UpdateSecretOk = (
+                    await asyncio.wait_for(
+                        self.__update_secret_future, timeout=timeout
+                    )
+                )
+            finally:
+                self.__update_secret_future = None
+        return response
 
     async def __aenter__(self) -> AbstractConnection:
         if not self.is_opened:
