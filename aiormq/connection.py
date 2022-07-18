@@ -589,7 +589,7 @@ class Connection(Base, AbstractConnection):
                 lambda _: frame_iterator.close_event.set(),
             )
 
-            if not self.__connection_unblocked.set():
+            if not self.__connection_unblocked.is_set():
                 await self.__connection_unblocked.wait()
 
             async for channel_frame in frame_iterator:
