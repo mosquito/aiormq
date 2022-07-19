@@ -277,9 +277,13 @@ class Connection(Base, AbstractConnection):
         self.__close_reply_text: str = "normally closed"
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
+        self.__update_secret_lock: asyncio.Lock = asyncio.Lock()
+        self.__update_secret_future: Optional[asyncio.Future] = None
+        self.__connection_unblocked: asyncio.Event = asyncio.Event()
 
     async def ready(self) -> None:
         await self.connected.wait()
+        await self.__connection_unblocked.wait()
 
     def set_close_reason(
         self, reply_code: int = REPLY_SUCCESS,
@@ -334,7 +338,7 @@ class Connection(Base, AbstractConnection):
             "capabilities": {
                 "authentication_failure_close": True,
                 "basic.nack": True,
-                "connection.blocked": False,
+                "connection.blocked": True,
                 "consumer_cancel_notify": True,
                 "publisher_confirms": True,
             },
@@ -482,6 +486,7 @@ class Connection(Base, AbstractConnection):
 
         self.connection_tune = connection_tune
         self.server_properties = server_properties
+        self.__connection_unblocked.set()
         return True
 
     def _on_reader_done(self, task: asyncio.Task) -> None:
@@ -527,11 +532,39 @@ class Connection(Base, AbstractConnection):
                             frames=[spec.Connection.CloseOk()],
                         ),
                     )
-                    raise exception_by_code(frame)
+
+                    exception = exception_by_code(frame)
+
+                    if (
+                        self.__update_secret_future is not None and
+                        not self.__update_secret_future.done()
+                    ):
+                        self.__update_secret_future.set_exception(exception)
+
+                    raise exception
                 elif isinstance(frame, Heartbeat):
                     continue
                 elif isinstance(frame, spec.Channel.CloseOk):
                     self.channels.pop(channel, None)
+                elif isinstance(frame, spec.Connection.UpdateSecretOk):
+                    if (
+                        self.__update_secret_future is not None and
+                        not self.__update_secret_future.done()
+                    ):
+                        self.__update_secret_future.set_result(frame)
+                    else:
+                        log.warning("Got unexpected UpdateSecretOk frame")
+                    continue
+                elif isinstance(frame, spec.Connection.Blocked):
+                    log.warning(
+                        "Connection %r was blocked by: %r", self, frame.reason
+                    )
+                    self.__connection_unblocked.clear()
+                    continue
+                elif isinstance(frame, spec.Connection.Unblocked):
+                    log.warning("Connection %r was unblocked", self)
+                    self.__connection_unblocked.set()
+                    continue
 
                 log.error("Unexpected frame %r", frame)
                 continue
@@ -564,6 +597,9 @@ class Connection(Base, AbstractConnection):
             self.closing.add_done_callback(
                 lambda _: frame_iterator.close_event.set(),
             )
+
+            if not self.__connection_unblocked.is_set():
+                await self.__connection_unblocked.wait()
 
             async for channel_frame in frame_iterator:
                 log.debug("Prepare to send %r", channel_frame)
@@ -730,6 +766,32 @@ class Connection(Base, AbstractConnection):
             raise
 
         return channel
+
+    async def update_secret(
+        self, new_secret: str, *,
+        reason: str = '', timeout: TimeoutType = None,
+    ) -> spec.Connection.UpdateSecretOk:
+        channel_frame = ChannelFrame(
+            channel_number=0,
+            frames=[
+                spec.Connection.UpdateSecret(
+                    new_secret=new_secret, reason=reason
+                )
+            ]
+        )
+
+        async with self.__update_secret_lock:
+            self.__update_secret_future = self.loop.create_future()
+            await self.write_queue.put(channel_frame)
+            try:
+                response: spec.Connection.UpdateSecretOk = (
+                    await asyncio.wait_for(
+                        self.__update_secret_future, timeout=timeout
+                    )
+                )
+            finally:
+                self.__update_secret_future = None
+        return response
 
     async def __aenter__(self) -> AbstractConnection:
         if not self.is_opened:

@@ -377,3 +377,10 @@ async def test_ssl_context():
 @pytest.mark.parametrize("url,vhost", URL_VHOSTS)
 async def test_connection_urls_vhosts(url, vhost, loop):
     assert aiormq.Connection(url, loop=loop).vhost == vhost
+
+
+async def test_update_secret(amqp_connection, amqp_url: URL):
+    respone = await amqp_connection.update_secret(
+        amqp_url.password, timeout=1
+    )
+    assert isinstance(respone, aiormq.spec.Connection.UpdateSecretOk)
