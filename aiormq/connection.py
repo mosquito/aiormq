@@ -532,7 +532,16 @@ class Connection(Base, AbstractConnection):
                             frames=[spec.Connection.CloseOk()],
                         ),
                     )
-                    raise exception_by_code(frame)
+
+                    exception = exception_by_code(frame)
+
+                    if (
+                        self.__update_secret_future is not None and
+                        not self.__update_secret_future.done()
+                    ):
+                        self.__update_secret_future.set_exception(exception)
+
+                    raise exception
                 elif isinstance(frame, Heartbeat):
                     continue
                 elif isinstance(frame, spec.Channel.CloseOk):
