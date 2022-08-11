@@ -623,9 +623,8 @@ class Connection(Base, AbstractConnection):
                     channel_frame.drain_future is not None and
                     not channel_frame.drain_future.done()
                 ):
-                    channel_frame.drain_future.set_result(
-                        await writer.drain(),
-                    )
+                    await writer.drain()
+                    channel_frame.drain_future.set_result(None)
         except asyncio.CancelledError:
             if not self.__check_writer(writer):
                 raise
