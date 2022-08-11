@@ -132,14 +132,14 @@ class Base(AbstractBase):
 
     async def close(
         self, exc: Optional[ExceptionType] = asyncio.CancelledError,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> None:
         if self.is_closed:
             return None
 
         await asyncio.wait_for(
             self.loop.create_task(self.__closer(exc)),
-            timeout=timeout
+            timeout=timeout,
         )
 
     def __repr__(self) -> str:

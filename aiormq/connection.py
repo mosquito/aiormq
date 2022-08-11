@@ -557,7 +557,7 @@ class Connection(Base, AbstractConnection):
                     continue
                 elif isinstance(frame, spec.Connection.Blocked):
                     log.warning(
-                        "Connection %r was blocked by: %r", self, frame.reason
+                        "Connection %r was blocked by: %r", self, frame.reason,
                     )
                     self.__connection_unblocked.clear()
                     continue
@@ -768,15 +768,15 @@ class Connection(Base, AbstractConnection):
 
     async def update_secret(
         self, new_secret: str, *,
-        reason: str = '', timeout: TimeoutType = None,
+        reason: str = "", timeout: TimeoutType = None,
     ) -> spec.Connection.UpdateSecretOk:
         channel_frame = ChannelFrame(
             channel_number=0,
             frames=[
                 spec.Connection.UpdateSecret(
-                    new_secret=new_secret, reason=reason
-                )
-            ]
+                    new_secret=new_secret, reason=reason,
+                ),
+            ],
         )
 
         async with self.__update_secret_lock:
@@ -785,7 +785,7 @@ class Connection(Base, AbstractConnection):
             try:
                 response: spec.Connection.UpdateSecretOk = (
                     await asyncio.wait_for(
-                        self.__update_secret_future, timeout=timeout
+                        self.__update_secret_future, timeout=timeout,
                     )
                 )
             finally:
