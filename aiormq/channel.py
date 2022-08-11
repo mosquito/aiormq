@@ -7,10 +7,7 @@ from functools import partial
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
-from typing import (
-    Any, Dict, List, Mapping, Optional,
-    Set, Type, Union,
-)
+from typing import Any, Dict, List, Mapping, Optional, Set, Type, Union
 from uuid import UUID
 
 import pamqp.frame
@@ -207,7 +204,7 @@ class Channel(Base, AbstractChannel):
                                 reply_text=(
                                     "RPC timeout on frame {!s}".format(frame)
                                 ),
-                            )
+                            ),
                         ],
                     ),
                 )
@@ -683,7 +680,7 @@ class Channel(Base, AbstractChannel):
             if confirmation is None:
                 return None
 
-            return await countdown(confirmation)
+        return await countdown(confirmation)
 
     async def basic_qos(
         self,

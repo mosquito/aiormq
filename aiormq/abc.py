@@ -566,7 +566,7 @@ class AbstractConnection(AbstractBase):
     @abstractmethod
     async def update_secret(
         self, new_secret: str, *,
-        reason: str = '', timeout: TimeoutType = None,
+        reason: str = "", timeout: TimeoutType = None,
     ) -> spec.Connection.UpdateSecretOk:
         raise NotImplementedError
 
