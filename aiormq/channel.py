@@ -683,7 +683,7 @@ class Channel(Base, AbstractChannel):
             if confirmation is None:
                 return None
 
-            return await countdown(confirmation)
+        return await countdown(confirmation)
 
     async def basic_qos(
         self,
