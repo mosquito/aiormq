@@ -37,6 +37,7 @@ Status
 
 * 3.x.x branch - Production/Stable
 * 4.x.x branch - Unstable (Experimental)
+* 5.x.x and greater is only Production/Stable releases.
 
 Features
 ========
