@@ -101,7 +101,7 @@ class Base(AbstractBase):
         return future
 
     def _cancel_tasks(
-        self, exc: ExceptionType = None,
+        self, exc: Optional[ExceptionType] = None,
     ) -> Coroutine[Any, Any, None]:
         return self.__future_store.reject_all(exc)
 

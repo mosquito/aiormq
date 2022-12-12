@@ -130,9 +130,7 @@ CallbackCoro = Coroutine[Any, Any, Any]
 ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[DeliveredMessage], Any]
 
-ArgumentsType = Dict[
-    str, Union[str, int, bool, Dict[str, Union[str, int, bool]]],
-]
+ArgumentsType = FieldTable
 
 ConfirmationFrameType = Union[
     Basic.Ack, Basic.Nack, Basic.Reject,
@@ -281,8 +279,8 @@ class AbstractChannel(AbstractBase):
         *,
         no_ack: bool = False,
         exclusive: bool = False,
-        arguments: ArgumentsType = None,
-        consumer_tag: str = None,
+        arguments: Optional[ArgumentsType] = None,
+        consumer_tag: Optional[str] = None,
         timeout: TimeoutType = None
     ) -> spec.Basic.ConsumeOk:
         raise NotImplementedError
@@ -316,7 +314,7 @@ class AbstractChannel(AbstractBase):
         *,
         exchange: str = "",
         routing_key: str = "",
-        properties: spec.Basic.Properties = None,
+        properties: Optional[spec.Basic.Properties] = None,
         mandatory: bool = False,
         immediate: bool = False,
         timeout: TimeoutType = None
@@ -327,8 +325,8 @@ class AbstractChannel(AbstractBase):
     async def basic_qos(
         self,
         *,
-        prefetch_size: int = None,
-        prefetch_count: int = None,
+        prefetch_size: Optional[int] = None,
+        prefetch_count: Optional[int] = None,
         global_: bool = False,
         timeout: TimeoutType = None
     ) -> spec.Basic.QosOk:
@@ -352,7 +350,7 @@ class AbstractChannel(AbstractBase):
         auto_delete: bool = False,
         internal: bool = False,
         nowait: bool = False,
-        arguments: Optional[Dict[str, Any]] = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None
     ) -> spec.Exchange.DeclareOk:
         raise NotImplementedError
@@ -376,7 +374,7 @@ class AbstractChannel(AbstractBase):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None
     ) -> spec.Exchange.BindOk:
         raise NotImplementedError
@@ -389,7 +387,7 @@ class AbstractChannel(AbstractBase):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None
     ) -> spec.Exchange.UnbindOk:
         raise NotImplementedError
@@ -408,7 +406,7 @@ class AbstractChannel(AbstractBase):
         exchange: str,
         routing_key: str = "",
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.BindOk:
         raise NotImplementedError
@@ -423,7 +421,7 @@ class AbstractChannel(AbstractBase):
         exclusive: bool = False,
         auto_delete: bool = False,
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None
     ) -> spec.Queue.DeclareOk:
         raise NotImplementedError
@@ -452,7 +450,7 @@ class AbstractChannel(AbstractBase):
         queue: str = "",
         exchange: str = "",
         routing_key: str = "",
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
         raise NotImplementedError
@@ -513,7 +511,9 @@ class AbstractConnection(AbstractBase):
         raise NotImplementedError
 
     @abstractmethod
-    async def connect(self, client_properties: Dict[str, Any] = None) -> bool:
+    async def connect(
+        self, client_properties: Optional[FieldTable] = None
+    ) -> bool:
         raise NotImplementedError
 
     @abstractproperty
@@ -538,7 +538,7 @@ class AbstractConnection(AbstractBase):
 
     async def channel(
         self,
-        channel_number: int = None,
+        channel_number: Optional[int] = None,
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,

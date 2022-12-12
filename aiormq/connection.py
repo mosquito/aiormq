@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 import pamqp.frame
 from pamqp import commands as spec
 from pamqp.base import Frame
+from pamqp.common import FieldTable
 from pamqp.constants import REPLY_SUCCESS
 from pamqp.exceptions import AMQPFrameError, AMQPInternalError, AMQPSyntaxError
 from pamqp.frame import FrameTypes
@@ -219,8 +220,8 @@ class Connection(Base, AbstractConnection):
         self,
         url: URLorStr,
         *,
-        loop: asyncio.AbstractEventLoop = None,
-        context: ssl.SSLContext = None
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+        context: Optional[ssl.SSLContext] = None
     ):
 
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
@@ -270,7 +271,7 @@ class Connection(Base, AbstractConnection):
         self.__heartbeat_grace_timeout = (
             (self.timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
         )
-        self.__last_frame_time: int = self.loop.time()
+        self.__last_frame_time: float = self.loop.time()
 
     async def ready(self) -> None:
         await self.connected.wait()
@@ -379,7 +380,9 @@ class Connection(Base, AbstractConnection):
         return frame
 
     @task
-    async def connect(self, client_properties: dict = None) -> bool:
+    async def connect(
+        self, client_properties: Optional[FieldTable] = None
+    ) -> bool:
         if self.is_opened:
             raise RuntimeError("Connection already opened")
 
@@ -552,7 +555,8 @@ class Connection(Base, AbstractConnection):
                         continue
                     elif isinstance(frame, spec.Connection.Blocked):
                         log.warning(
-                            "Connection %r was blocked by: %r", self, frame.reason,
+                            "Connection %r was blocked by: %r",
+                            self, frame.reason,
                         )
                         self.__connection_unblocked.clear()
                         continue
@@ -723,7 +727,7 @@ class Connection(Base, AbstractConnection):
 
     async def channel(
         self,
-        channel_number: int = None,
+        channel_number: Optional[int] = None,
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,
@@ -818,7 +822,7 @@ class Connection(Base, AbstractConnection):
 
 
 async def connect(
-    url: URLorStr, *args: Any, client_properties: Dict[str, Any] = None,
+    url: URLorStr, *args: Any, client_properties: Optional[FieldTable] = None,
     **kwargs: Any
 ) -> AbstractConnection:
     connection = Connection(url, *args, **kwargs)
