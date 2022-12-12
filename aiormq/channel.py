@@ -15,6 +15,7 @@ from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
 from pamqp.constants import REPLY_SUCCESS
+from pamqp.exceptions import AMQPFrameError
 from pamqp.header import ContentHeader
 
 from aiormq.tools import Countdown, awaitable
@@ -220,7 +221,7 @@ class Channel(Base, AbstractChannel):
             await self.rpc(spec.Confirm.Select())
 
         if frame is None:  # pragma: no cover
-            raise spec.AMQPFrameError(frame)
+            raise AMQPFrameError(frame)
         return frame
 
     async def __get_content_frame(self) -> ContentBody:
