@@ -381,7 +381,7 @@ class Connection(Base, AbstractConnection):
 
     @task
     async def connect(
-        self, client_properties: Optional[FieldTable] = None
+        self, client_properties: Optional[FieldTable] = None,
     ) -> bool:
         if self.is_opened:
             raise RuntimeError("Connection already opened")

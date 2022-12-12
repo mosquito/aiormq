@@ -512,7 +512,7 @@ class AbstractConnection(AbstractBase):
 
     @abstractmethod
     async def connect(
-        self, client_properties: Optional[FieldTable] = None
+        self, client_properties: Optional[FieldTable] = None,
     ) -> bool:
         raise NotImplementedError
 
