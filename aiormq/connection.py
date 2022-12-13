@@ -502,7 +502,11 @@ class Connection(Base, AbstractConnection):
             if not self._writer_task.done():
                 self._writer_task.cancel()
                 await asyncio.gather(self._writer_task, return_exceptions=True)
-            await self.close(task.exception())
+            try:
+                exc = task.exception()
+            except asyncio.CancelledError as e:
+                exc = e
+            await self.close(exc)
 
         self.loop.create_task(close_writer_task())
 
