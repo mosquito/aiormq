@@ -15,6 +15,7 @@ from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
 from pamqp.constants import REPLY_SUCCESS
+from pamqp.exceptions import AMQPFrameError
 from pamqp.header import ContentHeader
 
 from aiormq.tools import Countdown, awaitable
@@ -220,7 +221,7 @@ class Channel(Base, AbstractChannel):
             await self.rpc(spec.Confirm.Select())
 
         if frame is None:  # pragma: no cover
-            raise spec.AMQPFrameError(frame)
+            raise AMQPFrameError(frame)
         return frame
 
     async def __get_content_frame(self) -> ContentBody:
@@ -492,8 +493,8 @@ class Channel(Base, AbstractChannel):
         *,
         no_ack: bool = False,
         exclusive: bool = False,
-        arguments: ArgumentsType = None,
-        consumer_tag: str = None,
+        arguments: Optional[ArgumentsType] = None,
+        consumer_tag: Optional[str] = None,
         timeout: TimeoutType = None
     ) -> spec.Basic.ConsumeOk:
 
@@ -605,7 +606,7 @@ class Channel(Base, AbstractChannel):
         *,
         exchange: str = "",
         routing_key: str = "",
-        properties: spec.Basic.Properties = None,
+        properties: Optional[spec.Basic.Properties] = None,
         mandatory: bool = False,
         immediate: bool = False,
         timeout: TimeoutType = None,
@@ -685,8 +686,8 @@ class Channel(Base, AbstractChannel):
     async def basic_qos(
         self,
         *,
-        prefetch_size: int = None,
-        prefetch_count: int = None,
+        prefetch_size: Optional[int] = None,
+        prefetch_count: Optional[int] = None,
         global_: bool = False,
         timeout: TimeoutType = None
     ) -> spec.Basic.QosOk:
@@ -760,7 +761,7 @@ class Channel(Base, AbstractChannel):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None
     ) -> spec.Exchange.BindOk:
         _check_routing_key(routing_key)
@@ -782,7 +783,7 @@ class Channel(Base, AbstractChannel):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None
     ) -> spec.Exchange.UnbindOk:
         _check_routing_key(routing_key)
@@ -812,7 +813,7 @@ class Channel(Base, AbstractChannel):
         exchange: str,
         routing_key: str = "",
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.BindOk:
         _check_routing_key(routing_key)
@@ -836,7 +837,7 @@ class Channel(Base, AbstractChannel):
         exclusive: bool = False,
         auto_delete: bool = False,
         nowait: bool = False,
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None
     ) -> spec.Queue.DeclareOk:
         return await self.rpc(
@@ -884,7 +885,7 @@ class Channel(Base, AbstractChannel):
         queue: str = "",
         exchange: str = "",
         routing_key: str = "",
-        arguments: dict = None,
+        arguments: Optional[ArgumentsType] = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
         _check_routing_key(routing_key)
