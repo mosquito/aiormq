@@ -82,11 +82,11 @@ class Countdown:
 
         return self.deadline - current
 
-    def __call__(self, coro: Awaitable[T]) -> Awaitable[T]:
+    async def __call__(self, coro: Awaitable[T]) -> T:
         timeout = self.get_timeout()
         if self.deadline is None and not timeout:
-            return coro
-        return asyncio.wait_for(coro, timeout=timeout)
+            return await coro
+        return await asyncio.wait_for(coro, timeout=timeout)
 
     def enter_context(
         self, ctx: AsyncContextManager[T],
