@@ -83,7 +83,14 @@ class Countdown:
         return self.deadline - current
 
     async def __call__(self, coro: Awaitable[T]) -> T:
-        timeout = self.get_timeout()
+        try:
+            timeout = self.get_timeout()
+        except asyncio.TimeoutError:
+            fut = asyncio.ensure_future(coro)
+            fut.cancel()
+            await asyncio.gather(fut, return_exceptions=True)
+            raise
+
         if self.deadline is None and not timeout:
             return await coro
         return await asyncio.wait_for(coro, timeout=timeout)
