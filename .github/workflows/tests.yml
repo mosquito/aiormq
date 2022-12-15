@@ -24,6 +24,7 @@ jobs:
           path: .venv
           key: venv-${{ runner.os }}-${{ github.job }}
       - run: python -m pip install poetry
+      - run: poetry config virtualenvs.in-project true
       - run: poetry install
       - run: poetry run pylama
         env:
@@ -43,6 +44,7 @@ jobs:
           path: .venv
           key: venv-${{ runner.os }}-${{ github.job }}
       - run: python -m pip install poetry
+      - run: poetry config virtualenvs.in-project true
       - run: poetry install
       - run: poetry run mypy
         env:
@@ -68,6 +70,7 @@ jobs:
           path: .venv
           key: venv-${{ runner.os }}-${{ github.job }}
       - run: python -m pip install poetry
+      - run: poetry config virtualenvs.in-project true
       - run: poetry install
       - run: poetry run pytest -svv README.rst
         env:
@@ -106,6 +109,7 @@ jobs:
           path: .venv
           key: venv-${{ runner.os }}-${{ github.job }}-${{ matrix.python }}
       - run: python -m pip install poetry
+      - run: poetry config virtualenvs.in-project true
       - run: poetry install --with=uvloop
       - name: pytest
         run: >-
