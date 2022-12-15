@@ -1,4 +1,4 @@
-all: clean sdist test
+all: clean test
 
 NAME:=$(shell poetry version -n | awk '{print $1}')
 VERSION:=$(shell poetry version -s)
@@ -15,11 +15,8 @@ rabbitmq:
 		-p 15672:15672 \
 		$(RABBITMQ_IMAGE)
 
-sdist:
-	poetry build -f sdist
-
-upload: sdist
-	poetry publish
+upload:
+	poetry publish --build --skip-existing
 
 test:
 	poetry run pytest -vvx --cov=aiormq \
