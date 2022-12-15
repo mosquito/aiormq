@@ -6,10 +6,9 @@ import tracemalloc
 
 import pamqp
 import pytest
-from async_generator import async_generator, yield_
+from aiomisc_pytest.pytest_plugin import TCPProxy
 from yarl import URL
 
-import aiormq
 from aiormq import Connection
 
 
@@ -51,31 +50,24 @@ async def amqp_url(request):
 
 
 @pytest.fixture
-@async_generator
 async def amqp_connection(amqp_url, loop):
     connection = Connection(amqp_url, loop=loop)
-
-    await connection.connect()
-
-    try:
-        await yield_(connection)
-    finally:
-        await connection.close()
+    async with connection:
+        yield connection
 
 
 channel_params = [
-    dict(channel_number=None, frame_buffer=10, publisher_confirms=True),
-    dict(channel_number=None, frame_buffer=1, publisher_confirms=True),
-    dict(channel_number=None, frame_buffer=10, publisher_confirms=False),
-    dict(channel_number=None, frame_buffer=1, publisher_confirms=False),
+    dict(channel_number=None, frame_buffer_size=10, publisher_confirms=True),
+    dict(channel_number=None, frame_buffer_size=1, publisher_confirms=True),
+    dict(channel_number=None, frame_buffer_size=10, publisher_confirms=False),
+    dict(channel_number=None, frame_buffer_size=1, publisher_confirms=False),
 ]
 
 
 @pytest.fixture(params=channel_params)
-@async_generator
 async def amqp_channel(request, amqp_connection):
     try:
-        await yield_(await amqp_connection.channel(**request.param))
+        yield await amqp_connection.channel(**request.param)
     finally:
         await amqp_connection.close()
 
@@ -91,7 +83,6 @@ def memory_tracer():
     tracemalloc.clear_traces()
 
     filters = (
-        tracemalloc.Filter(True, aiormq.__file__),
         tracemalloc.Filter(True, pamqp.__file__),
         tracemalloc.Filter(True, asyncio.__file__),
     )
@@ -130,3 +121,27 @@ def memory_tracer():
             raise AssertionError("Possible memory leak")
     finally:
         tracemalloc.stop()
+
+
+@pytest.fixture()
+async def proxy(tcp_proxy, localhost, amqp_url: URL):
+    port = amqp_url.port or 5672 if amqp_url.scheme == "amqp" else 5671
+    async with tcp_proxy(amqp_url.host, port) as proxy:
+        yield proxy
+
+
+@pytest.fixture
+async def proxy_connection(proxy: TCPProxy, amqp_url: URL, loop):
+    url = amqp_url.with_host(
+        "localhost",
+    ).with_port(
+        proxy.proxy_port,
+    )
+    connection = Connection(url, loop=loop)
+
+    await connection.connect()
+
+    try:
+        yield connection
+    finally:
+        await connection.close()

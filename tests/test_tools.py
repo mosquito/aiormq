@@ -2,40 +2,7 @@ import asyncio
 
 import pytest
 
-from aiormq.tools import LazyCoroutine, awaitable
-
-
-class TestLazyCoroutine:
-    async def test_coro(self, loop):
-        async def foo():
-            await asyncio.sleep(0)
-            return 42
-
-        bar = LazyCoroutine(foo)
-
-        assert await bar == 42
-
-    async def test_future(self, loop):
-        def foo():
-            f = loop.create_future()
-            loop.call_soon(f.set_result, 42)
-            return f
-
-        bar = LazyCoroutine(foo)
-
-        assert await bar == 42
-
-    async def test_task(self, loop):
-        def foo():
-            async def inner():
-                await asyncio.sleep(0)
-                return 42
-
-            return loop.create_task(inner())
-
-        bar = LazyCoroutine(foo)
-
-        assert await bar == 42
+from aiormq.tools import awaitable, Countdown
 
 
 def simple_func():
@@ -79,3 +46,18 @@ AWAITABLE_FUNCS = [
 @pytest.mark.parametrize("func,result", AWAITABLE_FUNCS)
 async def test_awaitable(func, result, loop):
     assert await awaitable(func)() == result
+
+
+async def test_countdown(loop):
+    countdown = Countdown(timeout=0.1)
+    await countdown(asyncio.sleep(0))
+
+    # waiting for the countdown exceeded
+    await asyncio.sleep(0.2)
+
+    task = asyncio.create_task(asyncio.sleep(0))
+
+    with pytest.raises(asyncio.TimeoutError):
+        await countdown(task)
+
+    assert task.cancelled()

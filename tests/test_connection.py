@@ -1,23 +1,25 @@
 import asyncio
 import os
+import ssl
 import uuid
 from binascii import hexlify
+from typing import Optional
 
 import pytest
+from pamqp.commands import Basic
+from yarl import URL
 
 import aiormq
-from aiormq.auth import AuthBase, PlainAuth
+from aiormq.abc import DeliveredMessage
+from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
 
-from .conftest import AMQP_URL, skip_when_quick_test
+from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
 
 CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
 
 
 async def test_simple(amqp_connection: aiormq.Connection):
-    assert amqp_connection.reader is not None
-    assert amqp_connection.writer is not None
-
     channel1 = await amqp_connection.channel()
     await channel1.basic_qos(prefetch_count=1)
 
@@ -37,7 +39,7 @@ async def test_simple(amqp_connection: aiormq.Connection):
     consume_ok = await channel.basic_consume(deaclare_ok.queue, queue.put)
     await channel.basic_publish(b"foo", routing_key=deaclare_ok.queue)
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == b"foo"
 
     with pytest.raises(aiormq.exceptions.PublishError) as e:
@@ -69,15 +71,13 @@ async def test_simple(amqp_connection: aiormq.Connection):
     with pytest.raises(RuntimeError):
         await amqp_connection.channel()
 
-    assert amqp_connection.reader is None
-    assert amqp_connection.writer is None
-
 
 async def test_channel_reuse(amqp_connection: aiormq.Connection):
     for _ in range(10):
         channel = await amqp_connection.channel(channel_number=1)
         await channel.basic_qos(prefetch_count=1)
         await channel.close()
+        del channel
 
 
 async def test_channel_closed_reuse(amqp_connection: aiormq.Connection):
@@ -150,8 +150,8 @@ async def test_auth_plain(amqp_connection, loop):
 
     assert auth == PlainAuth(amqp_connection).marshal()
 
-    auth_parts = auth.split(b"\x00")
-    assert auth_parts == [b"", b"guest", b"guest"]
+    auth_parts = auth.split("\x00")
+    assert auth_parts == ["", "guest", "guest"]
 
     connection = aiormq.Connection(
         amqp_connection.url.with_user("foo").with_password("bar"),
@@ -160,13 +160,28 @@ async def test_auth_plain(amqp_connection, loop):
 
     auth = PlainAuth(connection).marshal()
 
-    auth_parts = auth.split(b"\x00")
-    assert auth_parts == [b"", b"foo", b"bar"]
+    auth_parts = auth.split("\x00")
+    assert auth_parts == ["", "foo", "bar"]
 
     auth = PlainAuth(connection)
-    auth.value = b"boo"
+    auth.value = "boo"
 
-    assert auth.marshal() == b"boo"
+    assert auth.marshal() == "boo"
+
+
+async def test_auth_external(loop):
+
+    url = AMQP_URL.with_scheme("amqps")
+    url.update_query(auth="external")
+
+    connection = aiormq.Connection
+
+    auth = ExternalAuth(connection).marshal()
+
+    auth = ExternalAuth(connection)
+    auth.value = ""
+
+    assert auth.marshal() == ""
 
 
 async def test_channel_closed(amqp_connection):
@@ -187,13 +202,63 @@ async def test_channel_closed(amqp_connection):
     await amqp_connection.close()
 
 
-async def test_bad_credentials(amqp_connection, loop):
-    connection = aiormq.Connection(
-        amqp_connection.url.with_password(uuid.uuid4().hex), loop=loop,
-    )
+async def test_timeout_default(loop):
+    connection = aiormq.Connection(AMQP_URL, loop=loop)
+    await connection.connect()
+    assert connection.timeout == 60
+    await connection.close()
 
+
+async def test_timeout_1000(loop):
+    url = AMQP_URL.update_query(timeout=1000)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.timeout
+    await connection.close()
+
+
+async def test_heartbeat_0(loop):
+    url = AMQP_URL.update_query(heartbeat=0)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
+async def test_heartbeat_default(loop):
+    connection = aiormq.Connection(AMQP_URL, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 60
+    await connection.close()
+
+
+async def test_heartbeat_above_range(loop):
+    url = AMQP_URL.update_query(heartbeat=70000)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
+async def test_heartbeat_under_range(loop):
+    url = AMQP_URL.update_query(heartbeat=-1)
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
+async def test_heartbeat_not_int(loop):
+    url = AMQP_URL.update_query(heartbeat="None")
+    connection = aiormq.Connection(url, loop=loop)
+    await connection.connect()
+    assert connection.connection_tune.heartbeat == 0
+    await connection.close()
+
+
+async def test_bad_credentials(amqp_url: URL):
     with pytest.raises(aiormq.exceptions.ProbableAuthenticationError):
-        await connection.connect()
+        await aiormq.connect(amqp_url.with_password(uuid.uuid4().hex))
 
 
 async def test_non_publisher_confirms(amqp_connection):
@@ -208,13 +273,13 @@ async def test_non_publisher_confirms(amqp_connection):
 @skip_when_quick_test
 async def test_no_free_channels(amqp_connection: aiormq.Connection):
     await asyncio.wait_for(
-        asyncio.wait(
-            [
+        asyncio.gather(
+            *[
                 amqp_connection.channel(n + 1)
                 for n in range(amqp_connection.connection_tune.channel_max)
             ],
         ),
-        timeout=60,
+        timeout=120,
     )
 
     with pytest.raises(aiormq.exceptions.ConnectionNotAllowed):
@@ -222,9 +287,9 @@ async def test_no_free_channels(amqp_connection: aiormq.Connection):
 
 
 async def test_huge_message(amqp_connection: aiormq.Connection):
-    conn = amqp_connection  # type: aiormq.Connection
+    conn: aiormq.Connection = amqp_connection
     body = os.urandom(int(conn.connection_tune.frame_max * 2.5))
-    channel = await conn.channel()  # type: aiormq.Channel
+    channel: aiormq.Channel = await conn.channel()
 
     queue = asyncio.Queue()
 
@@ -232,30 +297,32 @@ async def test_huge_message(amqp_connection: aiormq.Connection):
     await channel.basic_consume(deaclare_ok.queue, queue.put)
     await channel.basic_publish(body, routing_key=deaclare_ok.queue)
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == body
 
 
 async def test_return_message(amqp_connection: aiormq.Connection):
-    conn = amqp_connection  # type: aiormq.Connection
+    conn: aiormq.Connection = amqp_connection
     body = os.urandom(512)
     routing_key = hexlify(os.urandom(16)).decode()
 
-    channel = await conn.channel(
+    channel: aiormq.Channel = await conn.channel(
         on_return_raises=False,
-    )  # type: aiormq.Channel
+    )
 
-    result = await channel.basic_publish(
+    result: Optional[Basic.Return] = await channel.basic_publish(
         body, routing_key=routing_key, mandatory=True,
     )
+
+    assert result is not None
 
     assert result.delivery.name == "Basic.Return"
     assert result.delivery.routing_key == routing_key
 
 
 async def test_cancel_on_queue_deleted(amqp_connection, loop):
-    conn = amqp_connection  # type: aiormq.Connection
-    channel = await conn.channel()  # type: aiormq.Channel
+    conn: aiormq.Connection = amqp_connection
+    channel: aiormq.Channel = await conn.channel()
     deaclare_ok = await channel.queue_declare(auto_delete=True)
     consume_ok = await channel.basic_consume(deaclare_ok.queue, print)
 
@@ -294,6 +361,26 @@ async def test_ssl_verification_fails_without_trusted_ca():
         await connection.connect()
 
 
+async def test_ssl_context():
+    url = AMQP_URL.with_scheme("amqps")
+    context = ssl.create_default_context(
+        purpose=ssl.Purpose.SERVER_AUTH,
+        cafile=cert_path("ca.pem"),
+    )
+    context.load_cert_chain(cert_path("client.pem"), cert_path("client.key"))
+    context.check_hostname = False
+    connection = aiormq.Connection(url, context=context)
+    await connection.connect()
+    await connection.close()
+
+
 @pytest.mark.parametrize("url,vhost", URL_VHOSTS)
 async def test_connection_urls_vhosts(url, vhost, loop):
     assert aiormq.Connection(url, loop=loop).vhost == vhost
+
+
+async def test_update_secret(amqp_connection, amqp_url: URL):
+    respone = await amqp_connection.update_secret(
+        amqp_url.password, timeout=1,
+    )
+    assert isinstance(respone, aiormq.spec.Connection.UpdateSecretOk)

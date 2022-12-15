@@ -35,7 +35,9 @@ aiormq is a pure python AMQP client library.
 Status
 ======
 
-Production/Stable
+* 3.x.x branch - Production/Stable
+* 4.x.x branch - Unstable (Experimental)
+* 5.x.x and greater is only Production/Stable releases.
 
 Features
 ========
@@ -59,13 +61,15 @@ Features
 
 * Tracking unroutable messages
   (Use **connection.channel(on_return_raises=False)** for disabling)
-* Full SSL/TLS support with url query parameters:
-    * ``cafile=`` - string contains path to ca certificate file
-    * ``capath=`` - string contains path to ca certificates
-    * ``cadata=`` - base64 encoded ca certificate data
-    * ``keyfile=`` - string contains path to key file
-    * ``certfile=`` - string contains path to certificate file
-    * ``no_verify_ssl`` - boolean disables certificates validation
+* Full SSL/TLS support, using your choice of:
+    * ``amqps://`` url query parameters:
+        * ``cafile=`` - string contains path to ca certificate file
+        * ``capath=`` - string contains path to ca certificates
+        * ``cadata=`` - base64 encoded ca certificate data
+        * ``keyfile=`` - string contains path to key file
+        * ``certfile=`` - string contains path to certificate file
+        * ``no_verify_ssl`` - boolean disables certificates validation
+    * ``context=`` `SSLContext`_ keyword argument to ``connect()``.
 * Python `type hints`_
 * Uses `pamqp`_ as an AMQP 0.9.1 frame encoder/decoder
 
@@ -75,6 +79,7 @@ Features
 .. _PLAIN: https://www.rabbitmq.com/authentication.html
 .. _type hints: https://docs.python.org/3/library/typing.html
 .. _pamqp: https://pypi.org/project/pamqp/
+.. _SSLContext: https://docs.python.org/3/library/ssl.html#ssl.SSLContext
 
 Tutorial
 ========
@@ -95,8 +100,8 @@ Simple consumer
         on_message doesn't necessarily have to be defined as async.
         Here it is to show that it's possible.
         """
-        print(" [x] Received message %r" % message)
-        print("Message body is: %r" % message.body)
+        print(f" [x] Received message {message!r}")
+        print(f"Message body is: {message.body!r}")
         print("Before sleep!")
         await asyncio.sleep(5)   # Represents async I/O operations
         print("After sleep!")
@@ -110,9 +115,9 @@ Simple consumer
         channel = await connection.channel()
 
         # Declaring queue
-        deaclare_ok = await channel.queue_declare('helo')
+        declare_ok = await channel.queue_declare('helo')
         consume_ok = await channel.basic_consume(
-            deaclare_ok.queue, on_message, no_ack=True
+            declare_ok.queue, on_message, no_ack=True
         )
 
 
@@ -125,25 +130,45 @@ Simple publisher
 ****************
 
 .. code-block:: python
+    :name: test_simple_publisher
 
     import asyncio
+    from typing import Optional
+
     import aiormq
+    from aiormq.abc import DeliveredMessage
+
+
+    MESSAGE: Optional[DeliveredMessage] = None
 
 
     async def main():
+        global MESSAGE
+
+        body = b'Hello World!'
+
         # Perform connection
         connection = await aiormq.connect("amqp://guest:guest@localhost//")
 
         # Creating a channel
         channel = await connection.channel()
 
+        declare_ok = await channel.queue_declare("hello", auto_delete=True)
+
         # Sending the message
-        await channel.basic_publish(b'Hello World!', routing_key='hello')
-        print(" [x] Sent 'Hello World!'")
+        await channel.basic_publish(body, routing_key='hello')
+        print(f" [x] Sent {body}")
+
+        MESSAGE = await channel.basic_get(declare_ok.queue)
+        print(f" [x] Received message from {declare_ok.queue!r}")
 
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
+
+    assert MESSAGE is not None
+    assert MESSAGE.routing_key == "hello"
+    assert MESSAGE.body == b'Hello World!'
 
 
 Work Queues
@@ -177,7 +202,7 @@ Create new task
             )
         )
 
-        print(" [x] Sent %r" % body)
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -197,8 +222,8 @@ Simple worker
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print(" [x] Received message %r" % (message,))
-        print("     Message body is: %r" % (message.body,))
+        print(f" [x] Received message {message!r}")
+        print(f"     Message body is: {message.body!r}")
 
 
     async def main():
@@ -257,7 +282,7 @@ Publisher
             body, routing_key='info', exchange='logs'
         )
 
-        print(" [x] Sent %r" % (body,))
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -277,7 +302,7 @@ Subscriber
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print("[x] %r" % (message.body,))
+        print(f"[x] {message.body!r}")
 
         await message.channel.basic_ack(
             message.delivery.delivery_tag
@@ -330,7 +355,7 @@ Direct consumer
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print(" [x] %r:%r" % (message.delivery.routing_key, message.body))
+        print(f" [x] {message.delivery.routing_key!r}:{message.body!r}"
         await message.channel.basic_ack(
             message.delivery.delivery_tag
         )
@@ -348,9 +373,7 @@ Direct consumer
         severities = sys.argv[1:]
 
         if not severities:
-            sys.stderr.write(
-                "Usage: %s [info] [warning] [error]\n" % sys.argv[0]
-            )
+            sys.stderr.write(f"Usage: {sys.argv[0]} [info] [warning] [error]\n")
             sys.exit(1)
 
         # Declare an exchange
@@ -416,7 +439,7 @@ Emitter
             )
         )
 
-        print(" [x] Sent %r" % body)
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -464,7 +487,7 @@ Publisher
             )
         )
 
-        print(" [x] Sent %r" % (body,))
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -484,7 +507,7 @@ Consumer
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print(" [x] %r:%r" % (message.delivery.routing_key, message.body))
+        print(f" [x] {message.delivery.routing_key!r}:{message.body!r}")
         await message.channel.basic_ack(
             message.delivery.delivery_tag
         )
@@ -510,7 +533,7 @@ Consumer
 
         if not binding_keys:
             sys.stderr.write(
-                "Usage: %s [binding_key]...\n" % sys.argv[0]
+                f"Usage: {sys.argv[0]} [binding_key]...\n"
             )
             sys.exit(1)
 
@@ -556,13 +579,13 @@ RPC server
     async def on_message(message:aiormq.types.DeliveredMessage):
         n = int(message.body.decode())
 
-        print(" [.] fib(%d)" % n)
+        print(f" [.] fib({n})")
         response = str(fib(n)).encode()
 
         await message.channel.basic_publish(
-            response, routing_key=message.reply_to,
+            response, routing_key=message.header.properties.reply_to,
             properties=aiormq.spec.Basic.Properties(
-                correlation_id=message.correlation_id
+                correlation_id=message.header.properties.correlation_id
             ),
 
         )
@@ -586,7 +609,7 @@ RPC server
 
 
     loop = asyncio.get_event_loop()
-    loop.create_task(main(loop))
+    loop.create_task(main())
 
     # we enter a never-ending loop that waits for data
     # and runs callbacks whenever necessary.
@@ -628,7 +651,7 @@ RPC client
             return self
 
         async def on_response(self, message: aiormq.types.DeliveredMessage):
-            future = self.futures.pop(message.correlation_id)
+            future = self.futures.pop(message.header.properties.correlation_id)
             future.set_result(message.body)
 
         async def call(self, n):
@@ -653,7 +676,7 @@ RPC client
         fibonacci_rpc = await FibonacciRpcClient().connect()
         print(" [x] Requesting fib(30)")
         response = await fibonacci_rpc.call(30)
-        print(" [.] Got %r" % response)
+        print(r" [.] Got {response!r}")
 
 
     loop = asyncio.get_event_loop()
