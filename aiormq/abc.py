@@ -267,7 +267,7 @@ class AbstractChannel(AbstractBase):
     @abstractmethod
     async def basic_cancel(
         self, consumer_tag: str, *, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.CancelOk:
         raise NotImplementedError
 
@@ -281,7 +281,7 @@ class AbstractChannel(AbstractBase):
         exclusive: bool = False,
         arguments: Optional[ArgumentsType] = None,
         consumer_tag: Optional[str] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.ConsumeOk:
         raise NotImplementedError
 
@@ -303,7 +303,7 @@ class AbstractChannel(AbstractBase):
 
     @abstractmethod
     def basic_reject(
-        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True
+        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True,
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -317,7 +317,7 @@ class AbstractChannel(AbstractBase):
         properties: Optional[spec.Basic.Properties] = None,
         mandatory: bool = False,
         immediate: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> Optional[ConfirmationFrameType]:
         raise NotImplementedError
 
@@ -328,14 +328,14 @@ class AbstractChannel(AbstractBase):
         prefetch_size: Optional[int] = None,
         prefetch_count: Optional[int] = None,
         global_: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.QosOk:
         raise NotImplementedError
 
     @abstractmethod
     async def basic_recover(
         self, *, nowait: bool = False, requeue: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.RecoverOk:
         raise NotImplementedError
 
@@ -351,7 +351,7 @@ class AbstractChannel(AbstractBase):
         internal: bool = False,
         nowait: bool = False,
         arguments: Optional[ArgumentsType] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeclareOk:
         raise NotImplementedError
 
@@ -362,7 +362,7 @@ class AbstractChannel(AbstractBase):
         *,
         if_unused: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeleteOk:
         raise NotImplementedError
 
@@ -375,7 +375,7 @@ class AbstractChannel(AbstractBase):
         *,
         nowait: bool = False,
         arguments: Optional[ArgumentsType] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.BindOk:
         raise NotImplementedError
 
@@ -388,7 +388,7 @@ class AbstractChannel(AbstractBase):
         *,
         nowait: bool = False,
         arguments: Optional[ArgumentsType] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.UnbindOk:
         raise NotImplementedError
 
@@ -422,7 +422,7 @@ class AbstractChannel(AbstractBase):
         auto_delete: bool = False,
         nowait: bool = False,
         arguments: Optional[ArgumentsType] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeclareOk:
         raise NotImplementedError
 
@@ -542,7 +542,7 @@ class AbstractConnection(AbstractBase):
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AbstractChannel:
         raise NotImplementedError
 

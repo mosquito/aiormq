@@ -479,7 +479,7 @@ class Channel(Base, AbstractChannel):
 
     async def basic_cancel(
         self, consumer_tag: str, *, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.CancelOk:
         return await self.rpc(
             spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
@@ -495,7 +495,7 @@ class Channel(Base, AbstractChannel):
         exclusive: bool = False,
         arguments: Optional[ArgumentsType] = None,
         consumer_tag: Optional[str] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.ConsumeOk:
 
         consumer_tag = consumer_tag or "ctag%i.%s" % (
@@ -570,7 +570,7 @@ class Channel(Base, AbstractChannel):
             await drain_future
 
     async def basic_reject(
-        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True
+        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True,
     ) -> None:
         drain_future = self.create_future()
         await self.write_queue.put(
@@ -689,7 +689,7 @@ class Channel(Base, AbstractChannel):
         prefetch_size: Optional[int] = None,
         prefetch_count: Optional[int] = None,
         global_: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.QosOk:
         return await self.rpc(
             spec.Basic.Qos(
@@ -702,7 +702,7 @@ class Channel(Base, AbstractChannel):
 
     async def basic_recover(
         self, *, nowait: bool = False, requeue: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.RecoverOk:
         frame: Union[spec.Basic.RecoverAsync, spec.Basic.Recover]
         if nowait:
@@ -723,7 +723,7 @@ class Channel(Base, AbstractChannel):
         internal: bool = False,
         nowait: bool = False,
         arguments: Optional[Dict[str, Any]] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeclareOk:
         return await self.rpc(
             spec.Exchange.Declare(
@@ -745,7 +745,7 @@ class Channel(Base, AbstractChannel):
         *,
         if_unused: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeleteOk:
         return await self.rpc(
             spec.Exchange.Delete(
@@ -762,7 +762,7 @@ class Channel(Base, AbstractChannel):
         *,
         nowait: bool = False,
         arguments: Optional[ArgumentsType] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.BindOk:
         _check_routing_key(routing_key)
         return await self.rpc(
@@ -784,7 +784,7 @@ class Channel(Base, AbstractChannel):
         *,
         nowait: bool = False,
         arguments: Optional[ArgumentsType] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.UnbindOk:
         _check_routing_key(routing_key)
         return await self.rpc(
@@ -838,7 +838,7 @@ class Channel(Base, AbstractChannel):
         auto_delete: bool = False,
         nowait: bool = False,
         arguments: Optional[ArgumentsType] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeclareOk:
         return await self.rpc(
             spec.Queue.Declare(

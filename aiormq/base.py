@@ -84,7 +84,7 @@ class Base(AbstractBase):
 
     def __init__(
         self, *, loop: asyncio.AbstractEventLoop,
-        parent: Optional[AbstractBase] = None
+        parent: Optional[AbstractBase] = None,
     ):
         self.loop: asyncio.AbstractEventLoop = loop
 

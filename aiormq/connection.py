@@ -221,7 +221,7 @@ class Connection(Base, AbstractConnection):
         url: URLorStr,
         *,
         loop: Optional[asyncio.AbstractEventLoop] = None,
-        context: Optional[ssl.SSLContext] = None
+        context: Optional[ssl.SSLContext] = None,
     ):
 
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
@@ -731,7 +731,7 @@ class Connection(Base, AbstractConnection):
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AbstractChannel:
 
         await self.connected.wait()
@@ -823,7 +823,7 @@ class Connection(Base, AbstractConnection):
 
 async def connect(
     url: URLorStr, *args: Any, client_properties: Optional[FieldTable] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> AbstractConnection:
     connection = Connection(url, *args, **kwargs)
 
