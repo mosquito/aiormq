@@ -100,8 +100,8 @@ Simple consumer
         on_message doesn't necessarily have to be defined as async.
         Here it is to show that it's possible.
         """
-        print(" [x] Received message %r" % (message,))
-        print("Message body is: %r" % message.body)
+        print(f" [x] Received message {message!r}")
+        print(f"Message body is: {message.body!r}")
         print("Before sleep!")
         await asyncio.sleep(5)   # Represents async I/O operations
         print("After sleep!")
@@ -202,7 +202,7 @@ Create new task
             )
         )
 
-        print(" [x] Sent %r" % body)
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -222,8 +222,8 @@ Simple worker
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print(" [x] Received message %r" % (message,))
-        print("     Message body is: %r" % (message.body,))
+        print(f" [x] Received message {message!r}")
+        print(f"     Message body is: {message.body!r}")
 
 
     async def main():
@@ -282,7 +282,7 @@ Publisher
             body, routing_key='info', exchange='logs'
         )
 
-        print(" [x] Sent %r" % (body,))
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -302,7 +302,7 @@ Subscriber
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print("[x] %r" % (message.body,))
+        print(f"[x] {message.body!r}")
 
         await message.channel.basic_ack(
             message.delivery.delivery_tag
@@ -355,7 +355,7 @@ Direct consumer
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print(" [x] %r:%r" % (message.delivery.routing_key, message.body))
+        print(f" [x] {message.delivery.routing_key!r}:{message.body!r}"
         await message.channel.basic_ack(
             message.delivery.delivery_tag
         )
@@ -373,9 +373,7 @@ Direct consumer
         severities = sys.argv[1:]
 
         if not severities:
-            sys.stderr.write(
-                "Usage: %s [info] [warning] [error]\n" % sys.argv[0]
-            )
+            sys.stderr.write(f"Usage: {sys.argv[0]} [info] [warning] [error]\n")
             sys.exit(1)
 
         # Declare an exchange
@@ -441,7 +439,7 @@ Emitter
             )
         )
 
-        print(" [x] Sent %r" % body)
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -489,7 +487,7 @@ Publisher
             )
         )
 
-        print(" [x] Sent %r" % (body,))
+        print(f" [x] Sent {body!r}")
 
         await connection.close()
 
@@ -509,7 +507,7 @@ Consumer
 
 
     async def on_message(message: aiormq.types.DeliveredMessage):
-        print(" [x] %r:%r" % (message.delivery.routing_key, message.body))
+        print(f" [x] {message.delivery.routing_key!r}:{message.body!r}")
         await message.channel.basic_ack(
             message.delivery.delivery_tag
         )
@@ -535,7 +533,7 @@ Consumer
 
         if not binding_keys:
             sys.stderr.write(
-                "Usage: %s [binding_key]...\n" % sys.argv[0]
+                f"Usage: {sys.argv[0]} [binding_key]...\n"
             )
             sys.exit(1)
 
@@ -581,7 +579,7 @@ RPC server
     async def on_message(message:aiormq.types.DeliveredMessage):
         n = int(message.body.decode())
 
-        print(" [.] fib(%d)" % n)
+        print(f" [.] fib({n})")
         response = str(fib(n)).encode()
 
         await message.channel.basic_publish(
@@ -678,7 +676,7 @@ RPC client
         fibonacci_rpc = await FibonacciRpcClient().connect()
         print(" [x] Requesting fib(30)")
         response = await fibonacci_rpc.call(30)
-        print(" [.] Got %r" % response)
+        print(r" [.] Got {response!r}")
 
 
     loop = asyncio.get_event_loop()
