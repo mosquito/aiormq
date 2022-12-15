@@ -7,6 +7,7 @@ from typing import Optional
 
 import pytest
 from pamqp.commands import Basic
+from yarl import URL
 
 import aiormq
 from aiormq.abc import DeliveredMessage
@@ -38,7 +39,7 @@ async def test_simple(amqp_connection: aiormq.Connection):
     consume_ok = await channel.basic_consume(deaclare_ok.queue, queue.put)
     await channel.basic_publish(b"foo", routing_key=deaclare_ok.queue)
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == b"foo"
 
     with pytest.raises(aiormq.exceptions.PublishError) as e:
@@ -167,6 +168,7 @@ async def test_auth_plain(amqp_connection, loop):
 
     assert auth.marshal() == "boo"
 
+
 async def test_auth_external(loop):
 
     url = AMQP_URL.with_scheme("amqps")
@@ -180,7 +182,6 @@ async def test_auth_external(loop):
     auth.value = ""
 
     assert auth.marshal() == ""
-
 
 
 async def test_channel_closed(amqp_connection):
@@ -255,13 +256,9 @@ async def test_heartbeat_not_int(loop):
     await connection.close()
 
 
-async def test_bad_credentials(amqp_connection, loop):
-    connection = aiormq.Connection(
-        amqp_connection.url.with_password(uuid.uuid4().hex), loop=loop,
-    )
-
+async def test_bad_credentials(amqp_url: URL):
     with pytest.raises(aiormq.exceptions.ProbableAuthenticationError):
-        await connection.connect()
+        await aiormq.connect(amqp_url.with_password(uuid.uuid4().hex))
 
 
 async def test_non_publisher_confirms(amqp_connection):
@@ -290,9 +287,9 @@ async def test_no_free_channels(amqp_connection: aiormq.Connection):
 
 
 async def test_huge_message(amqp_connection: aiormq.Connection):
-    conn = amqp_connection  # type: aiormq.Connection
+    conn: aiormq.Connection = amqp_connection
     body = os.urandom(int(conn.connection_tune.frame_max * 2.5))
-    channel = await conn.channel()  # type: aiormq.Channel
+    channel: aiormq.Channel = await conn.channel()
 
     queue = asyncio.Queue()
 
@@ -305,7 +302,7 @@ async def test_huge_message(amqp_connection: aiormq.Connection):
 
 
 async def test_return_message(amqp_connection: aiormq.Connection):
-    conn = amqp_connection  # type: aiormq.Connection
+    conn: aiormq.Connection = amqp_connection
     body = os.urandom(512)
     routing_key = hexlify(os.urandom(16)).decode()
 
@@ -324,8 +321,8 @@ async def test_return_message(amqp_connection: aiormq.Connection):
 
 
 async def test_cancel_on_queue_deleted(amqp_connection, loop):
-    conn = amqp_connection  # type: aiormq.Connection
-    channel = await conn.channel()  # type: aiormq.Channel
+    conn: aiormq.Connection = amqp_connection
+    channel: aiormq.Channel = await conn.channel()
     deaclare_ok = await channel.queue_declare(auto_delete=True)
     consume_ok = await channel.basic_consume(deaclare_ok.queue, print)
 
@@ -380,3 +377,10 @@ async def test_ssl_context():
 @pytest.mark.parametrize("url,vhost", URL_VHOSTS)
 async def test_connection_urls_vhosts(url, vhost, loop):
     assert aiormq.Connection(url, loop=loop).vhost == vhost
+
+
+async def test_update_secret(amqp_connection, amqp_url: URL):
+    respone = await amqp_connection.update_secret(
+        amqp_url.password, timeout=1,
+    )
+    assert isinstance(respone, aiormq.spec.Connection.UpdateSecretOk)

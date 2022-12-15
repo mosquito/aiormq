@@ -1,10 +1,12 @@
 import asyncio
 import uuid
+from os import urandom
 
 import pytest
 from aiomisc_pytest.pytest_plugin import TCPProxy
 
 import aiormq
+from aiormq.abc import DeliveredMessage
 
 
 async def test_simple(amqp_channel: aiormq.Channel):
@@ -21,7 +23,7 @@ async def test_simple(amqp_channel: aiormq.Channel):
         properties=aiormq.spec.Basic.Properties(message_id="123"),
     )
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == b"foo"
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
@@ -50,7 +52,7 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
         properties=aiormq.spec.Basic.Properties(message_id="123"),
     )
 
-    message = await queue.get()  # type: DeliveredMessage
+    message: DeliveredMessage = await queue.get()
     assert message.body == b""
 
     cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
@@ -67,7 +69,7 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
 
 @pytest.mark.no_catch_loop_exceptions
 async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
-    channel = amqp_channel  # type: aiormq.Channel
+    channel: aiormq.Channel = amqp_channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare()
@@ -102,10 +104,13 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
     message = await future
 
     assert message.body == b"urgent"
+    assert message.delivery_tag is not None
+    assert message.exchange is not None
+    assert message.redelivered
 
 
 async def test_ack_nack_reject(amqp_channel: aiormq.Channel):
-    channel = amqp_channel  # type: aiormq.Channel
+    channel: aiormq.Channel = amqp_channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare(auto_delete=True)
@@ -114,8 +119,11 @@ async def test_ack_nack_reject(amqp_channel: aiormq.Channel):
     await channel.basic_consume(declare_ok.queue, queue.put, no_ack=False)
 
     await channel.basic_publish(b"rejected", routing_key=declare_ok.queue)
-    message = await queue.get()
+    message: DeliveredMessage = await queue.get()
     assert message.body == b"rejected"
+    assert message.delivery_tag is not None
+    assert message.exchange is not None
+    assert not message.redelivered
     await channel.basic_reject(message.delivery.delivery_tag, requeue=False)
 
     await channel.basic_publish(b"nacked", routing_key=declare_ok.queue)
@@ -137,7 +145,7 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
     This test is probably inconsequential without publisher_confirms
     This is a regression for https://github.com/mosquito/aiormq/issues/10
     """
-    channel = amqp_channel  # type: aiormq.Channel
+    channel: aiormq.Channel = amqp_channel
     exchange = uuid.uuid4().hex
     await channel.exchange_declare(exchange, exchange_type="topic")
     try:
@@ -150,7 +158,8 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
             messages = [
                 asyncio.ensure_future(
                     channel.basic_publish(
-                        b"test", exchange=exchange, routing_key="test.{}".format(i),
+                        b"test", exchange=exchange,
+                        routing_key="test.{}".format(i),
                     ),
                 )
                 for i in range(10)
@@ -191,13 +200,13 @@ async def test_remove_writer_when_closed(amqp_channel: aiormq.Channel):
 
 
 async def test_proxy_connection(proxy_connection, proxy: TCPProxy):
-    channel = await proxy_connection.channel()  # type: aiormq.Channel
+    channel: aiormq.Channel = await proxy_connection.channel()
     await channel.queue_declare(auto_delete=True)
 
 
 async def test_declare_queue_timeout(proxy_connection, proxy: TCPProxy):
     for _ in range(3):
-        channel = await proxy_connection.channel()  # type: aiormq.Channel
+        channel: aiormq.Channel = await proxy_connection.channel()
 
         qname = str(uuid.uuid4())
 
@@ -206,3 +215,35 @@ async def test_declare_queue_timeout(proxy_connection, proxy: TCPProxy):
                 await channel.queue_declare(
                     qname, auto_delete=True, timeout=0.5,
                 )
+
+
+async def test_big_message(amqp_channel: aiormq.Channel):
+    size = 20 * 1024 * 1024
+    message = urandom(size)
+    await amqp_channel.basic_publish(message)
+
+
+async def test_routing_key_too_large(amqp_channel: aiormq.Channel):
+    routing_key = "x" * 256
+
+    with pytest.raises(ValueError):
+        await amqp_channel.basic_publish(b"foo bar", routing_key=routing_key)
+
+    exchange = uuid.uuid4().hex
+    await amqp_channel.exchange_declare(exchange, exchange_type="topic")
+
+    with pytest.raises(ValueError):
+        await amqp_channel.exchange_bind(exchange, exchange, routing_key)
+
+    with pytest.raises(ValueError):
+        await amqp_channel.exchange_unbind(exchange, exchange, routing_key)
+
+    queue = await amqp_channel.queue_declare(exclusive=True)
+
+    with pytest.raises(ValueError):
+        await amqp_channel.queue_bind(queue.queue, exchange, routing_key)
+
+    with pytest.raises(ValueError):
+        await amqp_channel.queue_unbind(queue.queue, exchange, routing_key)
+
+    await amqp_channel.exchange_delete(exchange)

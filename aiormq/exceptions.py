@@ -175,7 +175,7 @@ class DeliveryError(AMQPError):
 
     def __init__(
         self, message: Optional[DeliveredMessage],
-        frame: Frame, *args: Any
+        frame: Frame, *args: Any,
     ):
         self.message = message
         self.frame = frame

@@ -9,7 +9,6 @@ import pytest
 from aiomisc_pytest.pytest_plugin import TCPProxy
 from yarl import URL
 
-import aiormq
 from aiormq import Connection
 
 
@@ -84,7 +83,6 @@ def memory_tracer():
     tracemalloc.clear_traces()
 
     filters = (
-        tracemalloc.Filter(True, aiormq.__file__),
         tracemalloc.Filter(True, pamqp.__file__),
         tracemalloc.Filter(True, asyncio.__file__),
     )

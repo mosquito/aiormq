@@ -1,4 +1,5 @@
 import asyncio
+import io
 import logging
 from collections import OrderedDict
 from contextlib import suppress
@@ -6,9 +7,7 @@ from functools import partial
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
-from typing import (
-    Any, Dict, Generator, Mapping, Optional, Set, Type, Union,
-)
+from typing import Any, Dict, List, Mapping, Optional, Set, Type, Union
 from uuid import UUID
 
 import pamqp.frame
@@ -16,6 +15,7 @@ from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
 from pamqp.constants import REPLY_SUCCESS
+from pamqp.exceptions import AMQPFrameError
 from pamqp.header import ContentHeader
 
 from aiormq.tools import Countdown, awaitable
@@ -57,6 +57,11 @@ def exception_by_code(frame: spec.Channel.Close) -> AMQPError:
     return exception_class(frame.reply_text)
 
 
+def _check_routing_key(key: str) -> None:
+    if len(key) > 255:
+        raise ValueError("Routing key too long (max 255 bytes)")
+
+
 class Returning(asyncio.Future):
     pass
 
@@ -67,7 +72,6 @@ ConfirmationType = Union[asyncio.Future, Returning]
 class Channel(Base, AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
-    CLOSE_TIMEOUT = 2
 
     confirmations: Dict[int, ConfirmationType]
 
@@ -121,6 +125,7 @@ class Channel(Base, AbstractChannel):
         self.__close_reply_text: str = ""
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
+        self.__close_event: asyncio.Event = asyncio.Event()
 
     def set_close_reason(
         self, reply_code: int = REPLY_SUCCESS,
@@ -148,8 +153,11 @@ class Channel(Base, AbstractChannel):
 
     @task
     async def rpc(
-        self, frame: Frame, timeout: TimeoutType = None
+        self, frame: Frame, timeout: TimeoutType = None,
     ) -> RpcReturnType:
+
+        if self.__close_event.is_set():
+            raise ChannelInvalidStateError("Channel closed by RPC timeout")
 
         countdown = Countdown(timeout)
         lock = self.lock
@@ -176,20 +184,33 @@ class Channel(Base, AbstractChannel):
                     raise InvalidFrameError(frame)
 
                 return result
-            except (asyncio.CancelledError, asyncio.TimeoutError) as e:
-                if not self.is_closed:
-                    log.warning(
-                        "Closing channel %r because RPC call %s cancelled",
-                        self, frame,
-                    )
-                    self.set_close_reason(
-                        reply_code=504,
-                        reply_text="RPC timeout on frame {!s}".format(frame),
-                    )
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                if self.is_closed:
+                    raise
 
-                    # noinspection PyAsyncCall
-                    self.create_task(self.close())
-                raise e
+                log.warning(
+                    "Closing channel %r because RPC call %s cancelled",
+                    self, frame,
+                )
+
+                self.__close_event.set()
+                self.write_queue.put_nowait(
+                    ChannelFrame(
+                        channel_number=self.number,
+                        frames=[
+                            spec.Channel.Close(
+                                class_id=0,
+                                method_id=0,
+                                reply_code=504,
+                                reply_text=(
+                                    "RPC timeout on frame {!s}".format(frame)
+                                ),
+                            ),
+                        ],
+                    ),
+                )
+
+                raise
 
     async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
         frame: spec.Channel.OpenOk = await self.rpc(
@@ -200,7 +221,7 @@ class Channel(Base, AbstractChannel):
             await self.rpc(spec.Confirm.Select())
 
         if frame is None:  # pragma: no cover
-            raise spec.AMQPFrameError(frame)
+            raise AMQPFrameError(frame)
         return frame
 
     async def __get_content_frame(self) -> ContentBody:
@@ -215,7 +236,7 @@ class Channel(Base, AbstractChannel):
     async def _read_content(
         self,
         frame: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType],
-        header: ContentHeader
+        header: ContentHeader,
     ) -> DeliveredMessage:
         with BytesIO() as body:
             content: Optional[ContentBody] = None
@@ -264,7 +285,7 @@ class Channel(Base, AbstractChannel):
                 log.exception('Unhandled consumer exception')
 
     async def _on_get(
-        self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty]
+        self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty],
     ) -> None:
         message = None
         if isinstance(frame, spec.Basic.GetOk):
@@ -410,6 +431,11 @@ class Channel(Base, AbstractChannel):
                     self.connection.channels.pop(self.number, None)
                     await self._cancel_tasks(exc)
                     return
+                elif isinstance(frame, spec.Channel.CloseOk):
+                    if self.__close_event.is_set():
+                        await self._cancel_tasks(asyncio.TimeoutError())
+                        self.connection.channels.pop(self.number, None)
+                        return
 
                 await self.rpc_frames.put(frame)
             except asyncio.CancelledError:
@@ -419,20 +445,23 @@ class Channel(Base, AbstractChannel):
                 await self._cancel_tasks(e)
                 raise
 
+    @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
-        await self.rpc(
-            spec.Channel.Close(
-                reply_code=self.__close_reply_code,
-                reply_text=self.__close_reply_text,
-                class_id=self.__close_class_id,
-                method_id=self.__close_method_id,
-            ),
-        )
+        if self.connection.is_opened and not self.__close_event.is_set():
+            await self.rpc(
+                spec.Channel.Close(
+                    reply_code=self.__close_reply_code,
+                    class_id=self.__close_class_id,
+                    method_id=self.__close_method_id,
+                ),
+                timeout=self.connection.connection_tune.heartbeat or None,
+            )
+
         self.connection.channels.pop(self.number, None)
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> DeliveredMessage:
 
         countdown = Countdown(timeout)
@@ -454,7 +483,7 @@ class Channel(Base, AbstractChannel):
 
     async def basic_cancel(
         self, consumer_tag: str, *, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.CancelOk:
         return await self.rpc(
             spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
@@ -468,9 +497,9 @@ class Channel(Base, AbstractChannel):
         *,
         no_ack: bool = False,
         exclusive: bool = False,
-        arguments: ArgumentsType = None,
-        consumer_tag: str = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        consumer_tag: Optional[str] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Basic.ConsumeOk:
 
         consumer_tag = consumer_tag or "ctag%i.%s" % (
@@ -495,7 +524,7 @@ class Channel(Base, AbstractChannel):
         )
 
     async def basic_ack(
-        self, delivery_tag: int, multiple: bool = False, wait: bool = True
+        self, delivery_tag: int, multiple: bool = False, wait: bool = True,
     ) -> None:
         drain_future = self.create_future() if wait else None
 
@@ -545,7 +574,7 @@ class Channel(Base, AbstractChannel):
             await drain_future
 
     async def basic_reject(
-        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True
+        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True,
     ) -> None:
         drain_future = self.create_future()
         await self.write_queue.put(
@@ -564,19 +593,30 @@ class Channel(Base, AbstractChannel):
         if drain_future is not None:
             await drain_future
 
+    def _split_body(self, body: bytes) -> List[ContentBody]:
+        if not body:
+            return []
+
+        if len(body) < self.max_content_size:
+            return [ContentBody(body)]
+
+        with io.BytesIO(body) as fp:
+            reader = partial(fp.read, self.max_content_size)
+            return list(map(ContentBody, iter(reader, b"")))
+
     async def basic_publish(
         self,
         body: bytes,
         *,
         exchange: str = "",
         routing_key: str = "",
-        properties: spec.Basic.Properties = None,
+        properties: Optional[spec.Basic.Properties] = None,
         mandatory: bool = False,
         immediate: bool = False,
         timeout: TimeoutType = None,
         wait: bool = True,
     ) -> Optional[ConfirmationFrameType]:
-        body_io = BytesIO(body)
+        _check_routing_key(routing_key)
         drain_future = self.create_future() if wait else None
         countdown = Countdown(timeout=timeout)
 
@@ -622,19 +662,14 @@ class Channel(Base, AbstractChannel):
                     ),
                 )
 
-            def frame_generator() -> Generator[FrameType, Any, None]:
-                yield publish_frame
-                yield content_header
-
-                with body_io as fp:
-                    read_chunk = partial(fp.read, self.max_content_size)
-                    for chunk in iter(read_chunk, b""):
-                        yield ContentBody(chunk)
+            body_frames: List[Union[FrameType, ContentBody]]
+            body_frames = [publish_frame, content_header]
+            body_frames += self._split_body(body)
 
             await countdown(
                 self.write_queue.put(
                     ChannelFrame(
-                        frames=frame_generator(),
+                        frames=body_frames,
                         channel_number=self.number,
                         drain_future=drain_future,
                     ),
@@ -650,15 +685,15 @@ class Channel(Base, AbstractChannel):
             if confirmation is None:
                 return None
 
-            return await countdown(confirmation)
+        return await countdown(confirmation)
 
     async def basic_qos(
         self,
         *,
-        prefetch_size: int = None,
-        prefetch_count: int = None,
+        prefetch_size: Optional[int] = None,
+        prefetch_count: Optional[int] = None,
         global_: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.QosOk:
         return await self.rpc(
             spec.Basic.Qos(
@@ -671,7 +706,7 @@ class Channel(Base, AbstractChannel):
 
     async def basic_recover(
         self, *, nowait: bool = False, requeue: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.RecoverOk:
         frame: Union[spec.Basic.RecoverAsync, spec.Basic.Recover]
         if nowait:
@@ -692,7 +727,7 @@ class Channel(Base, AbstractChannel):
         internal: bool = False,
         nowait: bool = False,
         arguments: Optional[Dict[str, Any]] = None,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeclareOk:
         return await self.rpc(
             spec.Exchange.Declare(
@@ -714,7 +749,7 @@ class Channel(Base, AbstractChannel):
         *,
         if_unused: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeleteOk:
         return await self.rpc(
             spec.Exchange.Delete(
@@ -730,9 +765,10 @@ class Channel(Base, AbstractChannel):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.BindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Exchange.Bind(
                 destination=destination,
@@ -751,9 +787,10 @@ class Channel(Base, AbstractChannel):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.UnbindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Exchange.Unbind(
                 destination=destination,
@@ -767,7 +804,7 @@ class Channel(Base, AbstractChannel):
 
     async def flow(
         self, active: bool,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Channel.FlowOk:
         return await self.rpc(
             spec.Channel.Flow(active=active),
@@ -780,9 +817,10 @@ class Channel(Base, AbstractChannel):
         exchange: str,
         routing_key: str = "",
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Queue.BindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Queue.Bind(
                 queue=queue,
@@ -803,8 +841,8 @@ class Channel(Base, AbstractChannel):
         exclusive: bool = False,
         auto_delete: bool = False,
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeclareOk:
         return await self.rpc(
             spec.Queue.Declare(
@@ -825,7 +863,7 @@ class Channel(Base, AbstractChannel):
         if_unused: bool = False,
         if_empty: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeleteOk:
         return await self.rpc(
             spec.Queue.Delete(
@@ -839,7 +877,7 @@ class Channel(Base, AbstractChannel):
 
     async def queue_purge(
         self, queue: str = "", nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.PurgeOk:
         return await self.rpc(
             spec.Queue.Purge(queue=queue, nowait=nowait),
@@ -851,9 +889,10 @@ class Channel(Base, AbstractChannel):
         queue: str = "",
         exchange: str = "",
         routing_key: str = "",
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
+        _check_routing_key(routing_key)
         return await self.rpc(
             spec.Queue.Unbind(
                 routing_key=routing_key,
@@ -865,12 +904,12 @@ class Channel(Base, AbstractChannel):
         )
 
     async def tx_commit(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.CommitOk:
         return await self.rpc(spec.Tx.Commit(), timeout=timeout)
 
     async def tx_rollback(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.RollbackOk:
         return await self.rpc(spec.Tx.Rollback(), timeout=timeout)
 
@@ -879,7 +918,7 @@ class Channel(Base, AbstractChannel):
 
     async def confirm_delivery(
         self, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Confirm.SelectOk:
         return await self.rpc(
             spec.Confirm.Select(nowait=nowait),

@@ -65,6 +65,64 @@ class DeliveredMessage(NamedTuple):
     body: bytes
     channel: "AbstractChannel"
 
+    @property
+    def routing_key(self) -> Optional[str]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.Return,
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.routing_key
+        return None
+
+    @property
+    def exchange(self) -> Optional[str]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.Return,
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.exchange
+        return None
+
+    @property
+    def delivery_tag(self) -> Optional[int]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.delivery_tag
+        return None
+
+    @property
+    def redelivered(self) -> Optional[bool]:
+        if isinstance(
+            self.delivery, (
+                spec.Basic.GetOk,
+                spec.Basic.Deliver,
+            ),
+        ):
+            return self.delivery.redelivered
+        return None
+
+    @property
+    def consumer_tag(self) -> Optional[str]:
+        if isinstance(self.delivery, spec.Basic.Deliver):
+            return self.delivery.consumer_tag
+        return None
+
+    @property
+    def message_count(self) -> Optional[int]:
+        if isinstance(self.delivery, spec.Basic.GetOk):
+            return self.delivery.message_count
+        return None
+
 
 ChannelRType = Tuple[int, Channel.OpenOk]
 
@@ -72,9 +130,7 @@ CallbackCoro = Coroutine[Any, Any, Any]
 ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[DeliveredMessage], Any]
 
-ArgumentsType = Dict[
-    str, Union[str, int, bool, Dict[str, Union[str, int, bool]]],
-]
+ArgumentsType = FieldTable
 
 ConfirmationFrameType = Union[
     Basic.Ack, Basic.Nack, Basic.Reject,
@@ -128,7 +184,7 @@ RpcReturnType = Optional[
 
 class ChannelFrame(NamedTuple):
     channel_number: int
-    frames: Iterable[Union[FrameType, Heartbeat]]
+    frames: Iterable[Union[FrameType, Heartbeat, ContentBody]]
     drain_future: Optional[asyncio.Future] = None
 
 
@@ -177,7 +233,7 @@ class AbstractBase(ABC):
 
     @abstractmethod
     async def close(
-        self, exc: Optional[ExceptionType] = asyncio.CancelledError()
+        self, exc: Optional[ExceptionType] = asyncio.CancelledError(),
     ) -> None:
         raise NotImplementedError
 
@@ -204,14 +260,14 @@ class AbstractChannel(AbstractBase):
     @abstractmethod
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> DeliveredMessage:
         raise NotImplementedError
 
     @abstractmethod
     async def basic_cancel(
         self, consumer_tag: str, *, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.CancelOk:
         raise NotImplementedError
 
@@ -223,9 +279,9 @@ class AbstractChannel(AbstractBase):
         *,
         no_ack: bool = False,
         exclusive: bool = False,
-        arguments: ArgumentsType = None,
-        consumer_tag: str = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        consumer_tag: Optional[str] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Basic.ConsumeOk:
         raise NotImplementedError
 
@@ -247,7 +303,7 @@ class AbstractChannel(AbstractBase):
 
     @abstractmethod
     def basic_reject(
-        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True
+        self, delivery_tag: int, *, requeue: bool = True, wait: bool = True,
     ) -> DrainResult:
         raise NotImplementedError
 
@@ -258,10 +314,10 @@ class AbstractChannel(AbstractBase):
         *,
         exchange: str = "",
         routing_key: str = "",
-        properties: spec.Basic.Properties = None,
+        properties: Optional[spec.Basic.Properties] = None,
         mandatory: bool = False,
         immediate: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> Optional[ConfirmationFrameType]:
         raise NotImplementedError
 
@@ -269,17 +325,17 @@ class AbstractChannel(AbstractBase):
     async def basic_qos(
         self,
         *,
-        prefetch_size: int = None,
-        prefetch_count: int = None,
+        prefetch_size: Optional[int] = None,
+        prefetch_count: Optional[int] = None,
         global_: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.QosOk:
         raise NotImplementedError
 
     @abstractmethod
     async def basic_recover(
         self, *, nowait: bool = False, requeue: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Basic.RecoverOk:
         raise NotImplementedError
 
@@ -294,8 +350,8 @@ class AbstractChannel(AbstractBase):
         auto_delete: bool = False,
         internal: bool = False,
         nowait: bool = False,
-        arguments: Optional[Dict[str, Any]] = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeclareOk:
         raise NotImplementedError
 
@@ -306,7 +362,7 @@ class AbstractChannel(AbstractBase):
         *,
         if_unused: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.DeleteOk:
         raise NotImplementedError
 
@@ -318,8 +374,8 @@ class AbstractChannel(AbstractBase):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.BindOk:
         raise NotImplementedError
 
@@ -331,15 +387,15 @@ class AbstractChannel(AbstractBase):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Exchange.UnbindOk:
         raise NotImplementedError
 
     @abstractmethod
     async def flow(
         self, active: bool,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Channel.FlowOk:
         raise NotImplementedError
 
@@ -350,8 +406,8 @@ class AbstractChannel(AbstractBase):
         exchange: str,
         routing_key: str = "",
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Queue.BindOk:
         raise NotImplementedError
 
@@ -365,8 +421,8 @@ class AbstractChannel(AbstractBase):
         exclusive: bool = False,
         auto_delete: bool = False,
         nowait: bool = False,
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeclareOk:
         raise NotImplementedError
 
@@ -377,14 +433,14 @@ class AbstractChannel(AbstractBase):
         if_unused: bool = False,
         if_empty: bool = False,
         nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.DeleteOk:
         raise NotImplementedError
 
     @abstractmethod
     async def queue_purge(
         self, queue: str = "", nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Queue.PurgeOk:
         raise NotImplementedError
 
@@ -394,20 +450,20 @@ class AbstractChannel(AbstractBase):
         queue: str = "",
         exchange: str = "",
         routing_key: str = "",
-        arguments: dict = None,
-        timeout: TimeoutType = None
+        arguments: Optional[ArgumentsType] = None,
+        timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
         raise NotImplementedError
 
     @abstractmethod
     async def tx_commit(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.CommitOk:
         raise NotImplementedError
 
     @abstractmethod
     async def tx_rollback(
-        self, timeout: TimeoutType = None
+        self, timeout: TimeoutType = None,
     ) -> spec.Tx.RollbackOk:
         raise NotImplementedError
 
@@ -418,7 +474,7 @@ class AbstractChannel(AbstractBase):
     @abstractmethod
     async def confirm_delivery(
         self, nowait: bool = False,
-        timeout: TimeoutType = None
+        timeout: TimeoutType = None,
     ) -> spec.Confirm.SelectOk:
         raise NotImplementedError
 
@@ -455,7 +511,9 @@ class AbstractConnection(AbstractBase):
         raise NotImplementedError
 
     @abstractmethod
-    async def connect(self, client_properties: Dict[str, Any] = None) -> bool:
+    async def connect(
+        self, client_properties: Optional[FieldTable] = None,
+    ) -> bool:
         raise NotImplementedError
 
     @abstractproperty
@@ -480,11 +538,11 @@ class AbstractConnection(AbstractBase):
 
     async def channel(
         self,
-        channel_number: int = None,
+        channel_number: Optional[int] = None,
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AbstractChannel:
         raise NotImplementedError
 
@@ -503,6 +561,13 @@ class AbstractConnection(AbstractBase):
 
     @abstractmethod
     async def ready(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def update_secret(
+        self, new_secret: str, *,
+        reason: str = "", timeout: TimeoutType = None,
+    ) -> spec.Connection.UpdateSecretOk:
         raise NotImplementedError
 
 

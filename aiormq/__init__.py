@@ -15,10 +15,6 @@ from .exceptions import (
     MethodNotImplemented, ProbableAuthenticationError, ProtocolSyntaxError,
     PublishError,
 )
-from .version import (
-    __author__, __version__, author_info, package_info, package_license,
-    team_email, version_info,
-)
 
 
 __all__ = (
@@ -53,14 +49,7 @@ __all__ = (
     "ProbableAuthenticationError",
     "ProtocolSyntaxError",
     "PublishError",
-    "__author__",
-    "__version__",
     "abc",
-    "author_info",
     "connect",
-    "package_info",
-    "package_license",
     "spec",
-    "team_email",
-    "version_info",
 )
