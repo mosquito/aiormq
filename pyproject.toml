@@ -50,6 +50,7 @@ coveralls = "^3.3.1"
 pylama = "^8.4.1"
 pytest-cov = "^4.0.0"
 collective-checkdocs = "^0.2"
+mypy = "^0.991"
 
 [tool.poetry.group.uvloop.dependencies]
 uvloop = "^0.17.0"
