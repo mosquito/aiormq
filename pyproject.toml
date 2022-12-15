@@ -51,6 +51,7 @@ pylama = "^8.4.1"
 pytest-cov = "^4.0.0"
 collective-checkdocs = "^0.2"
 mypy = "^0.991"
+pytest-rst = "^0.0.7"
 
 [tool.poetry.group.uvloop.dependencies]
 uvloop = "^0.17.0"

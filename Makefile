@@ -1,7 +1,7 @@
-all: clean sdist test upload
+all: clean sdist test
 
-NAME:=$(shell python3 setup.py --name)
-VERSION:=$(shell python3 setup.py --version | sed 's/+/-/g')
+NAME:=$(shell poetry version -n | awk '{print $1}')
+VERSION:=$(shell poetry version -s)
 RABBITMQ_CONTAINER_NAME:=aiormq_rabbitmq
 RABBITMQ_IMAGE:=mosquito/aiormq-rabbitmq
 
@@ -16,22 +16,17 @@ rabbitmq:
 		$(RABBITMQ_IMAGE)
 
 sdist:
-	python3 setup.py sdist bdist_wheel
+	poetry build -f sdist
 
 upload: sdist
-	twine upload dist/*$(VERSION)*
+	poetry upload
 
-quick-test:
-	TEST_QUICK='1' env/bin/pytest -vvx --cov=aiormq \
-		--cov-report=term-missing tests
-
-test: quick-test
-	env/bin/tox
+test:
+	poetry run pytest -vvx --cov=aiormq \
+		--cov-report=term-missing tests README.rst
 
 clean:
 	rm -fr *.egg-info .tox
 
 develop: clean
-	virtualenv -p python3.6 env
-	env/bin/pip install -Ue '.'
-	env/bin/pip install -Ue '.[develop]'
+	poetry install
