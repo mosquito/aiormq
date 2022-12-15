@@ -218,10 +218,10 @@ Simple worker
 
     import asyncio
     import aiormq
-    import aiormq.types
+    import aiormq.abc
 
 
-    async def on_message(message: aiormq.types.DeliveredMessage):
+    async def on_message(message: aiormq.abc.DeliveredMessage):
         print(f" [x] Received message {message!r}")
         print(f"     Message body is: {message.body!r}")
 
@@ -298,10 +298,10 @@ Subscriber
 
     import asyncio
     import aiormq
-    import aiormq.types
+    import aiormq.abc
 
 
-    async def on_message(message: aiormq.types.DeliveredMessage):
+    async def on_message(message: aiormq.abc.DeliveredMessage):
         print(f"[x] {message.body!r}")
 
         await message.channel.basic_ack(
@@ -351,10 +351,10 @@ Direct consumer
     import sys
     import asyncio
     import aiormq
-    import aiormq.types
+    import aiormq.abc
 
 
-    async def on_message(message: aiormq.types.DeliveredMessage):
+    async def on_message(message: aiormq.abc.DeliveredMessage):
         print(f" [x] {message.delivery.routing_key!r}:{message.body!r}"
         await message.channel.basic_ack(
             message.delivery.delivery_tag
@@ -503,10 +503,10 @@ Consumer
     import asyncio
     import sys
     import aiormq
-    import aiormq.types
+    import aiormq.abc
 
 
-    async def on_message(message: aiormq.types.DeliveredMessage):
+    async def on_message(message: aiormq.abc.DeliveredMessage):
         print(f" [x] {message.delivery.routing_key!r}:{message.body!r}")
         await message.channel.basic_ack(
             message.delivery.delivery_tag
@@ -564,7 +564,7 @@ RPC server
 
     import asyncio
     import aiormq
-    import aiormq.types
+    import aiormq.abc
 
 
     def fib(n):
@@ -576,7 +576,7 @@ RPC server
             return fib(n-1) + fib(n-2)
 
 
-    async def on_message(message:aiormq.types.DeliveredMessage):
+    async def on_message(message:aiormq.abc.DeliveredMessage):
         n = int(message.body.decode())
 
         print(f" [.] fib({n})")
@@ -625,7 +625,7 @@ RPC client
     import asyncio
     import uuid
     import aiormq
-    import aiormq.types
+    import aiormq.abc
 
 
     class FibonacciRpcClient:
@@ -650,7 +650,7 @@ RPC client
 
             return self
 
-        async def on_response(self, message: aiormq.types.DeliveredMessage):
+        async def on_response(self, message: aiormq.abc.DeliveredMessage):
             future = self.futures.pop(message.header.properties.correlation_id)
             future.set_result(message.body)
 
