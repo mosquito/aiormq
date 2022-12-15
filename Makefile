@@ -19,7 +19,7 @@ sdist:
 	poetry build -f sdist
 
 upload: sdist
-	poetry upload
+	poetry publish
 
 test:
 	poetry run pytest -vvx --cov=aiormq \
