@@ -11,6 +11,7 @@ from types import MappingProxyType, TracebackType
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import pamqp.frame
+import pkg_resources
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.common import FieldTable
@@ -36,11 +37,10 @@ from .exceptions import (
     ProbableAuthenticationError,
 )
 from .tools import Countdown, censor_url
-from .version import __version__
 
 
+__version__ = pkg_resources.get_distribution("aiormq").version
 log = logging.getLogger(__name__)
-
 
 CHANNEL_CLOSE_RESPONSES = (spec.Channel.Close, spec.Channel.CloseOk)
 
@@ -221,7 +221,7 @@ class Connection(Base, AbstractConnection):
         url: URLorStr,
         *,
         loop: Optional[asyncio.AbstractEventLoop] = None,
-        context: Optional[ssl.SSLContext] = None
+        context: Optional[ssl.SSLContext] = None,
     ):
 
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
@@ -731,7 +731,7 @@ class Connection(Base, AbstractConnection):
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> AbstractChannel:
 
         await self.connected.wait()
@@ -823,7 +823,7 @@ class Connection(Base, AbstractConnection):
 
 async def connect(
     url: URLorStr, *args: Any, client_properties: Optional[FieldTable] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> AbstractConnection:
     connection = Connection(url, *args, **kwargs)
 
