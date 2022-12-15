@@ -35,7 +35,7 @@ packages = [{ include = "aiormq" }]
 [tool.poetry.urls]
 "Source" = "https://github.com/mosquito/aiormq"
 "Tracker" = "https://github.com/mosquito/aiormq/issues"
-"Documentation" = "https://aiomisc.readthedocs.io/en/latest/"
+"Documentation" = "https://github.com/mosquito/aiormq/blob/master/README.rst"
 
 [tool.poetry.dependencies]
 python = "^3.7"
