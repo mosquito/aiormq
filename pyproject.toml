@@ -41,6 +41,7 @@ packages = [{ include = "aiormq" }]
 python = "^3.7"
 pamqp= "3.2.1"
 yarl = [{ version = '*'}]
+setuptools = [{ version = '*'}]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.0"
