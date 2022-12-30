@@ -11,7 +11,6 @@ from types import MappingProxyType, TracebackType
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import pamqp.frame
-import pkg_resources
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.common import FieldTable
@@ -38,8 +37,15 @@ from .exceptions import (
 )
 from .tools import Countdown, censor_url
 
+# noinspection PyUnresolvedReferences
+try:
+    from importlib.metadata import Distribution
+    __version__ = Distribution.from_name("aiormq").version
+except ImportError:
+    import pkg_resources
+    __version__ = pkg_resources.get_distribution("aiormq").version
 
-__version__ = pkg_resources.get_distribution("aiormq").version
+
 log = logging.getLogger(__name__)
 
 CHANNEL_CLOSE_RESPONSES = (spec.Channel.Close, spec.Channel.CloseOk)
