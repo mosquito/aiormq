@@ -279,7 +279,10 @@ class Channel(Base, AbstractChannel):
         consumer = self.consumers.get(frame.consumer_tag)
         if consumer is not None:
             # noinspection PyAsyncCall
-            self.create_task(consumer(message))
+            try:
+                self.create_task(consumer(message))
+            except Exception:
+                log.exception('Unhandled consumer exception')
 
     async def _on_get(
         self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty],
@@ -438,7 +441,7 @@ class Channel(Base, AbstractChannel):
             except asyncio.CancelledError:
                 return
             except Exception as e:  # pragma: nocover
-                log.debug("Channel reader exception %r", exc_info=e)
+                log.exception("Channel reader exception")
                 await self._cancel_tasks(e)
                 raise
 
@@ -453,6 +456,7 @@ class Channel(Base, AbstractChannel):
                 ),
                 timeout=self.connection.connection_tune.heartbeat or None,
             )
+
         self.connection.channels.pop(self.number, None)
 
     async def basic_get(

@@ -117,8 +117,9 @@ Simple consumer
         # Declaring queue
         declare_ok = await channel.queue_declare('helo')
         consume_ok = await channel.basic_consume(
-            declare_ok.queue, on_message, no_ack=True
+            declare_ok.queue, on_message, no_ack=True,
         )
+        print("Consumer started")
 
 
     loop = asyncio.get_event_loop()
@@ -563,6 +564,8 @@ RPC server
 .. code-block:: python
 
     import asyncio
+    import functools
+    from contextlib import suppress
     import aiormq
     import aiormq.abc
 
@@ -576,45 +579,54 @@ RPC server
             return fib(n-1) + fib(n-2)
 
 
-    async def on_message(message:aiormq.abc.DeliveredMessage):
-        n = int(message.body.decode())
+    async def on_message(num, message: aiormq.types.DeliveredMessage):
+        try:
+            n = int(message.body.decode())
 
-        print(f" [.] fib({n})")
-        response = str(fib(n)).encode()
+            print(f" [.] fib({n}) from {num} channel")
 
-        await message.channel.basic_publish(
-            response, routing_key=message.header.properties.reply_to,
-            properties=aiormq.spec.Basic.Properties(
-                correlation_id=message.header.properties.correlation_id
-            ),
+            fib_n = await asyncio.run_in_executor(None, fib, n)
+            response = str(fib(n)).encode()
 
-        )
+            await message.channel.basic_publish(
+                response, routing_key=message.header.properties.reply_to,
+                properties=aiormq.spec.Basic.Properties(
+                    correlation_id=message.header.properties.correlation_id
+                ),
 
-        await message.channel.basic_ack(message.delivery.delivery_tag)
-        print('Request complete')
+            )
+        except Exception as exc:
+            print('Message exception:', exc)
+        finally:
+            await message.channel.basic_ack(message.delivery.delivery_tag)
+        print(f'Request from {num} channel complete')
 
 
     async def main():
         # Perform connection
         connection = await aiormq.connect("amqp://guest:guest@localhost/")
 
-        # Creating a channel
-        channel = await connection.channel()
+        for i in range(10):
+            # Creating a channel
+            channel = await connection.channel()
 
-        # Declaring queue
-        declare_ok = await channel.queue_declare('rpc_queue')
+            # Declaring queue
+            declare_ok = await channel.queue_declare('rpc_queue')
 
-        # Start listening the queue with name 'hello'
-        await channel.basic_consume(declare_ok.queue, on_message)
+            # Start listening the queue with name 'hello'
+            # with several consumers simultaneously
+            on_message = functools.partial(on_message, i)
+            await channel.basic_consume(declare_ok.queue, on_message)
+            print(f'Consumer {i} started')
 
+        print(" [x] Awaiting RPC requests")
+        with suppress(asyncio.CancelledError):
+            await connection.closing
+
+        # waiting for the connections closing to release recources
 
     loop = asyncio.get_event_loop()
     loop.create_task(main())
-
-    # we enter a never-ending loop that waits for data
-    # and runs callbacks whenever necessary.
-    print(" [x] Awaiting RPC requests")
-    loop.run_forever()
 
 
 RPC client

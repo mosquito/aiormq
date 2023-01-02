@@ -151,15 +151,15 @@ class FrameReceiver(AsyncIterable):
 
         async with self.lock:
             try:
+                if self.reader is None:
+                    raise ConnectionError
+
                 frame_header = await self.reader.readexactly(1)
 
                 if frame_header == b"\0x00":
                     raise AMQPFrameError(
                         await self.reader.read(),
                     )
-
-                if self.reader is None:
-                    raise ConnectionError
 
                 frame_header += await self.reader.readexactly(6)
 
