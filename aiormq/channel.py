@@ -436,7 +436,7 @@ class Channel(Base, AbstractChannel):
 
                 await self.rpc_frames.put(frame)
             except asyncio.CancelledError:
-                return
+                raise
             except Exception as e:  # pragma: nocover
                 log.debug("Channel reader exception %r", exc_info=e)
                 await self._cancel_tasks(e)

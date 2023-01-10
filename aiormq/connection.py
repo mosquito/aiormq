@@ -151,15 +151,17 @@ class FrameReceiver(AsyncIterable):
 
         async with self.lock:
             try:
-                frame_header = await self.reader.readexactly(1)
+                try:
+                    frame_header = await self.reader.readexactly(1)
+                except asyncio.IncompleteReadError as e:
+                    if e.partial:
+                        raise
+                    raise ConnectionClosed(0, "socket closed")
 
                 if frame_header == b"\0x00":
                     raise AMQPFrameError(
                         await self.reader.read(),
                     )
-
-                if self.reader is None:
-                    raise ConnectionError
 
                 frame_header += await self.reader.readexactly(6)
 
@@ -176,9 +178,12 @@ class FrameReceiver(AsyncIterable):
 
                 frame_payload = await self.reader.readexactly(frame_length + 1)
             except asyncio.IncompleteReadError as e:
-                raise AMQPFrameError(
-                    "Server connection unexpectedly closed",
-                ) from e
+                if e.partial:
+                    raise AMQPFrameError(
+                        "Server connection unexpectedly closed",
+                    ) from e
+                raise ConnectionClosed(0, "socket closed")
+
         return pamqp.frame.unmarshal(frame_header + frame_payload)
 
     async def __anext__(self) -> ReceivedFrame:
@@ -271,6 +276,7 @@ class Connection(Base, AbstractConnection):
         self.__close_reply_text: str = "normally closed"
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
+        self.__close_event: asyncio.Event = asyncio.Event()
         self.__update_secret_lock: asyncio.Lock = asyncio.Lock()
         self.__update_secret_future: Optional[asyncio.Future] = None
         self.__connection_unblocked: asyncio.Event = asyncio.Event()
@@ -584,6 +590,11 @@ class Connection(Base, AbstractConnection):
                 if isinstance(frame, CHANNEL_CLOSE_RESPONSES):
                     self.channels[channel] = None
 
+                if self.__close_event.is_set():
+                    # Methods should be discarded after sending close
+                    #  https://bit.ly/3BCtywe
+                    log.warning("Ignoring frame %r after close", frame)
+                    break
                 await ch.frames.put((weight, frame))
         except asyncio.CancelledError as e:
             if self.is_connection_was_stuck:
@@ -699,6 +710,7 @@ class Connection(Base, AbstractConnection):
         ex: Optional[ExceptionType] = ConnectionClosed(0, "normal closed"),
     ) -> None:
         log.debug("Closing connection %r cause: %r", self, ex)
+        self.__close_event.set()
         if not self._reader_task.done():
             self._reader_task.cancel()
         if not self._writer_task.done():

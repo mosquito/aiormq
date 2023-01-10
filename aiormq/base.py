@@ -1,5 +1,6 @@
 import abc
 import asyncio
+import logging
 from contextlib import suppress
 from functools import wraps
 from typing import Any, Callable, Coroutine, Optional, Set, TypeVar, Union
@@ -59,6 +60,8 @@ class FutureStore(AbstractFutureStore):
                 tasks.append(future)
             elif isinstance(future, asyncio.Future):
                 future.set_exception(exception or Exception)
+            else:
+                raise ValueError(future)
 
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -128,7 +131,13 @@ class Base(AbstractBase):
             await self._on_close(exc)
 
         with suppress(Exception):
-            await self._cancel_tasks(exc)
+            try:
+                await self._cancel_tasks(exc)
+            except BaseException:
+                logging.exception(
+                    "Exception when cancelling %r...", self.__class__,
+                )
+                raise
 
     async def close(
         self, exc: Optional[ExceptionType] = asyncio.CancelledError,
