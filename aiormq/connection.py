@@ -6,7 +6,6 @@ import sys
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
-from io import BytesIO
 from types import MappingProxyType, TracebackType
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
@@ -36,6 +35,7 @@ from .exceptions import (
     ProbableAuthenticationError,
 )
 from .tools import Countdown, censor_url
+
 
 # noinspection PyUnresolvedReferences
 try:
@@ -531,7 +531,7 @@ class Connection(Base, AbstractConnection):
                         )
 
                         self.write_queue.put_nowait(
-                            ChannelFrame(
+                            ChannelFrame.marshall(
                                 channel_number=0,
                                 frames=[spec.Connection.CloseOk()],
                             ),
@@ -600,7 +600,9 @@ class Connection(Base, AbstractConnection):
 
     async def __heartbeat(self) -> None:
         heartbeat_timeout = max(1, self.heartbeat_timeout // 2)
-        heartbeat = ChannelFrame(frames=[Heartbeat()], channel_number=0)
+        heartbeat = ChannelFrame.marshall(
+            frames=[Heartbeat()], channel_number=0,
+        )
 
         while not self.closing.done():
             if self.is_connection_was_stuck:
@@ -625,27 +627,16 @@ class Connection(Base, AbstractConnection):
             async for channel_frame in frame_iterator:
                 log.debug("Prepare to send %r", channel_frame)
 
-                frame: FrameTypes
-                with BytesIO() as fp:
-                    for frame in channel_frame.frames:
-                        fp.write(
-                            pamqp.frame.marshal(
-                                frame, channel_frame.channel_number,
-                            ),
-                        )
-
-                        if isinstance(frame, spec.Connection.CloseOk):
-                            writer.write(fp.getvalue())
-                            return
-
-                    writer.write(fp.getvalue())
-
-                if (
-                    channel_frame.drain_future is not None and
-                    not channel_frame.drain_future.done()
-                ):
+                writer.write(channel_frame.payload)
+                if channel_frame.should_close:
                     await writer.drain()
-                    channel_frame.drain_future.set_result(None)
+                    channel_frame.drain()
+                    return
+
+                if channel_frame.should_drain:
+                    await writer.drain()
+                    channel_frame.drain()
+
         except asyncio.CancelledError:
             if not self.__check_writer(writer):
                 raise
@@ -657,7 +648,8 @@ class Connection(Base, AbstractConnection):
                 method_id=self.__close_method_id,
             )
 
-            writer.write(pamqp.frame.marshal(frame, 0))
+            writer.write(ChannelFrame.marshall(0, [frame]).payload)
+
             log.debug("Sending %r to %r", frame, self)
 
             await asyncio.gather(
@@ -791,7 +783,7 @@ class Connection(Base, AbstractConnection):
         self, new_secret: str, *,
         reason: str = "", timeout: TimeoutType = None,
     ) -> spec.Connection.UpdateSecretOk:
-        channel_frame = ChannelFrame(
+        channel_frame = ChannelFrame.marshall(
             channel_number=0,
             frames=[
                 spec.Connection.UpdateSecret(

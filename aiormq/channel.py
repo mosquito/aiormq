@@ -166,7 +166,7 @@ class Channel(Base, AbstractChannel):
             try:
                 await countdown(
                     self.write_queue.put(
-                        ChannelFrame(
+                        ChannelFrame.marshall(
                             channel_number=self.number,
                             frames=[frame],
                         ),
@@ -195,7 +195,7 @@ class Channel(Base, AbstractChannel):
 
                 self.__close_event.set()
                 self.write_queue.put_nowait(
-                    ChannelFrame(
+                    ChannelFrame.marshall(
                         channel_number=self.number,
                         frames=[
                             spec.Channel.Close(
@@ -419,7 +419,7 @@ class Channel(Base, AbstractChannel):
                 elif isinstance(frame, spec.Channel.Close):
                     exc: BaseException = exception_by_code(frame)
                     self.write_queue.put_nowait(
-                        ChannelFrame(
+                        ChannelFrame.marshall(
                             channel_number=self.number,
                             frames=[spec.Channel.CloseOk()],
                         ),
@@ -525,7 +525,7 @@ class Channel(Base, AbstractChannel):
         drain_future = self.create_future() if wait else None
 
         await self.write_queue.put(
-            ChannelFrame(
+            ChannelFrame.marshall(
                 frames=[
                     spec.Basic.Ack(
                         delivery_tag=delivery_tag,
@@ -553,7 +553,7 @@ class Channel(Base, AbstractChannel):
         drain_future = self.create_future() if wait else None
 
         await self.write_queue.put(
-            ChannelFrame(
+            ChannelFrame.marshall(
                 frames=[
                     spec.Basic.Nack(
                         delivery_tag=delivery_tag,
@@ -574,7 +574,7 @@ class Channel(Base, AbstractChannel):
     ) -> None:
         drain_future = self.create_future()
         await self.write_queue.put(
-            ChannelFrame(
+            ChannelFrame.marshall(
                 channel_number=self.number,
                 frames=[
                     spec.Basic.Reject(
@@ -664,7 +664,7 @@ class Channel(Base, AbstractChannel):
 
             await countdown(
                 self.write_queue.put(
-                    ChannelFrame(
+                    ChannelFrame.marshall(
                         frames=body_frames,
                         channel_number=self.number,
                         drain_future=drain_future,

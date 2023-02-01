@@ -1,11 +1,15 @@
 import asyncio
+import dataclasses
+import io
+import logging
 from abc import ABC, abstractmethod, abstractproperty
 from types import TracebackType
 from typing import (
-    Any, Awaitable, Callable, Coroutine, Dict, Iterable, NamedTuple, Optional,
-    Set, Tuple, Type, Union,
+    Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Set, Tuple,
+    Type, Union,
 )
 
+import pamqp
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
@@ -17,6 +21,7 @@ from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 
+connection_logger = logging.getLogger("aiormq.connection")
 ExceptionType = Union[BaseException, Type[BaseException]]
 
 
@@ -59,7 +64,8 @@ CoroutineType = Coroutine[Any, None, Any]
 GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 
 
-class DeliveredMessage(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class DeliveredMessage:
     delivery: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType]
     header: ContentHeader
     body: bytes
@@ -137,7 +143,8 @@ ConfirmationFrameType = Union[
 ]
 
 
-class SSLCerts(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class SSLCerts:
     cert: Optional[str]
     key: Optional[str]
     capath: Optional[str]
@@ -146,7 +153,8 @@ class SSLCerts(NamedTuple):
     verify: bool
 
 
-class FrameReceived(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class FrameReceived:
     channel: int
     frame: str
 
@@ -182,10 +190,47 @@ RpcReturnType = Optional[
 ]
 
 
-class ChannelFrame(NamedTuple):
-    channel_number: int
-    frames: Iterable[Union[FrameType, Heartbeat, ContentBody]]
+@dataclasses.dataclass(frozen=True)
+class ChannelFrame:
+    payload: bytes
+    should_close: bool
     drain_future: Optional[asyncio.Future] = None
+
+    def drain(self) -> None:
+        if self.should_drain:
+            self.drain_future.set_result(None)
+
+    @property
+    def should_drain(self) -> bool:
+        return self.drain_future is not None and not self.drain_future.done()
+
+    @classmethod
+    def marshall(
+        cls, channel_number: int,
+        frames: Iterable[Union[FrameType, Heartbeat, ContentBody]],
+        drain_future: Optional[asyncio.Future] = None,
+    ) -> "ChannelFrame":
+        should_close = False
+
+        with io.BytesIO() as fp:
+            for frame in frames:
+                if isinstance(frame, spec.Connection.CloseOk):
+                    should_close = True
+
+                if should_close:
+                    connection_logger.warning(
+                        "It looks like you are going to send a frame %r after "
+                        "the connection is closed, it's pointless, "
+                        "the frame is dropped.", frame,
+                    )
+                    continue
+                fp.write(pamqp.frame.marshal(frame, channel_number))
+
+            return cls(
+                payload=fp.getvalue(),
+                drain_future=drain_future,
+                should_close=should_close,
+            )
 
 
 class AbstractFutureStore:
