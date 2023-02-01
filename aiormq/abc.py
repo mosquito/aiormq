@@ -197,7 +197,10 @@ class ChannelFrame:
     drain_future: Optional[asyncio.Future] = None
 
     def drain(self) -> None:
-        if self.should_drain:
+        if not self.should_drain:
+            return
+
+        if self.drain_future is not None:
             self.drain_future.set_result(None)
 
     @property
