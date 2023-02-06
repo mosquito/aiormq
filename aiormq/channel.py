@@ -2,12 +2,14 @@ import asyncio
 import io
 import logging
 from collections import OrderedDict
-from contextlib import suppress
 from functools import partial
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional, Set, Type, Union
+from typing import (
+    Any, Awaitable, Callable, Dict, List, Mapping, Optional, Set, Tuple, Type,
+    Union,
+)
 from uuid import UUID
 
 import pamqp.frame
@@ -268,7 +270,7 @@ class Channel(Base, AbstractChannel):
 
         return frame
 
-    async def _on_deliver(self, frame: spec.Basic.Deliver) -> None:
+    async def _on_deliver_frame(self, frame: spec.Basic.Deliver) -> None:
         header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
 
@@ -281,7 +283,7 @@ class Channel(Base, AbstractChannel):
             # noinspection PyAsyncCall
             self.create_task(consumer(message))
 
-    async def _on_get(
+    async def _on_get_frame(
         self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty],
     ) -> None:
         message = None
@@ -308,7 +310,7 @@ class Channel(Base, AbstractChannel):
         getter.set_result((frame, message))
         return
 
-    async def _on_return(self, frame: spec.Basic.Return) -> None:
+    async def _on_return_frame(self, frame: spec.Basic.Return) -> None:
         header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
         message_id = message.header.properties.message_id
@@ -366,7 +368,7 @@ class Channel(Base, AbstractChannel):
             DeliveryError(None, frame),
         )  # pragma: nocover
 
-    async def _on_confirm(self, frame: ConfirmationFrameType) -> None:
+    async def _on_confirm_frame(self, frame: ConfirmationFrameType) -> None:
         if not self.publisher_confirms:  # pragma: nocover
             return
 
@@ -386,61 +388,63 @@ class Channel(Base, AbstractChannel):
         else:
             self._confirm_delivery(frame.delivery_tag, frame)
 
+    async def _on_cancel_frame(
+        self,
+        frame: Union[spec.Basic.CancelOk, spec.Basic.Cancel],
+    ) -> None:
+        if frame.consumer_tag is not None:
+            self.consumers.pop(frame.consumer_tag, None)
+
+    async def _on_close_frame(self, frame: spec.Channel.Close):
+        exc: BaseException = exception_by_code(frame)
+        self.write_queue.put_nowait(
+            ChannelFrame.marshall(
+                channel_number=self.number,
+                frames=[spec.Channel.CloseOk()],
+            ),
+        )
+
+        self.connection.channels.pop(self.number, None)
+        await self._cancel_tasks(exc)
+        raise asyncio.CancelledError(
+            "The channel is closed on the server's initiative",
+        )
+
+    async def _on_close_ok_frame(self, _: spec.Channel.CloseOk):
+        self.connection.channels.pop(self.number, None)
+        raise asyncio.CancelledError()
+
     async def _reader(self) -> None:
-        while True:
-            try:
+        hooks: Mapping[Any, Tuple[bool, Callable[[Any], Awaitable[None]]]]
+
+        hooks = {
+            spec.Basic.Deliver: (False, self._on_deliver_frame),
+            spec.Basic.GetOk: (True, self._on_get_frame),
+            spec.Basic.GetEmpty: (True, self._on_get_frame),
+            spec.Basic.Return: (False, self._on_return_frame),
+            spec.Basic.Cancel: (False, self._on_cancel_frame),
+            spec.Basic.CancelOk: (True, self._on_cancel_frame),
+            spec.Channel.Close: (False, self._on_close_frame),
+            spec.Channel.CloseOk: (False, self._on_close_ok_frame),
+            spec.Basic.Ack: (False, self._on_confirm_frame),
+            spec.Basic.Nack: (False, self._on_confirm_frame),
+        }
+
+        try:
+            while True:
                 frame = await self._get_frame()
+                should_add_to_rpc, hook = hooks.get(type(frame), (True, None))
 
-                if isinstance(frame, spec.Basic.Deliver):
-                    with suppress(Exception):
-                        await self._on_deliver(frame)
-                    continue
-                elif isinstance(
-                    frame, (spec.Basic.GetOk, spec.Basic.GetEmpty),
-                ):
-                    with suppress(Exception):
-                        await self._on_get(frame)
-                elif isinstance(frame, spec.Basic.Return):
-                    with suppress(Exception):
-                        await self._on_return(frame)
-                    continue
-                elif isinstance(frame, spec.Basic.Cancel):
-                    if frame.consumer_tag is None:
-                        continue
-                    self.consumers.pop(frame.consumer_tag, None)
-                    continue
-                elif isinstance(frame, spec.Basic.CancelOk):
-                    if frame.consumer_tag is not None:
-                        self.consumers.pop(frame.consumer_tag, None)
-                elif isinstance(frame, (spec.Basic.Ack, spec.Basic.Nack)):
-                    with suppress(Exception):
-                        await self._on_confirm(frame)
-                    continue
-                elif isinstance(frame, spec.Channel.Close):
-                    exc: BaseException = exception_by_code(frame)
-                    self.write_queue.put_nowait(
-                        ChannelFrame.marshall(
-                            channel_number=self.number,
-                            frames=[spec.Channel.CloseOk()],
-                        ),
-                    )
-
-                    self.connection.channels.pop(self.number, None)
-                    await self._cancel_tasks(exc)
-                    return
-                elif isinstance(frame, spec.Channel.CloseOk):
-                    if self.__close_event.is_set():
-                        await self._cancel_tasks(asyncio.TimeoutError())
-                        self.connection.channels.pop(self.number, None)
+                if hook is not None:
+                    try:
+                        await hook(frame)
+                    except asyncio.CancelledError as e:
+                        await self._cancel_tasks(e)
                         return
-
-                await self.rpc_frames.put(frame)
-            except asyncio.CancelledError:
-                return
-            except Exception as e:  # pragma: nocover
-                log.debug("Channel reader exception %r", exc_info=e)
-                await self._cancel_tasks(e)
-                raise
+                if should_add_to_rpc:
+                    await self.rpc_frames.put(frame)
+        except Exception as e:
+            await self._cancel_tasks(e)
 
     @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
@@ -454,6 +458,7 @@ class Channel(Base, AbstractChannel):
                 timeout=self.connection.connection_tune.heartbeat or None,
             )
         self.connection.channels.pop(self.number, None)
+        self.__close_event.set()
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,

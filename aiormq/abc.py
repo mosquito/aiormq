@@ -217,9 +217,6 @@ class ChannelFrame:
 
         with io.BytesIO() as fp:
             for frame in frames:
-                if isinstance(frame, spec.Connection.CloseOk):
-                    should_close = True
-
                 if should_close:
                     connection_logger.warning(
                         "It looks like you are going to send a frame %r after "
@@ -227,6 +224,8 @@ class ChannelFrame:
                         "the frame is dropped.", frame,
                     )
                     continue
+                if isinstance(frame, spec.Connection.CloseOk):
+                    should_close = True
                 fp.write(pamqp.frame.marshal(frame, channel_number))
 
             return cls(
