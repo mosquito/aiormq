@@ -403,16 +403,12 @@ class Channel(Base, AbstractChannel):
                 frames=[spec.Channel.CloseOk()],
             ),
         )
-
         self.connection.channels.pop(self.number, None)
-        await self._cancel_tasks(exc)
-        raise asyncio.CancelledError(
-            "The channel is closed on the server's initiative",
-        )
+        raise exc
 
     async def _on_close_ok_frame(self, _: spec.Channel.CloseOk):
         self.connection.channels.pop(self.number, None)
-        raise asyncio.CancelledError()
+        raise ChannelClosed()
 
     async def _reader(self) -> None:
         hooks: Mapping[Any, Tuple[bool, Callable[[Any], Awaitable[None]]]]

@@ -27,24 +27,24 @@ ExceptionType = Union[BaseException, Type[BaseException]]
 
 # noinspection PyShadowingNames
 class TaskWrapper:
-    __slots__ = "exception", "task"
+    __slots__ = "_exception", "task"
 
-    exception: Union[BaseException, Type[BaseException]]
+    _exception: Union[BaseException, Type[BaseException]]
     task: asyncio.Task
 
     def __init__(self, task: asyncio.Task):
         self.task = task
-        self.exception = asyncio.CancelledError
+        self._exception = asyncio.CancelledError
 
     def throw(self, exception: ExceptionType) -> None:
-        self.exception = exception
+        self._exception = exception
         self.task.cancel()
 
     async def __inner(self) -> Any:
         try:
             return await self.task
         except asyncio.CancelledError as e:
-            raise self.exception from e
+            raise self._exception from e
 
     def __await__(self, *args: Any, **kwargs: Any) -> Any:
         return self.__inner().__await__()
