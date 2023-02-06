@@ -395,7 +395,7 @@ class Channel(Base, AbstractChannel):
         if frame.consumer_tag is not None:
             self.consumers.pop(frame.consumer_tag, None)
 
-    async def _on_close_frame(self, frame: spec.Channel.Close):
+    async def _on_close_frame(self, frame: spec.Channel.Close) -> None:
         exc: BaseException = exception_by_code(frame)
         self.write_queue.put_nowait(
             ChannelFrame.marshall(
@@ -406,7 +406,7 @@ class Channel(Base, AbstractChannel):
         self.connection.channels.pop(self.number, None)
         raise exc
 
-    async def _on_close_ok_frame(self, _: spec.Channel.CloseOk):
+    async def _on_close_ok_frame(self, _: spec.Channel.CloseOk) -> None:
         self.connection.channels.pop(self.number, None)
         raise ChannelClosed()
 
