@@ -176,7 +176,7 @@ class FrameReceiver(AsyncIterable):
 
                 frame_payload = await self.reader.readexactly(frame_length + 1)
             except asyncio.IncompleteReadError as e:
-                raise AMQPFrameError(
+                raise AMQPError(
                     "Server connection unexpectedly closed",
                 ) from e
         return pamqp.frame.unmarshal(frame_header + frame_payload)

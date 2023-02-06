@@ -406,9 +406,16 @@ async def test_connection_stuck(proxy, amqp_url: URL):
                 if counter >= 10:
                     raise RuntimeError("Connection stucks but not closed")
 
-        writer_task: asyncio.Task = connection._writer_task       # type: ignore
+        writer_task: asyncio.Task = connection._writer_task      # type: ignore
 
         assert writer_task.done()
 
         with pytest.raises(asyncio.CancelledError):
             assert writer_task.result()
+
+        reader_task: asyncio.Task = connection._reader_task      # type: ignore
+
+        assert reader_task.done()
+
+        with pytest.raises(aiormq.exceptions.AMQPError):
+            assert reader_task.result()
