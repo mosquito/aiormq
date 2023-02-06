@@ -384,3 +384,24 @@ async def test_update_secret(amqp_connection, amqp_url: URL):
         amqp_url.password, timeout=1,
     )
     assert isinstance(respone, aiormq.spec.Connection.UpdateSecretOk)
+
+
+async def test_connection_stuck(proxy, amqp_url: URL):
+    url = amqp_url.with_host(
+        "localhost",
+    ).with_port(
+        proxy.proxy_port,
+    ).with_query(heartbeat="1")
+
+    connection = await aiormq.connect(url)
+
+    async with connection:
+        # delay the delivery of each packet by 5 seconds, which
+        # is more than the heartbeat
+        with proxy.slowdown(5, 5):
+            counter = 0
+            while connection.is_opened:
+                await asyncio.sleep(1)
+                counter += 1
+                if counter >= 10:
+                    raise RuntimeError("Connection stucks but not closed")
