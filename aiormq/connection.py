@@ -3,9 +3,11 @@ import logging
 import platform
 import ssl
 import sys
+import warnings
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
+from io import BytesIO
 from types import MappingProxyType, TracebackType
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
@@ -149,37 +151,38 @@ class FrameReceiver(AsyncIterable):
             del self.reader
             raise StopAsyncIteration
 
-        async with self.lock:
-            try:
-                frame_header = await self.reader.readexactly(1)
+        with BytesIO() as fp:
+            async with self.lock:
+                try:
+                    fp.write(await self.reader.readexactly(1))
 
-                if frame_header == b"\0x00":
-                    raise AMQPFrameError(
-                        await self.reader.read(),
+                    if fp.getvalue() == b"\0x00":
+                        fp.write(await self.reader.read())
+                        raise AMQPFrameError(fp.getvalue())
+
+                    if self.reader is None:
+                        raise ConnectionError
+
+                    fp.write(await self.reader.readexactly(6))
+
+                    if not self.started and fp.getvalue().startswith(b"AMQP"):
+                        raise AMQPSyntaxError
+                    else:
+                        self.started = True
+
+                    frame_type, _, frame_length = pamqp.frame.frame_parts(
+                        fp.getvalue(),
                     )
+                    if frame_length is None:
+                        raise AMQPInternalError("No frame length", None)
 
-                if self.reader is None:
-                    raise ConnectionError
+                    fp.write(await self.reader.readexactly(frame_length + 1))
+                except asyncio.IncompleteReadError as e:
+                    raise AMQPError(
+                        "Server connection unexpectedly closed",
+                    ) from e
 
-                frame_header += await self.reader.readexactly(6)
-
-                if not self.started and frame_header.startswith(b"AMQP"):
-                    raise AMQPSyntaxError
-                else:
-                    self.started = True
-
-                frame_type, _, frame_length = pamqp.frame.frame_parts(
-                    frame_header,
-                )
-                if frame_length is None:
-                    raise AMQPInternalError("No frame length", None)
-
-                frame_payload = await self.reader.readexactly(frame_length + 1)
-            except asyncio.IncompleteReadError as e:
-                raise AMQPError(
-                    "Server connection unexpectedly closed",
-                ) from e
-        return pamqp.frame.unmarshal(frame_header + frame_payload)
+            return pamqp.frame.unmarshal(fp.getvalue())
 
     async def __anext__(self) -> ReceivedFrame:
         return await self.get_frame()
@@ -275,7 +278,7 @@ class Connection(Base, AbstractConnection):
         self.__update_secret_future: Optional[asyncio.Future] = None
         self.__connection_unblocked: asyncio.Event = asyncio.Event()
         self.__heartbeat_grace_timeout = (
-            (self.timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
+            (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
         )
         self.__last_frame_time: float = self.loop.time()
 
@@ -477,13 +480,8 @@ class Connection(Base, AbstractConnection):
         # noinspection PyAsyncCall
         self._writer_task = self.create_task(self.__writer(writer))
 
-        # Not very optimal, but avoid creating a task for each frame sending
-        # noinspection PyAsyncCall
-        self.create_task(self.__heartbeat())
-
         self.connection_tune = connection_tune
         self.server_properties = server_properties
-        self.__connection_unblocked.set()
         return True
 
     def _on_reader_done(self, task: asyncio.Task) -> None:
@@ -508,7 +506,77 @@ class Connection(Base, AbstractConnection):
         self.loop.create_task(close_writer_task())
 
     async def __reader(self, frame_receiver: FrameReceiver) -> None:
+        self.__connection_unblocked.set()
         self.connected.set()
+
+        # Not very optimal, but avoid creating a task for each frame sending
+        # noinspection PyAsyncCall
+        self.create_task(self.__heartbeat())
+
+        async def handle_close_ok(_: spec.Connection.CloseOk) -> None:
+            return
+
+        async def handle_heartbeat(_: Heartbeat) -> None:
+            return
+
+        async def handle_close(frame: spec.Connection.Close) -> None:
+            log.exception(
+                "Unexpected connection close from remote \"%s\", "
+                "Connection.Close(reply_code=%r, reply_text=%r)",
+                self, frame.reply_code, frame.reply_text,
+            )
+
+            self.write_queue.put_nowait(
+                ChannelFrame.marshall(
+                    channel_number=0,
+                    frames=[spec.Connection.CloseOk()],
+                ),
+            )
+
+            exception = exception_by_code(frame)
+
+            if (
+                self.__update_secret_future is not None and
+                not self.__update_secret_future.done()
+            ):
+                self.__update_secret_future.set_exception(exception)
+            raise exception
+
+        async def handle_channel_close_ok(_: spec.Channel.CloseOk) -> None:
+            self.channels.pop(0, None)
+
+        async def handle_channel_update_secret_ok(
+            _: spec.Connection.UpdateSecretOk
+        ) -> None:
+            if (
+                self.__update_secret_future is not None and
+                not self.__update_secret_future.done()
+            ):
+                self.__update_secret_future.set_result(frame)
+                return
+            log.warning("Got unexpected UpdateSecretOk frame")
+
+        async def handle_connection_blocked(
+            _: spec.Connection.Blocked
+        ) -> None:
+            log.warning("Connection %r was blocked by: %r", self, frame.reason)
+            self.__connection_unblocked.clear()
+
+        async def handle_connection_unblocked(
+            _: spec.Connection.Unblocked
+        ) -> None:
+            log.warning("Connection %r was unblocked", self)
+            self.__connection_unblocked.set()
+
+        channel_frame_handlers = {
+            spec.Connection.CloseOk: handle_close_ok,
+            spec.Connection.Close: handle_close,
+            Heartbeat: handle_heartbeat,
+            spec.Channel.CloseOk: handle_channel_close_ok,
+            spec.Connection.UpdateSecretOk: handle_channel_update_secret_ok,
+            spec.Connection.Blocked: handle_connection_blocked,
+            spec.Connection.Unblocked: handle_connection_unblocked,
+        }
 
         try:
             async for weight, channel, frame in frame_receiver:
@@ -520,58 +588,13 @@ class Connection(Base, AbstractConnection):
                 )
 
                 if channel == 0:
-                    if isinstance(frame, spec.Connection.CloseOk):
-                        return
+                    handler = channel_frame_handlers.get(type(frame))
 
-                    if isinstance(frame, spec.Connection.Close):
-                        log.exception(
-                            "Unexpected connection close from remote \"%s\", "
-                            "Connection.Close(reply_code=%r, reply_text=%r)",
-                            self, frame.reply_code, frame.reply_text,
-                        )
-
-                        self.write_queue.put_nowait(
-                            ChannelFrame.marshall(
-                                channel_number=0,
-                                frames=[spec.Connection.CloseOk()],
-                            ),
-                        )
-
-                        exception = exception_by_code(frame)
-
-                        if (
-                            self.__update_secret_future is not None and
-                            not self.__update_secret_future.done()
-                        ):
-                            self.__update_secret_future.set_exception(exception)
-
-                        raise exception
-                    elif isinstance(frame, Heartbeat):
-                        continue
-                    elif isinstance(frame, spec.Channel.CloseOk):
-                        self.channels.pop(channel, None)
-                    elif isinstance(frame, spec.Connection.UpdateSecretOk):
-                        if (
-                            self.__update_secret_future is not None and
-                            not self.__update_secret_future.done()
-                        ):
-                            self.__update_secret_future.set_result(frame)
-                        else:
-                            log.warning("Got unexpected UpdateSecretOk frame")
-                        continue
-                    elif isinstance(frame, spec.Connection.Blocked):
-                        log.warning(
-                            "Connection %r was blocked by: %r",
-                            self, frame.reason,
-                        )
-                        self.__connection_unblocked.clear()
-                        continue
-                    elif isinstance(frame, spec.Connection.Unblocked):
-                        log.warning("Connection %r was unblocked", self)
-                        self.__connection_unblocked.set()
+                    if handler is None:
+                        log.error("Unexpected frame %r", frame)
                         continue
 
-                    log.error("Unexpected frame %r", frame)
+                    await handler(frame)
                     continue
 
                 ch: Optional[AbstractChannel] = self.channels.get(channel)
@@ -585,12 +608,15 @@ class Connection(Base, AbstractConnection):
                     self.channels[channel] = None
 
                 await ch.frames.put((weight, frame))
-        except asyncio.CancelledError as e:
+        except asyncio.CancelledError:
             if self.is_connection_was_stuck:
-                raise asyncio.TimeoutError(
-                    "Server connection was stucked. No frames were "
-                    f"received in {self.__heartbeat_grace_timeout} seconds.",
-                ) from e
+                # noinspection PyAsyncCall
+                self._cancel_tasks(
+                    asyncio.TimeoutError(
+                        "Server connection was stuck. No frames were received "
+                        f"in {self.__heartbeat_grace_timeout} seconds."
+                    )
+                )
             raise
 
     @property
@@ -610,7 +636,15 @@ class Connection(Base, AbstractConnection):
                 return
 
             await asyncio.sleep(heartbeat_timeout)
-            await self.write_queue.put(heartbeat)
+
+            try:
+                await asyncio.wait_for(
+                    self.write_queue.put(heartbeat),
+                    timeout=self.__heartbeat_grace_timeout
+                )
+            except asyncio.TimeoutError:
+                self._reader_task.cancel()
+                return
 
     async def __writer(self, writer: asyncio.StreamWriter) -> None:
         channel_frame: ChannelFrame

@@ -5,6 +5,7 @@ import uuid
 from binascii import hexlify
 from typing import Optional
 
+import aiomisc
 import pytest
 from pamqp.commands import Basic
 from yarl import URL
@@ -386,6 +387,7 @@ async def test_update_secret(amqp_connection, amqp_url: URL):
     assert isinstance(respone, aiormq.spec.Connection.UpdateSecretOk)
 
 
+@aiomisc.timeout(20)
 async def test_connection_stuck(proxy, amqp_url: URL):
     url = amqp_url.with_host(
         proxy.proxy_host,
@@ -398,13 +400,9 @@ async def test_connection_stuck(proxy, amqp_url: URL):
     async with connection:
         # delay the delivery of each packet by 5 seconds, which
         # is more than the heartbeat
-        with proxy.slowdown(5, 5):
-            counter = 0
+        with proxy.slowdown(50, 50):
             while connection.is_opened:
                 await asyncio.sleep(1)
-                counter += 1
-                if counter >= 10:
-                    raise RuntimeError("Connection stucks but not closed")
 
         writer_task: asyncio.Task = connection._writer_task      # type: ignore
 
@@ -417,5 +415,5 @@ async def test_connection_stuck(proxy, amqp_url: URL):
 
         assert reader_task.done()
 
-        with pytest.raises(aiormq.exceptions.AMQPError):
+        with pytest.raises(asyncio.CancelledError):
             assert reader_task.result()
