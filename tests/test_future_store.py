@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from aiormq.abc import TaskWrapper
 from aiormq.base import FutureStore
 
 
@@ -90,3 +91,16 @@ async def test_siblings(
     assert not root_store.futures
     assert not child_store.futures
     assert not child.futures
+
+
+async def test_task_wrapper(loop):
+    future = loop.create_future()
+    wrapped = TaskWrapper(future)
+
+    wrapped.throw(RuntimeError())
+
+    with pytest.raises(asyncio.CancelledError):
+        await future
+
+    with pytest.raises(RuntimeError):
+        await wrapped

@@ -388,10 +388,10 @@ async def test_update_secret(amqp_connection, amqp_url: URL):
 
 async def test_connection_stuck(proxy, amqp_url: URL):
     url = amqp_url.with_host(
-        "localhost",
+        proxy.proxy_host,
     ).with_port(
         proxy.proxy_port,
-    ).with_query(heartbeat="1")
+    ).update_query(heartbeat="1")
 
     connection = await aiormq.connect(url)
 
