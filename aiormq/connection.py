@@ -677,7 +677,7 @@ class Connection(Base, AbstractConnection):
                     channel_frame.drain()
 
         except asyncio.CancelledError:
-            if not self.__check_writer(writer):
+            if not self.__check_writer(writer) or self.is_connection_was_stuck:
                 raise
 
             frame = spec.Connection.Close(
