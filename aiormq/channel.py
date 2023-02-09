@@ -74,7 +74,7 @@ ConfirmationType = Union[asyncio.Future, Returning]
 class Channel(Base, AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
-
+    CHANNEL_CLOSE_TIMEOUT = 10
     confirmations: Dict[int, ConfirmationType]
 
     def __init__(
@@ -447,7 +447,9 @@ class Channel(Base, AbstractChannel):
             last_exception = e
             raise
         finally:
-            await self.close(last_exception)
+            await self.close(
+                last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT
+            )
 
     @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
