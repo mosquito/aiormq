@@ -21,7 +21,6 @@ from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 
-connection_logger = logging.getLogger("aiormq.connection")
 ExceptionType = Union[BaseException, Type[BaseException]]
 
 
@@ -218,7 +217,13 @@ class ChannelFrame:
         with io.BytesIO() as fp:
             for frame in frames:
                 if should_close:
-                    connection_logger.warning(
+                    logger = logging.getLogger(
+                        "aiormq.connection"
+                    ).getChild(
+                        "marshall"
+                    )
+
+                    logger.warning(
                         "It looks like you are going to send a frame %r after "
                         "the connection is closed, it's pointless, "
                         "the frame is dropped.", frame,
