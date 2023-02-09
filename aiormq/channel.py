@@ -428,7 +428,8 @@ class Channel(Base, AbstractChannel):
             spec.Basic.Nack: (False, self._on_confirm_frame),
         }
 
-        last_exception = None
+        last_exception: Optional[BaseException] = None
+
         try:
             while True:
                 frame = await self._get_frame()
