@@ -1,11 +1,15 @@
 import asyncio
+import dataclasses
+import io
+import logging
 from abc import ABC, abstractmethod, abstractproperty
 from types import TracebackType
 from typing import (
-    Any, Awaitable, Callable, Coroutine, Dict, Iterable, NamedTuple, Optional,
-    Set, Tuple, Type, Union,
+    Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Set, Tuple,
+    Type, Union,
 )
 
+import pamqp
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
@@ -22,24 +26,24 @@ ExceptionType = Union[BaseException, Type[BaseException]]
 
 # noinspection PyShadowingNames
 class TaskWrapper:
-    __slots__ = "exception", "task"
+    __slots__ = "_exception", "task"
 
-    exception: Union[BaseException, Type[BaseException]]
+    _exception: Union[BaseException, Type[BaseException]]
     task: asyncio.Task
 
     def __init__(self, task: asyncio.Task):
         self.task = task
-        self.exception = asyncio.CancelledError
+        self._exception = asyncio.CancelledError
 
     def throw(self, exception: ExceptionType) -> None:
-        self.exception = exception
+        self._exception = exception
         self.task.cancel()
 
     async def __inner(self) -> Any:
         try:
             return await self.task
         except asyncio.CancelledError as e:
-            raise self.exception from e
+            raise self._exception from e
 
     def __await__(self, *args: Any, **kwargs: Any) -> Any:
         return self.__inner().__await__()
@@ -59,7 +63,8 @@ CoroutineType = Coroutine[Any, None, Any]
 GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 
 
-class DeliveredMessage(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class DeliveredMessage:
     delivery: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType]
     header: ContentHeader
     body: bytes
@@ -137,7 +142,8 @@ ConfirmationFrameType = Union[
 ]
 
 
-class SSLCerts(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class SSLCerts:
     cert: Optional[str]
     key: Optional[str]
     capath: Optional[str]
@@ -146,7 +152,8 @@ class SSLCerts(NamedTuple):
     verify: bool
 
 
-class FrameReceived(NamedTuple):
+@dataclasses.dataclass(frozen=True)
+class FrameReceived:
     channel: int
     frame: str
 
@@ -182,10 +189,55 @@ RpcReturnType = Optional[
 ]
 
 
-class ChannelFrame(NamedTuple):
-    channel_number: int
-    frames: Iterable[Union[FrameType, Heartbeat, ContentBody]]
+@dataclasses.dataclass(frozen=True)
+class ChannelFrame:
+    payload: bytes
+    should_close: bool
     drain_future: Optional[asyncio.Future] = None
+
+    def drain(self) -> None:
+        if not self.should_drain:
+            return
+
+        if self.drain_future is not None:
+            self.drain_future.set_result(None)
+
+    @property
+    def should_drain(self) -> bool:
+        return self.drain_future is not None and not self.drain_future.done()
+
+    @classmethod
+    def marshall(
+        cls, channel_number: int,
+        frames: Iterable[Union[FrameType, Heartbeat, ContentBody]],
+        drain_future: Optional[asyncio.Future] = None,
+    ) -> "ChannelFrame":
+        should_close = False
+
+        with io.BytesIO() as fp:
+            for frame in frames:
+                if should_close:
+                    logger = logging.getLogger(
+                        "aiormq.connection"
+                    ).getChild(
+                        "marshall"
+                    )
+
+                    logger.warning(
+                        "It looks like you are going to send a frame %r after "
+                        "the connection is closed, it's pointless, "
+                        "the frame is dropped.", frame,
+                    )
+                    continue
+                if isinstance(frame, spec.Connection.CloseOk):
+                    should_close = True
+                fp.write(pamqp.frame.marshal(frame, channel_number))
+
+            return cls(
+                payload=fp.getvalue(),
+                drain_future=drain_future,
+                should_close=should_close,
+            )
 
 
 class AbstractFutureStore:

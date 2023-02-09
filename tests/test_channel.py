@@ -67,7 +67,6 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
     assert message.body == b"foo bar"
 
 
-@pytest.mark.no_catch_loop_exceptions
 async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
     channel: aiormq.Channel = amqp_channel
     await channel.basic_qos(prefetch_count=1)

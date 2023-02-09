@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from aiormq.tools import awaitable, Countdown
+from aiormq.tools import Countdown, awaitable
 
 
 def simple_func():
