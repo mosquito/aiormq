@@ -35,6 +35,10 @@ class FutureStore(AbstractFutureStore):
             if future in self.futures:
                 self.futures.remove(future)
 
+            exc = future.exception()
+            if exc is not None:
+                raise exc
+
         return remover
 
     def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
