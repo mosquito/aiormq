@@ -404,10 +404,12 @@ class Channel(Base, AbstractChannel):
             ),
         )
         self.connection.channels.pop(self.number, None)
+        self.__close_event.set()
         raise exc
 
     async def _on_close_ok_frame(self, _: spec.Channel.CloseOk) -> None:
         self.connection.channels.pop(self.number, None)
+        self.__close_event.set()
         raise ChannelClosed()
 
     async def _reader(self) -> None:
@@ -426,35 +428,42 @@ class Channel(Base, AbstractChannel):
             spec.Basic.Nack: (False, self._on_confirm_frame),
         }
 
+        last_exception = None
         try:
             while True:
                 frame = await self._get_frame()
                 should_add_to_rpc, hook = hooks.get(type(frame), (True, None))
 
                 if hook is not None:
-                    try:
-                        await hook(frame)
-                    except asyncio.CancelledError as e:
-                        await self._cancel_tasks(e)
-                        return
+                    await hook(frame)
+
                 if should_add_to_rpc:
                     await self.rpc_frames.put(frame)
+        except asyncio.CancelledError as e:
+            self.__close_event.set()
+            last_exception = e
+            return
         except Exception as e:
-            await self._cancel_tasks(e)
+            last_exception = e
+            raise
+        finally:
+            await self.close(last_exception)
 
     @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
-        if self.connection.is_opened and not self.__close_event.is_set():
-            await self.rpc(
-                spec.Channel.Close(
-                    reply_code=self.__close_reply_code,
-                    class_id=self.__close_class_id,
-                    method_id=self.__close_method_id,
-                ),
-                timeout=self.connection.connection_tune.heartbeat or None,
-            )
-        self.connection.channels.pop(self.number, None)
-        self.__close_event.set()
+        if not self.connection.is_opened or self.__close_event.is_set():
+            return
+
+        await self.rpc(
+            spec.Channel.Close(
+                reply_code=self.__close_reply_code,
+                class_id=self.__close_class_id,
+                method_id=self.__close_method_id,
+            ),
+            timeout=self.connection.connection_tune.heartbeat or None,
+        )
+
+        await self.__close_event.wait()
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
