@@ -729,7 +729,7 @@ class Connection(Base, AbstractConnection):
     else:
         async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
             log.debug("Writer on connection %s closed", self)
-            with suppress(OSError):
+            with suppress(OSError, RuntimeError):
                 if writer.can_write_eof():
                     writer.write_eof()
                 writer.close()
