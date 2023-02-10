@@ -26,7 +26,7 @@ AMQPException = AMQPError
 class AMQPConnectionError(AMQPError, ConnectionError):
     reason = "Unexpected connection problem"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         if self.args:
             return f"<{self.__class__.__name__}. {'.'.join(self.args)}>"
         return AMQPError.__repr__(self)

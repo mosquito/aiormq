@@ -487,4 +487,3 @@ async def test_connection_close_stairway(
 
     with pytest.raises(aiormq.AMQPError):
         await run()
-
