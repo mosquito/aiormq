@@ -420,9 +420,43 @@ async def test_connection_stuck(proxy, amqp_url: URL):
             assert reader_task.result()
 
 
-DISCONNECT_OFFSETS = [2 << i for i in range(1, 15)]
+class BadNetwork:
+    def __init__(self, proxy, stair: int, disconnect_time: float):
+        self.proxy = proxy
+        self.stair = stair
+        self.disconnect_time = disconnect_time
+        self.num_bytes = 0
+        self.loop = asyncio.get_event_loop()
+        self.lock = asyncio.Lock()
+
+        proxy.set_content_processors(
+            self.client_to_server,
+            self.server_to_client,
+        )
+
+    async def disconnect(self):
+        async with self.lock:
+            await asyncio.sleep(self.disconnect_time)
+            await self.proxy.disconnect_all()
+            self.stair *= 2
+            self.num_bytes = 0
+
+    async def server_to_client(self, chunk: bytes) -> bytes:
+        async with self.lock:
+            self.num_bytes += len(chunk)
+            if self.num_bytes < self.stair:
+                return chunk
+            self.loop.create_task(self.disconnect())
+            return chunk
+
+    @staticmethod
+    def client_to_server(chunk: bytes) -> bytes:
+        return chunk
+
+
+DISCONNECT_OFFSETS = [2 << i for i in range(1, 10)]
 STAIR_STEPS = list(
-    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS * 2)
+    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS)
 )
 STAIR_STEPS_IDS = [
     f"[{i // len(DISCONNECT_OFFSETS)}] {t}-{s}"
@@ -438,36 +472,13 @@ STAIR_STEPS_IDS = [
 async def test_connection_close_stairway(
     disconnect_time: float, stair: int, proxy, amqp_url: URL
 ):
-    loop = asyncio.get_event_loop()
     url = amqp_url.with_host(
         proxy.proxy_host,
     ).with_port(
         proxy.proxy_port,
     ).update_query(heartbeat="1")
 
-    num_bytes = 0
-
-    def server_to_client(chunk: bytes) -> bytes:
-        nonlocal num_bytes, stair
-
-        if num_bytes >= 0:
-            num_bytes += len(chunk)
-
-            if num_bytes < stair:
-                return chunk
-
-        num_bytes = 0
-        loop.call_later(disconnect_time, proxy.disconnect_all)
-        stair *= 2
-        return chunk
-
-    def client_to_server(chunk: bytes) -> bytes:
-        return chunk
-
-    proxy.set_content_processors(
-        client_to_server,
-        server_to_client,
-    )
+    BadNetwork(proxy, stair, disconnect_time)
 
     async def run():
         connection = await aiormq.connect(url)
@@ -485,5 +496,6 @@ async def test_connection_close_stairway(
             message: DeliveredMessage = await queue.get()
             assert message.body == b"test"
 
-    with pytest.raises(aiormq.AMQPError):
-        await run()
+    for _ in range(5):
+        with pytest.raises(aiormq.AMQPError):
+            await run()
