@@ -31,11 +31,11 @@ from .auth import AuthMechanism
 from .base import Base, task
 from .channel import Channel
 from .exceptions import (
-    AMQPError, AuthenticationError, ConnectionChannelError, ConnectionClosed,
-    ConnectionCommandInvalid, ConnectionFrameError, ConnectionInternalError,
-    ConnectionNotAllowed, ConnectionNotImplemented, ConnectionResourceError,
-    ConnectionSyntaxError, ConnectionUnexpectedFrame, IncompatibleProtocolError,
-    ProbableAuthenticationError,
+    AMQPConnectionError, AMQPError, AuthenticationError, ConnectionChannelError,
+    ConnectionClosed, ConnectionCommandInvalid, ConnectionFrameError,
+    ConnectionInternalError, ConnectionNotAllowed, ConnectionNotImplemented,
+    ConnectionResourceError, ConnectionSyntaxError, ConnectionUnexpectedFrame,
+    IncompatibleProtocolError, ProbableAuthenticationError,
 )
 from .tools import Countdown, censor_url
 
@@ -162,7 +162,7 @@ class FrameReceiver(AsyncIterable):
                         raise AMQPFrameError(fp.getvalue())
 
                     if self.reader is None:
-                        raise ConnectionError
+                        raise AMQPConnectionError()
 
                     fp.write(await self.reader.readexactly(6))
 
@@ -179,8 +179,26 @@ class FrameReceiver(AsyncIterable):
 
                     fp.write(await self.reader.readexactly(frame_length + 1))
                 except asyncio.IncompleteReadError as e:
-                    raise AMQPError(
-                        "Server connection unexpectedly closed",
+                    raise AMQPConnectionError(
+                        "Server connection unexpectedly closed. "
+                        f"Read {len(e.partial)} bytes but {e.expected} "
+                        "bytes expected",
+                    ) from e
+                except ConnectionRefusedError as e:
+                    raise AMQPConnectionError(
+                        f"Server connection refused: {e!r}",
+                    ) from e
+                except ConnectionResetError as e:
+                    raise AMQPConnectionError(
+                        f"Server connection reset: {e!r}",
+                    ) from e
+                except ConnectionError as e:
+                    raise AMQPConnectionError(
+                        f"Server connection error: {e!r}",
+                    ) from e
+                except OSError as e:
+                    raise AMQPConnectionError(
+                        f"Server communication error: {e!r}",
                     ) from e
 
             return pamqp.frame.unmarshal(fp.getvalue())
@@ -372,7 +390,9 @@ class Connection(Base, AbstractConnection):
         frame_receiver: FrameReceiver,
         wait_response: bool = True,
     ) -> Optional[FrameTypes]:
+
         writer.write(pamqp.frame.marshal(request, 0))
+        await writer.drain()
 
         if not wait_response:
             return None
@@ -412,7 +432,7 @@ class Connection(Base, AbstractConnection):
 
             frame_receiver = FrameReceiver(reader)
         except OSError as e:
-            raise ConnectionError(*e.args) from e
+            raise AMQPConnectionError(*e.args) from e
 
         frame: Optional[FrameTypes]
 
@@ -469,7 +489,7 @@ class Connection(Base, AbstractConnection):
 
             if not isinstance(frame, spec.Connection.OpenOk):
                 raise AMQPInternalError("Connection.OpenOk", frame)
-        except Exception as e:
+        except BaseException as e:
             await self.__close_writer(writer)
             await self.close(e)
             raise
@@ -691,11 +711,13 @@ class Connection(Base, AbstractConnection):
 
             log.debug("Sending %r to %r", frame, self)
 
-            await asyncio.gather(
-                writer.drain(),
-                self.__close_writer(writer),
-                return_exceptions=True,
-            )
+            try:
+                await asyncio.wait_for(
+                    writer.drain(), timeout=self.__heartbeat_grace_timeout,
+                )
+            finally:
+                await self.__close_writer(writer)
+
             raise
         finally:
             log.debug("Writer exited for %r", self)
@@ -707,10 +729,11 @@ class Connection(Base, AbstractConnection):
     else:
         async def __close_writer(self, writer: asyncio.StreamWriter) -> None:
             log.debug("Writer on connection %s closed", self)
-            if writer.can_write_eof():
-                writer.write_eof()
-            writer.close()
-            await writer.wait_closed()
+            with suppress(OSError):
+                if writer.can_write_eof():
+                    writer.write_eof()
+                writer.close()
+                await writer.wait_closed()
 
     @staticmethod
     def __check_writer(writer: asyncio.StreamWriter) -> bool:

@@ -410,7 +410,7 @@ class Channel(Base, AbstractChannel):
     async def _on_close_ok_frame(self, _: spec.Channel.CloseOk) -> None:
         self.connection.channels.pop(self.number, None)
         self.__close_event.set()
-        raise ChannelClosed()
+        raise ChannelClosed(None, None)
 
     async def _reader(self) -> None:
         hooks: Mapping[Any, Tuple[bool, Callable[[Any], Awaitable[None]]]]
@@ -449,7 +449,7 @@ class Channel(Base, AbstractChannel):
             raise
         finally:
             await self.close(
-                last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT
+                last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT,
             )
 
     @task

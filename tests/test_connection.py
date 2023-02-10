@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import os
 import ssl
 import uuid
@@ -417,3 +418,73 @@ async def test_connection_stuck(proxy, amqp_url: URL):
 
         with pytest.raises(asyncio.CancelledError):
             assert reader_task.result()
+
+
+DISCONNECT_OFFSETS = [2 << i for i in range(1, 15)]
+STAIR_STEPS = list(
+    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS * 2)
+)
+STAIR_STEPS_IDS = [
+    f"[{i // len(DISCONNECT_OFFSETS)}] {t}-{s}"
+    for i, (t, s) in enumerate(STAIR_STEPS)
+]
+
+
+@aiomisc.timeout(30)
+@pytest.mark.parametrize(
+    "disconnect_time,stair", STAIR_STEPS,
+    ids=STAIR_STEPS_IDS
+)
+async def test_connection_close_stairway(
+    disconnect_time: float, stair: int, proxy, amqp_url: URL
+):
+    loop = asyncio.get_event_loop()
+    url = amqp_url.with_host(
+        proxy.proxy_host,
+    ).with_port(
+        proxy.proxy_port,
+    ).update_query(heartbeat="1")
+
+    num_bytes = 0
+
+    def server_to_client(chunk: bytes) -> bytes:
+        nonlocal num_bytes, stair
+
+        if num_bytes >= 0:
+            num_bytes += len(chunk)
+
+            if num_bytes < stair:
+                return chunk
+
+        num_bytes = 0
+        loop.call_later(disconnect_time, proxy.disconnect_all)
+        stair *= 2
+        return chunk
+
+    def client_to_server(chunk: bytes) -> bytes:
+        return chunk
+
+    proxy.set_content_processors(
+        client_to_server,
+        server_to_client,
+    )
+
+    async def run():
+        connection = await aiormq.connect(url)
+        queue = asyncio.Queue()
+        channel = await connection.channel()
+        declare_ok = await channel.queue_declare(auto_delete=True)
+        await channel.basic_consume(
+            declare_ok.queue, queue.put, no_ack=True
+        )
+
+        while True:
+            await channel.basic_publish(
+                b"test", routing_key=declare_ok.queue
+            )
+            message: DeliveredMessage = await queue.get()
+            assert message.body == b"test"
+
+    with pytest.raises(aiormq.AMQPError):
+        await run()
+
