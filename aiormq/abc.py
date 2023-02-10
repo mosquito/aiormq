@@ -199,7 +199,7 @@ class ChannelFrame:
         if not self.should_drain:
             return
 
-        if self.drain_future is not None:
+        if self.drain_future is not None and not self.drain_future.done():
             self.drain_future.set_result(None)
 
     @property
@@ -218,9 +218,9 @@ class ChannelFrame:
             for frame in frames:
                 if should_close:
                     logger = logging.getLogger(
-                        "aiormq.connection"
+                        "aiormq.connection",
                     ).getChild(
-                        "marshall"
+                        "marshall",
                     )
 
                     logger.warning(

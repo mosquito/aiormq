@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import os
 import ssl
 import uuid
@@ -417,3 +418,84 @@ async def test_connection_stuck(proxy, amqp_url: URL):
 
         with pytest.raises(asyncio.CancelledError):
             assert reader_task.result()
+
+
+class BadNetwork:
+    def __init__(self, proxy, stair: int, disconnect_time: float):
+        self.proxy = proxy
+        self.stair = stair
+        self.disconnect_time = disconnect_time
+        self.num_bytes = 0
+        self.loop = asyncio.get_event_loop()
+        self.lock = asyncio.Lock()
+
+        proxy.set_content_processors(
+            self.client_to_server,
+            self.server_to_client,
+        )
+
+    async def disconnect(self):
+        async with self.lock:
+            await asyncio.sleep(self.disconnect_time)
+            await self.proxy.disconnect_all()
+            self.stair *= 2
+            self.num_bytes = 0
+
+    async def server_to_client(self, chunk: bytes) -> bytes:
+        async with self.lock:
+            self.num_bytes += len(chunk)
+            if self.num_bytes < self.stair:
+                return chunk
+            self.loop.create_task(self.disconnect())
+            return chunk
+
+    @staticmethod
+    def client_to_server(chunk: bytes) -> bytes:
+        return chunk
+
+
+DISCONNECT_OFFSETS = [2 << i for i in range(1, 10)]
+STAIR_STEPS = list(
+    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS)
+)
+STAIR_STEPS_IDS = [
+    f"[{i // len(DISCONNECT_OFFSETS)}] {t}-{s}"
+    for i, (t, s) in enumerate(STAIR_STEPS)
+]
+
+
+@aiomisc.timeout(30)
+@pytest.mark.parametrize(
+    "disconnect_time,stair", STAIR_STEPS,
+    ids=STAIR_STEPS_IDS
+)
+async def test_connection_close_stairway(
+    disconnect_time: float, stair: int, proxy, amqp_url: URL
+):
+    url = amqp_url.with_host(
+        proxy.proxy_host,
+    ).with_port(
+        proxy.proxy_port,
+    ).update_query(heartbeat="1")
+
+    BadNetwork(proxy, stair, disconnect_time)
+
+    async def run():
+        connection = await aiormq.connect(url)
+        queue = asyncio.Queue()
+        channel = await connection.channel()
+        declare_ok = await channel.queue_declare(auto_delete=True)
+        await channel.basic_consume(
+            declare_ok.queue, queue.put, no_ack=True
+        )
+
+        while True:
+            await channel.basic_publish(
+                b"test", routing_key=declare_ok.queue
+            )
+            message: DeliveredMessage = await queue.get()
+            assert message.body == b"test"
+
+    for _ in range(5):
+        with pytest.raises(aiormq.AMQPError):
+            await run()

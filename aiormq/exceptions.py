@@ -10,15 +10,26 @@ class AMQPError(Exception):
     reason = "An unspecified AMQP error has occurred: %s"
 
     def __repr__(self) -> str:
-        return "<%s: %s>" % (self.__class__.__name__, self.reason % self.args)
+        try:
+            return "<%s: %s>" % (
+                self.__class__.__name__, self.reason % self.args,
+            )
+        except TypeError:
+            # FIXME: if you are here file an issue
+            return f"<{self.__class__.__name__}: {self.args!r}>"
 
 
 # Backward compatibility
 AMQPException = AMQPError
 
 
-class AMQPConnectionError(AMQPError):
-    reason = "Connection can not be opened"
+class AMQPConnectionError(AMQPError, ConnectionError):
+    reason = "Unexpected connection problem"
+
+    def __repr__(self) -> str:
+        if self.args:
+            return f"<{self.__class__.__name__}. {'.'.join(self.args)}>"
+        return AMQPError.__repr__(self)
 
 
 class IncompatibleProtocolError(AMQPConnectionError):
