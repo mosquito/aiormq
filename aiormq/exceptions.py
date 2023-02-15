@@ -28,7 +28,7 @@ class AMQPConnectionError(AMQPError, ConnectionError):
 
     def __repr__(self) -> str:
         if self.args:
-            return f"<{self.__class__.__name__}. {'.'.join(self.args)}>"
+            return f"<{self.__class__.__name__}: {self.args!r}>"
         return AMQPError.__repr__(self)
 
 
