@@ -10,8 +10,8 @@ AIORMQ
    :target: https://github.com/mosquito/aiormq
    :alt: Status
 
-.. image:: https://github.com/mosquito/aiormq/workflows/tox/badge.svg
-   :target: https://github.com/mosquito/aiormq/actions?query=workflow%3Atox
+.. image:: https://github.com/mosquito/aiormq/workflows/tests/badge.svg
+   :target: https://github.com/mosquito/aiormq/actions?query=workflow%3Atests
    :alt: Build status
 
 .. image:: https://img.shields.io/pypi/v/aiormq.svg
