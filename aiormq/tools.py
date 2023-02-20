@@ -22,14 +22,6 @@ def censor_url(url: URL) -> URL:
     return url
 
 
-def shield(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
-    @wraps(func)
-    def wrap(*args: Any, **kwargs: Any) -> Awaitable[T]:
-        return asyncio.shield(func(*args, **kwargs))
-
-    return wrap
-
-
 def awaitable(
     func: Callable[..., Union[T, Awaitable[T]]],
 ) -> Callable[..., Coroutine[Any, Any, T]]:
