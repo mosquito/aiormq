@@ -44,11 +44,11 @@ AWAITABLE_FUNCS = [
 
 
 @pytest.mark.parametrize("func,result", AWAITABLE_FUNCS)
-async def test_awaitable(func, result, loop):
+async def test_awaitable(func, result, event_loop):
     assert await awaitable(func)() == result
 
 
-async def test_countdown(loop):
+async def test_countdown(event_loop):
     countdown = Countdown(timeout=0.1)
     await countdown(asyncio.sleep(0))
 
