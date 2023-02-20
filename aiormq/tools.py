@@ -1,12 +1,8 @@
 import asyncio
 import platform
 import time
-from functools import wraps
 from types import TracebackType
-from typing import (
-    Any, AsyncContextManager, Awaitable, Callable, Coroutine, Optional, Type,
-    TypeVar, Union,
-)
+from typing import Any, AsyncContextManager, Awaitable, Optional, Type, TypeVar
 
 from yarl import URL
 
@@ -20,27 +16,6 @@ def censor_url(url: URL) -> URL:
     if url.password is not None:
         return url.with_password("******")
     return url
-
-
-def awaitable(
-    func: Callable[..., Union[T, Awaitable[T]]],
-) -> Callable[..., Coroutine[Any, Any, T]]:
-    # Avoid python 3.8+ warning
-    if asyncio.iscoroutinefunction(func):
-        return func     # type: ignore
-
-    @wraps(func)
-    async def wrap(*args: Any, **kwargs: Any) -> T:
-        result = func(*args, **kwargs)
-
-        if hasattr(result, "__await__"):
-            return await result     # type: ignore
-        if asyncio.iscoroutine(result) or asyncio.isfuture(result):
-            return await result
-
-        return result               # type: ignore
-
-    return wrap
 
 
 class Countdown:

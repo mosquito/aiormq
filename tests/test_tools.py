@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from aiormq.tools import Countdown, awaitable
+from aiormq.tools import Countdown
 
 
 def simple_func():
@@ -41,11 +41,6 @@ AWAITABLE_FUNCS = [
     (await_future, 6),
     (return_coroutine, 6),
 ]
-
-
-@pytest.mark.parametrize("func,result", AWAITABLE_FUNCS)
-async def test_awaitable(func, result, event_loop):
-    assert await awaitable(func)() == result
 
 
 async def test_countdown(event_loop):
