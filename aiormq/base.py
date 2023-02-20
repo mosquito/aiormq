@@ -48,21 +48,20 @@ class FutureStore(AbstractFutureStore):
 
             if future.done():
                 continue
-
-            if isinstance(future, asyncio.Task):
+            elif isinstance(future, asyncio.Task):
                 future.cancel()
             elif isinstance(future, asyncio.Future):
                 future.set_exception(self.__rejecting)
 
-        async def rejecter() -> None:
+        async def wait_rejected() -> None:
             nonlocal tasks
             try:
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                if not tasks:
+                    return
+                await asyncio.gather(*tasks, return_exceptions=True)
             finally:
                 self.__rejecting = None
-
-        return self.loop.create_task(rejecter())
+        return self.loop.create_task(wait_rejected())
 
     async def __task_wrapper(self, coro: CoroutineType) -> Any:
         try:
