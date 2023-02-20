@@ -35,9 +35,12 @@ class FutureStore(AbstractFutureStore):
             if future in self.futures:
                 self.futures.remove(future)
 
-            exc = future.exception()
-            if exc is not None:
-                raise exc
+            try:
+                exc = future.exception()
+                if exc is not None:
+                    raise exc
+            except asyncio.CancelledError:
+                pass
 
         return remover
 
