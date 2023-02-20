@@ -25,7 +25,7 @@ from yarl import URL
 
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ExceptionType, SSLCerts, TaskType, URLorStr,
+    ExceptionType, SSLCerts, URLorStr,
 )
 from .auth import AuthMechanism
 from .base import Base, task
@@ -233,8 +233,8 @@ class Connection(Base, AbstractConnection):
 
     READER_CLOSE_TIMEOUT = 2
 
-    _reader_task: TaskType
-    _writer_task: TaskType
+    _reader_task: asyncio.Task
+    _writer_task: asyncio.Task
     write_queue: asyncio.Queue
     server_properties: ArgumentsType
     connection_tune: spec.Connection.Tune
@@ -785,6 +785,7 @@ class Connection(Base, AbstractConnection):
             return None
         return bool(publisher_confirms)
 
+    @task
     async def channel(
         self,
         channel_number: Optional[int] = None,

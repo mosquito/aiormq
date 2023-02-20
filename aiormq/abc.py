@@ -22,43 +22,6 @@ from yarl import URL
 
 
 ExceptionType = Union[BaseException, Type[BaseException]]
-
-
-# noinspection PyShadowingNames
-class TaskWrapper:
-    __slots__ = "_exception", "task"
-
-    _exception: Union[BaseException, Type[BaseException]]
-    task: asyncio.Task
-
-    def __init__(self, task: asyncio.Task):
-        self.task = task
-        self._exception = asyncio.CancelledError
-
-    def throw(self, exception: ExceptionType) -> None:
-        self._exception = exception
-        self.task.cancel()
-
-    async def __inner(self) -> Any:
-        try:
-            return await self.task
-        except asyncio.CancelledError as e:
-            raise self._exception from e
-
-    def __await__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.__inner().__await__()
-
-    def cancel(self) -> None:
-        return self.throw(asyncio.CancelledError())
-
-    def __getattr__(self, item: str) -> Any:
-        return getattr(self.task, item)
-
-    def __repr__(self) -> str:
-        return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
-
-
-TaskType = Union[asyncio.Task, TaskWrapper]
 CoroutineType = Coroutine[Any, None, Any]
 GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
 
@@ -241,11 +204,11 @@ class ChannelFrame:
 
 
 class AbstractFutureStore:
-    futures: Set[Union[asyncio.Future, TaskType]]
+    futures: Set[asyncio.Future]
     loop: asyncio.AbstractEventLoop
 
     @abstractmethod
-    def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
+    def add(self, future: asyncio.Future) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -253,7 +216,7 @@ class AbstractFutureStore:
         raise NotImplementedError
 
     @abstractmethod
-    def create_task(self, coro: CoroutineType) -> TaskType:
+    def create_task(self, coro: CoroutineType) -> asyncio.Task:
         raise NotImplementedError
 
     @abstractmethod
@@ -273,7 +236,7 @@ class AbstractBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def create_task(self, coro: CoroutineType) -> TaskType:
+    def create_task(self, coro: CoroutineType) -> asyncio.Future:
         raise NotImplementedError
 
     def create_future(self) -> asyncio.Future:
@@ -630,5 +593,5 @@ __all__ = (
     "CoroutineType", "DeliveredMessage", "DrainResult", "ExceptionType",
     "FieldArray", "FieldTable", "FieldValue", "FrameReceived", "FrameType",
     "GetResultType", "ReturnCallback", "RpcReturnType", "SSLCerts",
-    "TaskType", "TaskWrapper", "TimeoutType", "URLorStr",
+    "TimeoutType", "URLorStr",
 )

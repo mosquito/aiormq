@@ -2,23 +2,25 @@ import abc
 import asyncio
 from contextlib import suppress
 from functools import wraps
-from typing import Any, Callable, Coroutine, Optional, Set, TypeVar, Union
+from typing import Any, Awaitable, Callable, Optional, Set, TypeVar
 from weakref import WeakSet
 
 from .abc import (
-    AbstractBase, AbstractFutureStore, CoroutineType, ExceptionType, TaskType,
-    TaskWrapper, TimeoutType,
+    AbstractBase, AbstractFutureStore, CoroutineType, ExceptionType,
+    TimeoutType,
 )
-from .tools import Countdown, shield
+from .tools import Countdown
 
 
 T = TypeVar("T")
 
 
 class FutureStore(AbstractFutureStore):
-    __slots__ = "futures", "loop", "parent"
+    __slots__ = (
+        "futures", "loop", "parent", "__rejecting",
+    )
 
-    futures: Set[Union[asyncio.Future, TaskType]]
+    futures: Set[asyncio.Future]
     weak_futures: WeakSet
     loop: asyncio.AbstractEventLoop
 
@@ -26,45 +28,52 @@ class FutureStore(AbstractFutureStore):
         self.futures = set()
         self.loop = loop
         self.parent: Optional[FutureStore] = None
+        self.__rejecting: Optional[ExceptionType] = None
 
-    def __on_task_done(
-        self, future: Union[asyncio.Future, TaskWrapper],
-    ) -> Callable[..., Any]:
-        def remover(*_: Any) -> None:
-            nonlocal future
-            if future in self.futures:
-                self.futures.remove(future)
-
-        return remover
-
-    def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
+    def add(self, future: asyncio.Future) -> None:
         self.futures.add(future)
-        future.add_done_callback(self.__on_task_done(future))
-
+        future.add_done_callback(self.futures.discard)
         if self.parent:
             self.parent.add(future)
 
-    @shield
-    async def reject_all(self, exception: Optional[ExceptionType]) -> None:
+    def reject_all(self, exception: Optional[ExceptionType]) -> Awaitable[None]:
+        self.__rejecting = exception or Exception("Rejected")
+
         tasks = []
 
         while self.futures:
-            future: Union[TaskType, asyncio.Future] = self.futures.pop()
+            future: asyncio.Future = self.futures.pop()
+
+            tasks.append(future)
 
             if future.done():
                 continue
 
-            if isinstance(future, TaskWrapper):
-                future.throw(exception or Exception)
-                tasks.append(future)
+            if isinstance(future, asyncio.Task):
+                future.cancel()
             elif isinstance(future, asyncio.Future):
-                future.set_exception(exception or Exception)
+                future.set_exception(self.__rejecting)
 
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        async def rejecter() -> None:
+            nonlocal tasks
+            try:
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            finally:
+                self.__rejecting = None
 
-    def create_task(self, coro: CoroutineType) -> TaskType:
-        task: TaskWrapper = TaskWrapper(self.loop.create_task(coro))
+        return self.loop.create_task(rejecter())
+
+    async def __task_wrapper(self, coro: CoroutineType) -> Any:
+        try:
+            return await coro
+        except asyncio.CancelledError as e:
+            if self.__rejecting is None:
+                raise
+            raise self.__rejecting from e
+
+    def create_task(self, coro: CoroutineType) -> asyncio.Task:
+        task: asyncio.Task = self.loop.create_task(self.__task_wrapper(coro))
         self.add(task)
         return task
 
@@ -102,13 +111,13 @@ class Base(AbstractBase):
 
     def _cancel_tasks(
         self, exc: Optional[ExceptionType] = None,
-    ) -> Coroutine[Any, Any, None]:
+    ) -> Awaitable[None]:
         return self.__future_store.reject_all(exc)
 
     def _future_store_child(self) -> AbstractFutureStore:
         return self.__future_store.get_child()
 
-    def create_task(self, coro: CoroutineType) -> TaskType:
+    def create_task(self, coro: CoroutineType) -> asyncio.Task:
         return self.__future_store.create_task(coro)
 
     def create_future(self) -> asyncio.Future:

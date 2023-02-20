@@ -454,7 +454,6 @@ class Channel(Base, AbstractChannel):
                 last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT,
             )
 
-    @task
     async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
         if not self.connection.is_opened or self.__close_event.is_set():
             return

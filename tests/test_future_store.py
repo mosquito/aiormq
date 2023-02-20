@@ -2,30 +2,25 @@ import asyncio
 
 import pytest
 
-from aiormq.abc import TaskWrapper
 from aiormq.base import FutureStore
 
 
 @pytest.fixture
-def root_store(loop):
+async def root_store(loop: asyncio.AbstractEventLoop):
     store = FutureStore(loop=loop)
     try:
         yield store
     finally:
-        loop.run_until_complete(
-            store.reject_all(Exception("Cancelling")),
-        )
+        await store.reject_all(Exception("Cancelling"))
 
 
 @pytest.fixture
-def child_store(loop, root_store):
+async def child_store(loop, root_store: FutureStore):
     store = root_store.get_child()
     try:
         yield store
     finally:
-        loop.run_until_complete(
-            store.reject_all(Exception("Cancelling")),
-        )
+        await store.reject_all(Exception("Cancelling"))
 
 
 async def test_reject_all(
@@ -91,16 +86,3 @@ async def test_siblings(
     assert not root_store.futures
     assert not child_store.futures
     assert not child.futures
-
-
-async def test_task_wrapper(loop):
-    future = loop.create_future()
-    wrapped = TaskWrapper(future)
-
-    wrapped.throw(RuntimeError())
-
-    with pytest.raises(asyncio.CancelledError):
-        await future
-
-    with pytest.raises(RuntimeError):
-        await wrapped
