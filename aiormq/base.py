@@ -30,23 +30,18 @@ class FutureStore(AbstractFutureStore):
     def __on_task_done(
         self, future: Union[asyncio.Future, TaskWrapper],
     ) -> Callable[..., Any]:
-        def remover(*_: Any) -> None:
-            nonlocal future
-            if future in self.futures:
-                self.futures.remove(future)
+        if future in self.futures:
+            self.futures.remove(future)
 
-            try:
-                exc = future.exception()
-                if exc is not None:
-                    raise exc
-            except asyncio.CancelledError:
-                pass
+        if not isinstance(future, TaskWrapper):
+            return
 
-        return remover
+        with suppress(asyncio.CancelledError):
+            future.result()
 
     def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
         self.futures.add(future)
-        future.add_done_callback(self.__on_task_done(future))
+        future.add_done_callback(self.__on_task_done)
 
         if self.parent:
             self.parent.add(future)
