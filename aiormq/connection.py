@@ -37,7 +37,6 @@ from .exceptions import (
     ConnectionResourceError, ConnectionSyntaxError, ConnectionUnexpectedFrame,
     IncompatibleProtocolError, ProbableAuthenticationError,
 )
-from .tools import Countdown, censor_url
 
 
 # noinspection PyUnresolvedReferences
@@ -331,7 +330,9 @@ class Connection(Base, AbstractConnection):
         )
 
     def __str__(self) -> str:
-        return str(censor_url(self.url))
+        if self.url.password is not None:
+            return str(self.url.with_password("******"))
+        return str(self.url)
 
     def _get_ssl_context(self) -> ssl.SSLContext:
         context = ssl.create_default_context(
@@ -862,18 +863,19 @@ class Connection(Base, AbstractConnection):
             ],
         )
 
-        countdown = Countdown(timeout)
+        async def updater() -> spec.Connection.UpdateSecretOk:
+            async with self.__update_secret_lock:
+                self.__update_secret_future = self.loop.create_future()
+                await self.write_queue.put(channel_frame)
+                try:
+                    response: spec.Connection.UpdateSecretOk = (
+                        await self.__update_secret_future
+                    )
+                finally:
+                    self.__update_secret_future = None
+            return response
 
-        async with countdown.enter_context(self.__update_secret_lock):
-            self.__update_secret_future = self.loop.create_future()
-            await self.write_queue.put(channel_frame)
-            try:
-                response: spec.Connection.UpdateSecretOk = (
-                    await countdown(self.__update_secret_future)
-                )
-            finally:
-                self.__update_secret_future = None
-        return response
+        return await asyncio.wait_for(updater(), timeout=timeout)
 
     async def __aenter__(self) -> AbstractConnection:
         if not self.is_opened:

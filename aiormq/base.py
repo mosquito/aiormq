@@ -9,7 +9,6 @@ from .abc import (
     AbstractBase, AbstractFutureStore, CoroutineType, ExceptionType,
     TimeoutType,
 )
-from .tools import Countdown
 
 
 T = TypeVar("T")
@@ -64,6 +63,8 @@ class FutureStore(AbstractFutureStore):
         return self.loop.create_task(wait_rejected())
 
     async def __task_wrapper(self, coro: CoroutineType) -> Any:
+        if coro is None:
+            return
         try:
             return await coro
         except asyncio.CancelledError as e:
@@ -144,9 +145,7 @@ class Base(AbstractBase):
     ) -> None:
         if self.is_closed:
             return None
-
-        countdown = Countdown(timeout)
-        await countdown(self.__closer(exc))
+        await asyncio.wait_for(self.__closer(exc), timeout=timeout)
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
