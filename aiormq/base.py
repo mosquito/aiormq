@@ -37,7 +37,7 @@ class FutureStore(AbstractFutureStore):
             self.parent.add(future)
 
     def reject_all(self, exception: Optional[ExceptionType]) -> Awaitable[None]:
-        self.__rejecting = exception or Exception("Rejected")
+        self.__rejecting = exception or RuntimeError("Has been rejected")
 
         tasks = []
 
