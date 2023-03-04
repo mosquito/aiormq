@@ -26,7 +26,7 @@ from .abc import (
     ConfirmationFrameType, ConsumerCallback, DeliveredMessage, ExceptionType,
     FrameType, GetResultType, ReturnCallback, RpcReturnType, TimeoutType,
 )
-from .base import Base, task
+from .base import Base
 from .exceptions import (
     AMQPChannelError, AMQPError, ChannelAccessRefused, ChannelClosed,
     ChannelInvalidStateError, ChannelLockedResource, ChannelNotFoundEntity,
@@ -85,14 +85,11 @@ class Channel(Base, AbstractChannel):
         on_return_raises: bool = True,
     ):
 
-        super().__init__(loop=connector.loop, parent=connector)
-
+        super().__init__(loop=connector.loop)
         self.connection = connector
 
-        if (
-            publisher_confirms and not connector.publisher_confirms
-        ):  # pragma: no cover
-            raise ValueError("Server does't support publisher confirms")
+        if publisher_confirms and not connector.publisher_confirms:
+            raise ValueError("Server doesn't support publisher confirms")
 
         self.consumers: Dict[str, ConsumerCallback] = {}
         self.confirmations = OrderedDict()
@@ -126,7 +123,6 @@ class Channel(Base, AbstractChannel):
         self.__close_reply_text: str = ""
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
-        self.__close_event: asyncio.Event = asyncio.Event()
 
     def set_close_reason(
         self, reply_code: int = REPLY_SUCCESS,
@@ -152,10 +148,9 @@ class Channel(Base, AbstractChannel):
     def __str__(self) -> str:
         return str(self.number)
 
-    @task
     async def rpc(self, frame: Frame) -> RpcReturnType:
 
-        if self.__close_event.is_set():
+        if self.is_closed:
             raise ChannelInvalidStateError("Channel closed by RPC timeout")
 
         lock = self.lock
@@ -180,7 +175,7 @@ class Channel(Base, AbstractChannel):
                     raise InvalidFrameError(frame)
 
                 return result
-            except (asyncio.CancelledError, asyncio.TimeoutError):
+            except (asyncio.CancelledError, asyncio.TimeoutError) as e:
                 if self.is_closed:
                     raise
 
@@ -189,8 +184,12 @@ class Channel(Base, AbstractChannel):
                     self, frame,
                 )
 
-                self.__close_event.set()
-                await self.write_queue.put(
+                if self.closing.done():
+                    raise
+
+                self.closing.set_exception(e)
+
+                self.write_queue.put_nowait(
                     ChannelFrame.marshall(
                         channel_number=self.number,
                         frames=[
@@ -407,12 +406,15 @@ class Channel(Base, AbstractChannel):
                 ),
             )
         self.connection.channels.pop(self.number, None)
-        self.__close_event.set()
+        self.closing.set_exception(exception_by_code(frame))
         raise exc
 
-    async def _on_close_ok_frame(self, _: spec.Channel.CloseOk) -> None:
+    async def _on_close_ok_frame(self, frame: spec.Channel.CloseOk) -> None:
         self.connection.channels.pop(self.number, None)
-        self.__close_event.set()
+
+        if not self.closing.done():
+            self.closing.set_result(frame)
+        await self.rpc_frames.put(frame)
         raise ChannelClosed(None, None)
 
     async def _reader(self) -> None:
@@ -431,8 +433,6 @@ class Channel(Base, AbstractChannel):
             spec.Basic.Nack: (False, self._on_confirm_frame),
         }
 
-        last_exception: Optional[BaseException] = None
-
         try:
             while True:
                 frame = await self._get_frame()
@@ -443,34 +443,33 @@ class Channel(Base, AbstractChannel):
 
                 if should_add_to_rpc:
                     await self.rpc_frames.put(frame)
-        except asyncio.CancelledError as e:
-            self.__close_event.set()
-            last_exception = e
+        except ChannelClosed:
             return
-        except Exception as e:
-            last_exception = e
+        except BaseException as e:
+            if not self.closing.done():
+                self.closing.set_exception(e)
             raise
-        finally:
-            await self.close(
-                last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT,
-            )
 
-    async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
-        if not self.connection.is_opened or self.__close_event.is_set():
-            return
+    def close(
+        self, exc: Optional[BaseException] = None, timeout: TimeoutType = None
+    ) -> Awaitable[spec.Channel.CloseOk]:
+        super_close = super().close
 
-        await asyncio.wait_for(
-            self.rpc(
+        async def closer() -> spec.Channel.CloseOk:
+            result = await self.rpc(
                 spec.Channel.Close(
                     reply_code=self.__close_reply_code,
                     class_id=self.__close_class_id,
                     method_id=self.__close_method_id,
                 ),
-            ),
-            timeout=self.connection.connection_tune.heartbeat or None,
-        )
+            )
 
-        await self.__close_event.wait()
+            await super_close(exc)
+            return result
+
+        return self.loop.create_task(
+            asyncio.wait_for(closer(), timeout=timeout)
+        )
 
     async def basic_get(
         self, queue: str = "", no_ack: bool = False,
