@@ -539,12 +539,13 @@ class Connection(Base, AbstractConnection):
             self, frame.reply_code, frame.reply_text,
         )
 
-        self.write_queue.put_nowait(
-            ChannelFrame.marshall(
-                channel_number=0,
-                frames=[spec.Connection.CloseOk()],
-            ),
-        )
+        with suppress(asyncio.QueueFull):
+            self.write_queue.put_nowait(
+                ChannelFrame.marshall(
+                    channel_number=0,
+                    frames=[spec.Connection.CloseOk()],
+                ),
+            )
 
         exception = exception_by_code(frame)
 

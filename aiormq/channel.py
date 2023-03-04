@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 from collections import OrderedDict
+from contextlib import suppress
 from functools import partial
 from io import BytesIO
 from random import getrandbits
@@ -196,7 +197,7 @@ class Channel(Base, AbstractChannel):
                 )
 
                 self.__close_event.set()
-                self.write_queue.put_nowait(
+                await self.write_queue.put(
                     ChannelFrame.marshall(
                         channel_number=self.number,
                         frames=[
@@ -397,12 +398,13 @@ class Channel(Base, AbstractChannel):
 
     async def _on_close_frame(self, frame: spec.Channel.Close) -> None:
         exc: BaseException = exception_by_code(frame)
-        self.write_queue.put_nowait(
-            ChannelFrame.marshall(
-                channel_number=self.number,
-                frames=[spec.Channel.CloseOk()],
-            ),
-        )
+        with suppress(asyncio.QueueFull):
+            self.write_queue.put_nowait(
+                ChannelFrame.marshall(
+                    channel_number=self.number,
+                    frames=[spec.Channel.CloseOk()],
+                ),
+            )
         self.connection.channels.pop(self.number, None)
         self.__close_event.set()
         raise exc
