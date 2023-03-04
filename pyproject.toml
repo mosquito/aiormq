@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aiormq"
-version = "6.7.2"
+version = "6.7.3"
 description = "Pure python AMQP asynchronous client library"
 authors = ["Dmitry Orlov <me@mosquito.su>"]
 readme = "README.rst"
