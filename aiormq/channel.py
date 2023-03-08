@@ -628,7 +628,6 @@ class Channel(Base, AbstractChannel):
         wait: bool = True,
     ) -> Optional[ConfirmationFrameType]:
         _check_routing_key(routing_key)
-        drain_future = self.create_future() if wait else None
         countdown = Countdown(timeout=timeout)
 
         publish_frame = spec.Basic.Publish(
@@ -677,6 +676,7 @@ class Channel(Base, AbstractChannel):
             body_frames = [publish_frame, content_header]
             body_frames += self._split_body(body)
 
+            drain_future = self.create_future() if wait else None
             await countdown(
                 self.write_queue.put(
                     ChannelFrame.marshall(
