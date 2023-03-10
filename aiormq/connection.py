@@ -641,7 +641,6 @@ class Connection(Base, AbstractConnection):
                     "Server connection %r was stuck. No frames were received "
                     "in %d seconds.", self, self.__heartbeat_grace_timeout,
                 )
-                self._reader_task.cancel()
                 self._writer_task.cancel()
             raise
 
