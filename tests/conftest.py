@@ -6,7 +6,7 @@ import tracemalloc
 
 import pamqp
 import pytest
-from aiomisc_pytest.pytest_plugin import TCPProxy
+from aiomisc_pytest import TCPProxy
 from yarl import URL
 
 from aiormq import Connection

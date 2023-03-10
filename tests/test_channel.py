@@ -3,7 +3,7 @@ import uuid
 from os import urandom
 
 import pytest
-from aiomisc_pytest.pytest_plugin import TCPProxy
+from aiomisc_pytest import TCPProxy
 
 import aiormq
 from aiormq.abc import DeliveredMessage
