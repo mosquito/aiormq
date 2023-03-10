@@ -45,7 +45,6 @@ yarl = [{ version = '*'}]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.0"
-aiomisc = "^16.2"
 coverage = "^6.5.0"
 coveralls = "^3.3.1"
 pylama = "^8.4.1"
@@ -54,6 +53,7 @@ collective-checkdocs = "^0.2"
 mypy = "^0.991"
 pytest-rst = "^0.0.7"
 types-setuptools = "^65.6.0.2"
+aiomisc-pytest = "^1.1.1"
 
 [tool.poetry.group.uvloop.dependencies]
 uvloop = "^0.17.0"
