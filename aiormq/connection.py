@@ -25,10 +25,10 @@ from yarl import URL
 
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ExceptionType, SSLCerts, TaskType, URLorStr,
+    SSLCerts, URLorStr,
 )
 from .auth import AuthMechanism
-from .base import Base, task
+from .base import Base
 from .channel import Channel
 from .exceptions import (
     AMQPConnectionError, AMQPError, AuthenticationError, ConnectionChannelError,
@@ -37,7 +37,6 @@ from .exceptions import (
     ConnectionResourceError, ConnectionSyntaxError, ConnectionUnexpectedFrame,
     IncompatibleProtocolError, ProbableAuthenticationError,
 )
-from .tools import Countdown, censor_url
 
 
 # noinspection PyUnresolvedReferences
@@ -233,8 +232,7 @@ class Connection(Base, AbstractConnection):
 
     READER_CLOSE_TIMEOUT = 2
 
-    _reader_task: TaskType
-    _writer_task: TaskType
+    loop: asyncio.AbstractEventLoop
     write_queue: asyncio.Queue
     server_properties: ArgumentsType
     connection_tune: spec.Connection.Tune
@@ -251,8 +249,7 @@ class Connection(Base, AbstractConnection):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         context: Optional[ssl.SSLContext] = None,
     ):
-
-        super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
+        super().__init__(loop=loop)
 
         self.url = URL(url)
         if self.url.is_absolute() and not self.url.port:
@@ -273,12 +270,8 @@ class Connection(Base, AbstractConnection):
             verify=self.url.query.get("no_verify_ssl", "0") == "0",
         )
 
-        self.started = False
         self.channels = {}
-        self.write_queue = asyncio.Queue(
-            maxsize=self.FRAME_BUFFER_SIZE,
-        )
-
+        self.write_queue = asyncio.Queue(maxsize=self.FRAME_BUFFER_SIZE)
         self.last_channel = 1
 
         self.timeout = parse_int(self.url.query.get("timeout", "60"))
@@ -287,6 +280,7 @@ class Connection(Base, AbstractConnection):
         )
         self.last_channel_lock = asyncio.Lock()
         self.connected = asyncio.Event()
+        self.closing = self.loop.create_future()
         self.connection_name = self.url.query.get("name")
 
         self.__close_reply_code: int = REPLY_SUCCESS
@@ -315,23 +309,10 @@ class Connection(Base, AbstractConnection):
         self.__close_class_id = class_id
         self.__close_method_id = method_id
 
-    @property
-    def is_opened(self) -> bool:
-        is_reader_running = (
-            hasattr(self, "_reader_task") and not self._reader_task.done()
-        )
-        is_writer_running = (
-            hasattr(self, "_writer_task") and not self._writer_task.done()
-        )
-
-        return (
-            is_reader_running and
-            is_writer_running and
-            not self.is_closed
-        )
-
     def __str__(self) -> str:
-        return str(censor_url(self.url))
+        if self.url.password is not None:
+            return str(self.url.with_password("******"))
+        return str(self.url)
 
     def _get_ssl_context(self) -> ssl.SSLContext:
         context = ssl.create_default_context(
@@ -409,13 +390,41 @@ class Connection(Base, AbstractConnection):
             raise ConnectionClosed(frame.reply_code, frame.reply_text)
         return frame
 
-    @task
+    def close(
+        self, exc: Optional[BaseException] = asyncio.CancelledError,
+        timeout: TimeoutType = None,
+    ) -> Awaitable[spec.Connection.CloseOk]:
+        super_closer = super().close
+
+        async def closer() -> None:
+            nonlocal super_closer
+
+            await self.write_queue.put(
+                ChannelFrame.marshall(
+                    channel_number=0,
+                    frames=[
+                        spec.Connection.Close(
+                            reply_code=self.__close_reply_code,
+                            reply_text=self.__close_reply_text,
+                            class_id=self.__close_class_id,
+                            method_id=self.__close_method_id,
+                        )
+                    ]
+                ),
+            )
+
+            try:
+                return await self.closing
+            finally:
+                await super_closer(exc)
+
+        return self.loop.create_task(
+            asyncio.wait_for(closer(), timeout=timeout)
+        )
+
     async def connect(
         self, client_properties: Optional[FieldTable] = None,
     ) -> bool:
-        if self.is_opened:
-            raise RuntimeError("Connection already opened")
-
         ssl_context = self.ssl_context
 
         if ssl_context is None and self.url.scheme == "amqps":
@@ -489,51 +498,53 @@ class Connection(Base, AbstractConnection):
 
             if not isinstance(frame, spec.Connection.OpenOk):
                 raise AMQPInternalError("Connection.OpenOk", frame)
-        except BaseException as e:
+        except BaseException:
             await self.__close_writer(writer)
-            await self.close(e)
+            await self.close()
             raise
 
-        # noinspection PyAsyncCall
-        self._reader_task = self.create_task(self.__reader(frame_receiver))
-        self._reader_task.add_done_callback(self._on_reader_done)
+        reader_task = self.create_task(self.__reader(frame_receiver))
+        reader_task.add_done_callback(self._on_reader_done)
 
-        # noinspection PyAsyncCall
-        self._writer_task = self.create_task(self.__writer(writer))
+        writer_task = self.create_task(self.__writer(writer))
+        writer_task.add_done_callback(self._on_writer_done)
 
         self.connection_tune = connection_tune
         self.server_properties = server_properties
         return True
 
-    def _on_reader_done(self, task: asyncio.Task) -> None:
+    @property
+    def is_opened(self) -> bool:
+        return self.connected.is_set()
+
+    def _on_writer_done(self, _: asyncio.Task) -> None:
+        log.debug("Writer exited for %r", self)
+        if not self.is_closed:
+            self.close()
+
+    def _on_reader_done(self, _: asyncio.Task) -> None:
         log.debug("Reader exited for %r", self)
+        if not self.is_closed:
+            self.close()
 
-        if not task.cancelled() and task.exception() is not None:
-            log.debug("Cancelling cause reader exited abnormally")
-            self.set_close_reason(
-                reply_code=500, reply_text="reader unexpected closed",
-            )
+    async def __handle_close_ok(self, frame: spec.Connection.CloseOk) -> None:
+        self.connected.clear()
 
-        async def close_writer_task() -> None:
-            if not self._writer_task.done():
-                self._writer_task.cancel()
-                await asyncio.gather(self._writer_task, return_exceptions=True)
-            try:
-                exc = task.exception()
-            except asyncio.CancelledError as e:
-                exc = e
-            await self.close(exc)
-
-        self.loop.create_task(close_writer_task())
-
-    async def __handle_close_ok(self, _: spec.Connection.CloseOk) -> None:
-        return
+        if not self.closing.done():
+            self.closing.set_result(frame)
 
     async def __handle_heartbeat(self, _: Heartbeat) -> None:
         return
 
     async def __handle_close(self, frame: spec.Connection.Close) -> None:
-        log.exception(
+        self.set_close_reason(
+            frame.reply_code or -1,
+            frame.reply_text or "",
+            frame.class_id or -1,
+            frame.method_id or -1,
+        )
+
+        log.error(
             "Unexpected connection close from remote \"%s\", "
             "Connection.Close(reply_code=%r, reply_text=%r)",
             self, frame.reply_code, frame.reply_text,
@@ -547,6 +558,7 @@ class Connection(Base, AbstractConnection):
                 ),
             )
 
+        self.connected.clear()
         exception = exception_by_code(frame)
 
         if (
@@ -559,7 +571,7 @@ class Connection(Base, AbstractConnection):
     async def __handle_channel_close_ok(
         self, _: spec.Channel.CloseOk,
     ) -> None:
-        self.channels.pop(0, None)
+        pass
 
     async def __handle_channel_update_secret_ok(
         self, frame: spec.Connection.UpdateSecretOk,
@@ -590,7 +602,8 @@ class Connection(Base, AbstractConnection):
 
         # Not very optimal, but avoid creating a task for each frame sending
         # noinspection PyAsyncCall
-        self.create_task(self.__heartbeat())
+        heartbeat_task = self.create_task(self.__heartbeat())
+        heartbeat_task.add_done_callback(lambda _: self.close())
 
         channel_frame_handlers: Mapping[Any, Callable[[Any], Awaitable[None]]]
         channel_frame_handlers = {
@@ -641,7 +654,6 @@ class Connection(Base, AbstractConnection):
                     "Server connection %r was stuck. No frames were received "
                     "in %d seconds.", self, self.__heartbeat_grace_timeout,
                 )
-                self._writer_task.cancel()
             raise
 
     @property
@@ -657,7 +669,6 @@ class Connection(Base, AbstractConnection):
 
         while not self.closing.done():
             if self.is_connection_was_stuck:
-                self._reader_task.cancel()
                 return
 
             await asyncio.sleep(heartbeat_timeout)
@@ -668,7 +679,6 @@ class Connection(Base, AbstractConnection):
                     timeout=self.__heartbeat_grace_timeout,
                 )
             except asyncio.TimeoutError:
-                self._reader_task.cancel()
                 return
 
     async def __writer(self, writer: asyncio.StreamWriter) -> None:
@@ -698,6 +708,9 @@ class Connection(Base, AbstractConnection):
 
         except asyncio.CancelledError:
             if not self.__check_writer(writer) or self.is_connection_was_stuck:
+                raise
+
+            if self.closing.done():
                 raise
 
             frame = spec.Connection.Close(
@@ -748,20 +761,6 @@ class Connection(Base, AbstractConnection):
 
         return writer.can_write_eof()
 
-    async def _on_close(
-        self,
-        ex: Optional[ExceptionType] = ConnectionClosed(0, "normal closed"),
-    ) -> None:
-        log.debug("Closing connection %r cause: %r", self, ex)
-        if not self._reader_task.done():
-            self._reader_task.cancel()
-        if not self._writer_task.done():
-            self._writer_task.cancel()
-
-        await asyncio.gather(
-            self._reader_task, self._writer_task, return_exceptions=True,
-        )
-
     @property
     def server_capabilities(self) -> ArgumentsType:
         return self.server_properties["capabilities"]   # type: ignore
@@ -797,7 +796,7 @@ class Connection(Base, AbstractConnection):
         await self.connected.wait()
 
         if self.is_closed:
-            raise RuntimeError("%r closed" % self)
+            raise RuntimeError(f"{self!r} closed")
 
         if not self.publisher_confirms and publisher_confirms:
             raise ValueError("Server doesn't support publisher_confirms")
@@ -854,31 +853,32 @@ class Connection(Base, AbstractConnection):
             ],
         )
 
-        countdown = Countdown(timeout)
+        async def updater() -> spec.Connection.UpdateSecretOk:
+            async with self.__update_secret_lock:
+                self.__update_secret_future = self.loop.create_future()
+                await self.write_queue.put(channel_frame)
+                try:
+                    response: spec.Connection.UpdateSecretOk = (
+                        await self.__update_secret_future
+                    )
+                finally:
+                    self.__update_secret_future = None
+            return response
 
-        async with countdown.enter_context(self.__update_secret_lock):
-            self.__update_secret_future = self.loop.create_future()
-            await self.write_queue.put(channel_frame)
-            try:
-                response: spec.Connection.UpdateSecretOk = (
-                    await countdown(self.__update_secret_future)
-                )
-            finally:
-                self.__update_secret_future = None
-        return response
+        return await asyncio.wait_for(updater(), timeout=timeout)
 
     async def __aenter__(self) -> AbstractConnection:
         if not self.is_opened:
             await self.connect()
         return self
 
-    async def __aexit__(
+    def __aexit__(
         self,
         exc_type: Optional[Type[BaseException]],
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
-    ) -> None:
-        await self.close(exc_val)
+    ) -> Awaitable[Any]:
+        return self.close()
 
 
 async def connect(

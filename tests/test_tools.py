@@ -1,9 +1,5 @@
 import asyncio
 
-import pytest
-
-from aiormq.tools import Countdown, awaitable
-
 
 def simple_func():
     return 1
@@ -41,23 +37,3 @@ AWAITABLE_FUNCS = [
     (await_future, 6),
     (return_coroutine, 6),
 ]
-
-
-@pytest.mark.parametrize("func,result", AWAITABLE_FUNCS)
-async def test_awaitable(func, result, loop):
-    assert await awaitable(func)() == result
-
-
-async def test_countdown(loop):
-    countdown = Countdown(timeout=0.1)
-    await countdown(asyncio.sleep(0))
-
-    # waiting for the countdown exceeded
-    await asyncio.sleep(0.2)
-
-    task = asyncio.create_task(asyncio.sleep(0))
-
-    with pytest.raises(asyncio.TimeoutError):
-        await countdown(task)
-
-    assert task.cancelled()
