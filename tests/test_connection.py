@@ -456,7 +456,7 @@ class BadNetwork:
 
 DISCONNECT_OFFSETS = [2 << i for i in range(1, 10)]
 STAIR_STEPS = list(
-    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS)
+    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS),
 )
 STAIR_STEPS_IDS = [
     f"[{i // len(DISCONNECT_OFFSETS)}] {t}-{s}"
@@ -467,10 +467,10 @@ STAIR_STEPS_IDS = [
 @aiomisc.timeout(30)
 @pytest.mark.parametrize(
     "disconnect_time,stair", STAIR_STEPS,
-    ids=STAIR_STEPS_IDS
+    ids=STAIR_STEPS_IDS,
 )
 async def test_connection_close_stairway(
-    disconnect_time: float, stair: int, proxy, amqp_url: URL
+    disconnect_time: float, stair: int, proxy, amqp_url: URL,
 ):
     url = amqp_url.with_host(
         proxy.proxy_host,
@@ -486,12 +486,12 @@ async def test_connection_close_stairway(
         channel = await connection.channel()
         declare_ok = await channel.queue_declare(auto_delete=True)
         await channel.basic_consume(
-            declare_ok.queue, queue.put, no_ack=True
+            declare_ok.queue, queue.put, no_ack=True,
         )
 
         while True:
             await channel.basic_publish(
-                b"test", routing_key=declare_ok.queue
+                b"test", routing_key=declare_ok.queue,
             )
             message: DeliveredMessage = await queue.get()
             assert message.body == b"test"
