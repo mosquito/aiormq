@@ -94,7 +94,7 @@ class Channel(Base, AbstractChannel):
         if (
             publisher_confirms and not connector.publisher_confirms
         ):  # pragma: no cover
-            raise ValueError("Server does't support publisher confirms")
+            raise ValueError("Server doesn't support publisher confirms")
 
         self.consumers: Dict[str, ConsumerCallback] = {}
         self.confirmations = OrderedDict()

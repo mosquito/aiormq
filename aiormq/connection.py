@@ -97,21 +97,43 @@ def exception_by_code(frame: spec.Connection.Close) -> AMQPError:
     return exc_class(frame.reply_text)
 
 
-def parse_bool(v: str) -> bool:
-    return v == "1" or v.lower() in ("true", "yes", "y", "enable", "on")
+def parse_bool(v: Any) -> bool:
+    if isinstance(v, bool):
+        return v
+
+    v = str(v)
+    return v.lower() in (
+        "true", "yes", "y", "enable", "on", "enabled", "1"
+    )
 
 
-def parse_int(v: str) -> int:
+def parse_int(v: Any) -> int:
+    if isinstance(v, int):
+        return v
+
+    v = str(v)
     try:
         return int(v)
     except ValueError:
         return 0
 
 
-def parse_timeout(v: str) -> TimeoutType:
+def parse_timeout(v: Any) -> TimeoutType:
+    if isinstance(v, float):
+        if v.is_integer():
+            return int(v)
+        return v
+
+    if isinstance(v, int):
+        return v
+
+    v = str(v)
     try:
         if "." in v:
-            return float(v)
+            result = float(v)
+            if result.is_integer():
+                return int(result)
+            return result
         return int(v)
     except ValueError:
         return 0

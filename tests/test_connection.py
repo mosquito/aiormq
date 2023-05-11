@@ -14,6 +14,7 @@ from yarl import URL
 import aiormq
 from aiormq.abc import DeliveredMessage
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
+from aiormq.connection import parse_int, parse_timeout, parse_bool
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
@@ -456,7 +457,7 @@ class BadNetwork:
 
 DISCONNECT_OFFSETS = [2 << i for i in range(1, 10)]
 STAIR_STEPS = list(
-    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS)
+    itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS),
 )
 STAIR_STEPS_IDS = [
     f"[{i // len(DISCONNECT_OFFSETS)}] {t}-{s}"
@@ -467,10 +468,10 @@ STAIR_STEPS_IDS = [
 @aiomisc.timeout(30)
 @pytest.mark.parametrize(
     "disconnect_time,stair", STAIR_STEPS,
-    ids=STAIR_STEPS_IDS
+    ids=STAIR_STEPS_IDS,
 )
 async def test_connection_close_stairway(
-    disconnect_time: float, stair: int, proxy, amqp_url: URL
+    disconnect_time: float, stair: int, proxy, amqp_url: URL,
 ):
     url = amqp_url.with_host(
         proxy.proxy_host,
@@ -486,12 +487,12 @@ async def test_connection_close_stairway(
         channel = await connection.channel()
         declare_ok = await channel.queue_declare(auto_delete=True)
         await channel.basic_consume(
-            declare_ok.queue, queue.put, no_ack=True
+            declare_ok.queue, queue.put, no_ack=True,
         )
 
         while True:
             await channel.basic_publish(
-                b"test", routing_key=declare_ok.queue
+                b"test", routing_key=declare_ok.queue,
             )
             message: DeliveredMessage = await queue.get()
             assert message.body == b"test"
@@ -499,3 +500,54 @@ async def test_connection_close_stairway(
     for _ in range(5):
         with pytest.raises(aiormq.AMQPError):
             await run()
+
+
+PARSE_INT_PARAMS = (
+    (1, 1),
+    ("1", 1),
+    ("0.1", 0),
+    ("-1", -1),
+)
+
+
+@pytest.mark.parametrize("value,expected", PARSE_INT_PARAMS)
+def test_parse_int(value, expected):
+    assert parse_int(value) == expected
+
+
+PARSE_TIMEOUT_PARAMS = (
+    (1, 1),
+    (1.0, 1),
+    ("0", 0),
+    ("0.0", 0),
+    ("0.111", 0.111),
+)
+
+
+@pytest.mark.parametrize("value,expected", PARSE_TIMEOUT_PARAMS)
+def test_parse_timeout(value, expected):
+    assert parse_timeout(value) == expected
+
+
+PARSE_BOOL_PARAMS = (
+    ("no", False),
+    ("nope", False),
+    ("do not do it bro", False),
+    ("YES", True),
+    ("yes", True),
+    ("yeS", True),
+    ("yEs", True),
+    ("True", True),
+    ("true", True),
+    ("TRUE", True),
+    ("1", True),
+    ("ENABLE", True),
+    ("ENAbled", True),
+    ("y", True),
+    ("Y", True),
+)
+
+
+@pytest.mark.parametrize("value,expected", PARSE_BOOL_PARAMS)
+def test_parse_bool(value, expected):
+    assert parse_bool(value) == expected
