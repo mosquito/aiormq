@@ -102,7 +102,9 @@ def parse_bool(v: Any) -> bool:
         return v
 
     v = str(v)
-    return v == "1" or v.lower() in ("true", "yes", "y", "enable", "on")
+    return v.lower() in (
+        "true", "yes", "y", "enable", "on", "enabled", "1"
+    )
 
 
 def parse_int(v: Any) -> int:
@@ -117,13 +119,21 @@ def parse_int(v: Any) -> int:
 
 
 def parse_timeout(v: Any) -> TimeoutType:
-    if isinstance(v, (int, float)):
+    if isinstance(v, float):
+        if v.is_integer():
+            return int(v)
+        return v
+
+    if isinstance(v, int):
         return v
 
     v = str(v)
     try:
         if "." in v:
-            return float(v)
+            result = float(v)
+            if result.is_integer():
+                return int(result)
+            return result
         return int(v)
     except ValueError:
         return 0
