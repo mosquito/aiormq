@@ -612,7 +612,8 @@ class Connection(Base, AbstractConnection):
 
         # Not very optimal, but avoid creating a task for each frame sending
         # noinspection PyAsyncCall
-        self.create_task(self.__heartbeat())
+        if self.heartbeat_timeout > 0:
+            self.create_task(self.__heartbeat())
 
         channel_frame_handlers: Mapping[Any, Callable[[Any], Awaitable[None]]]
         channel_frame_handlers = {
