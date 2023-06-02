@@ -69,7 +69,7 @@ class Returning(asyncio.Future):
     pass
 
 
-ConfirmationType = Union[asyncio.Future, Returning]
+ConfirmationType = Union[asyncio.Future[ConfirmationFrameType], Returning]
 
 
 class Channel(Base, AbstractChannel):
