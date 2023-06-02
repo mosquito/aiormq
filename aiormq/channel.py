@@ -1,7 +1,6 @@
 import asyncio
 import io
 import logging
-import sys
 from collections import OrderedDict
 from contextlib import suppress
 from functools import partial
@@ -70,11 +69,7 @@ class Returning(asyncio.Future):
     pass
 
 
-if sys.version_info >= (3, 9):
-    ConfirmationFrameTypeFuture = asyncio.Future[ConfirmationFrameType]
-else:
-    ConfirmationFrameTypeFuture = asyncio.Future
-ConfirmationType = Union[ConfirmationFrameTypeFuture, Returning]
+ConfirmationType = Union["asyncio.Future[ConfirmationFrameType]", Returning]
 
 
 class Channel(Base, AbstractChannel):
