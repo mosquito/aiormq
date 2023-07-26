@@ -257,12 +257,12 @@ class Connection(Base, AbstractConnection):
 
     _reader_task: TaskType
     _writer_task: TaskType
+    __create_connection_kwargs: Mapping[str, Any]
+
     write_queue: asyncio.Queue
     server_properties: ArgumentsType
     connection_tune: spec.Connection.Tune
     channels: Dict[int, Optional[AbstractChannel]]
-
-    _create_connection_params: Mapping[str, Any]
 
     @staticmethod
     def _parse_ca_data(data: Optional[str]) -> Optional[bytes]:
