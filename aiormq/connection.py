@@ -257,6 +257,8 @@ class Connection(Base, AbstractConnection):
 
     _reader_task: TaskType
     _writer_task: TaskType
+    __create_connection_kwargs: Mapping[str, Any]
+
     write_queue: asyncio.Queue
     server_properties: ArgumentsType
     connection_tune: spec.Connection.Tune
@@ -272,6 +274,7 @@ class Connection(Base, AbstractConnection):
         *,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         context: Optional[ssl.SSLContext] = None,
+        **create_connection_kwargs: Any,
     ):
 
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
@@ -322,6 +325,7 @@ class Connection(Base, AbstractConnection):
             (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
         )
         self.__last_frame_time: float = self.loop.time()
+        self.__create_connection_kwargs = create_connection_kwargs
 
     async def ready(self) -> None:
         await self.connected.wait()
@@ -450,6 +454,7 @@ class Connection(Base, AbstractConnection):
         try:
             reader, writer = await asyncio.open_connection(
                 self.url.host, self.url.port, ssl=ssl_context,
+                **self.__create_connection_kwargs,
             )
 
             frame_receiver = FrameReceiver(reader)
