@@ -51,9 +51,11 @@ def awaitable(
     return wrap
 
 
-def legacy_timeout(func):
+def legacy_timeout(func: Callable[..., Coroutine[Any, Any, T]]
+                   ) -> Callable[..., Coroutine[Any, Any, T]]:
     @wraps(func)
-    async def wrapper(*args, timeout: TimeoutType = None, **kwargs):
+    async def wrapper(*args: Any, timeout: TimeoutType = None, **kwargs: Any
+                      ) -> T:
         if timeout is None:
             return await func(*args, **kwargs)
         else:
