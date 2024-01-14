@@ -39,7 +39,7 @@ packages = [{ include = "aiormq" }]
 
 [tool.poetry.dependencies]
 python = "^3.7"
-pamqp = "3.2.1"
+pamqp = "3.3.0"
 setuptools = [{ version = '*', python = "< 3.8" }]
 yarl = [{ version = '*'}]
 
