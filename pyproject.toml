@@ -22,7 +22,6 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -39,7 +38,7 @@ packages = [{ include = "aiormq" }]
 "Documentation" = "https://github.com/mosquito/aiormq/blob/master/README.rst"
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.8"
 pamqp = "3.3.0"
 setuptools = [{ version = '*', python = "< 3.8" }]
 yarl = [{ version = '*'}]
@@ -55,6 +54,7 @@ mypy = "^0.991"
 pytest-rst = "^0.0.7"
 types-setuptools = "^65.6.0.2"
 aiomisc-pytest = "^1.1.1"
+setuptools = "^69.0.3"
 
 [tool.poetry.group.uvloop.dependencies]
 uvloop = ["^0.18"]
