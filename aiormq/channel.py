@@ -698,6 +698,50 @@ class Channel(Base, AbstractChannel):
 
         return await countdown(confirmation)
 
+    def basic_publish_nowait(
+        self,
+        body: bytes,
+        *,
+        exchange: str = "",
+        routing_key: str = "",
+        properties: Optional[spec.Basic.Properties] = None,
+        mandatory: bool = False,
+        immediate: bool = False,
+    ) -> None:
+        assert not self.publisher_confirms, "need await for publisher_confirm"
+
+        _check_routing_key(routing_key)
+
+        publish_frame = spec.Basic.Publish(
+            exchange=exchange,
+            routing_key=routing_key,
+            mandatory=mandatory,
+            immediate=immediate,
+        )
+
+        content_header = ContentHeader(
+            properties=properties or spec.Basic.Properties(delivery_mode=1),
+            body_size=len(body),
+        )
+
+        if not content_header.properties.message_id:
+            # UUID compatible random bytes
+            rnd_uuid = UUID(int=getrandbits(128), version=4)
+            content_header.properties.message_id = rnd_uuid.hex
+
+        self.delivery_tag += 1
+
+        body_frames: List[Union[FrameType, ContentBody]]
+        body_frames = [publish_frame, content_header]
+        body_frames += self._split_body(body)
+
+        self.write_queue.put_nowait(
+            ChannelFrame.marshall(
+                frames=body_frames,
+                channel_number=self.number,
+            ),
+        )
+
     async def basic_qos(
         self,
         *,
