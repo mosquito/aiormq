@@ -37,7 +37,7 @@ from .exceptions import (
     ConnectionResourceError, ConnectionSyntaxError, ConnectionUnexpectedFrame,
     IncompatibleProtocolError, ProbableAuthenticationError,
 )
-from .tools import Countdown, censor_url
+from .tools import legacy_timeout, censor_url
 
 
 # noinspection PyUnresolvedReferences
@@ -869,9 +869,10 @@ class Connection(Base, AbstractConnection):
 
         return channel
 
+    @legacy_timeout
     async def update_secret(
         self, new_secret: str, *,
-        reason: str = "", timeout: TimeoutType = None,
+        reason: str = "",
     ) -> spec.Connection.UpdateSecretOk:
         channel_frame = ChannelFrame.marshall(
             channel_number=0,
@@ -882,14 +883,12 @@ class Connection(Base, AbstractConnection):
             ],
         )
 
-        countdown = Countdown(timeout)
-
-        async with countdown.enter_context(self.__update_secret_lock):
+        async with self.__update_secret_lock:
             self.__update_secret_future = self.loop.create_future()
             await self.write_queue.put(channel_frame)
             try:
                 response: spec.Connection.UpdateSecretOk = (
-                    await countdown(self.__update_secret_future)
+                    await self.__update_secret_future
                 )
             finally:
                 self.__update_secret_future = None
