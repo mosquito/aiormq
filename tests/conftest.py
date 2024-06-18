@@ -34,6 +34,7 @@ amqp_urls = {
             "no_verify_ssl": 1,
         },
     ),
+    "ws": AMQP_URL.with_scheme("ws").with_port(15670),
 }
 
 
@@ -125,7 +126,12 @@ def memory_tracer():
 
 @pytest.fixture()
 async def proxy(tcp_proxy, localhost, amqp_url: URL):
-    port = amqp_url.port or 5672 if amqp_url.scheme == "amqp" else 5671
+    if amqp_url.scheme == "amqp":
+        port = amqp_url.port or 5672
+    elif amqp_url.scheme == "ws":
+        port = amqp_url.port or 15672
+    else:
+        port = 5671
     async with tcp_proxy(amqp_url.host, port) as proxy:
         yield proxy
 

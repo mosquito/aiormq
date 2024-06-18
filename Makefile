@@ -6,14 +6,8 @@ RABBITMQ_CONTAINER_NAME:=aiormq_rabbitmq
 RABBITMQ_IMAGE:=mosquito/aiormq-rabbitmq
 
 rabbitmq:
-	docker kill $(RABBITMQ_CONTAINER_NAME) || true
-	docker run --pull=always --rm -d \
-		--name $(RABBITMQ_CONTAINER_NAME) \
-		-p 5671:5671 \
-		-p 5672:5672 \
-		-p 15671:15671 \
-		-p 15672:15672 \
-		$(RABBITMQ_IMAGE)
+	docker compose down
+	docker compose up -d
 
 upload:
 	poetry publish --build --skip-existing

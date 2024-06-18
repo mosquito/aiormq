@@ -39,6 +39,7 @@ from .exceptions import (
 )
 from .tools import Countdown, censor_url
 
+from .websocket_transport import open_websocket_connection
 
 # noinspection PyUnresolvedReferences
 try:
@@ -452,10 +453,14 @@ class Connection(Base, AbstractConnection):
 
         log.debug("Connecting to: %s", self)
         try:
-            reader, writer = await asyncio.open_connection(
-                self.url.host, self.url.port, ssl=ssl_context,
-                **self.__create_connection_kwargs,
-            )
+
+            if self.url.scheme == "ws" or self.url.scheme == "wss":
+                reader, writer = await open_websocket_connection(self.url)
+            else:
+                reader, writer = await asyncio.open_connection(
+                    self.url.host, self.url.port, ssl=ssl_context,
+                    **self.__create_connection_kwargs,
+                )
 
             frame_receiver = FrameReceiver(reader)
         except OSError as e:
