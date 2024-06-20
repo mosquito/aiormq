@@ -83,6 +83,13 @@ jobs:
           - 5672:5672
           - 5671:5671
 
+      websocket-tcp-relay:
+        image: docker://cloudamqp/websocket-tcp-relay
+        ports:
+          # ws socket port
+          - '15670:15670'
+        command: ["/usr/bin/websocket-tcp-relay", "--bind=0.0.0.0","--upstream=tcp://rabbitmq:5672"]
+
     strategy:
       fail-fast: false
 
