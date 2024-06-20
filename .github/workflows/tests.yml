@@ -88,8 +88,6 @@ jobs:
         ports:
           # ws socket port
           - '15670:15670'
-        options: >-
-          --upstream=tcp://rabbitmq:5672
 
     strategy:
       fail-fast: false
