@@ -88,6 +88,8 @@ jobs:
         ports:
           # ws socket port
           - '15670:15670'
+        options: >-
+          --entrypoint /usr/bin/websocket-tcp-relay --bind=0.0.0.0 --upstream=tcp://rabbitmq:5672
 
     strategy:
       fail-fast: false
