@@ -101,7 +101,7 @@ jobs:
       - run: python -m pip install poetry
       - run: poetry install --with=uvloop
       - name:
-        run: docker compose up -d
+        run: docker compose up -d && sleep 10
       - name: pytest
         run: >-
           poetry run pytest \
