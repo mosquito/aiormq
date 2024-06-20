@@ -38,8 +38,7 @@ services:
     ports:
       # ws socket port
       - '15670:15670'
-    options: >-
-      --upstream=tcp://rabbitmq:5672
+    command: ["/usr/bin/websocket-tcp-relay", "--bind=0.0.0.0","--upstream=tcp://rabbitmq:5672"]
     networks:
       - network
 
