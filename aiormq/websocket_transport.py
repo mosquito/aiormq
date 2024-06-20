@@ -23,7 +23,6 @@ c_handler.setFormatter(c_format)
 logger.addHandler(c_handler)
 
 
-
 class WebsocketTransport(transports.Transport):
 
     def __init__(self, loop, protocol, url, extra=None):
@@ -106,11 +105,22 @@ async def create_websocket_connection(protocol_factory, url, *args, **kwargs):
 _DEFAULT_LIMIT = 2 ** 16  # 64 KiB
 
 
-async def open_websocket_connection(url: URL, limit=_DEFAULT_LIMIT, *args, **kwargs):
+async def open_websocket_connection(url: URL,
+                                    limit=_DEFAULT_LIMIT,
+                                    *args,
+                                    **kwargs):
     loop = events.get_running_loop()
     reader = streams.StreamReader(limit=limit, loop=loop)
     protocol = streams.StreamReaderProtocol(reader, loop=loop)
-    factory = lambda: protocol
-    transport, _ = await create_websocket_connection(factory, url, *args, **kwargs)
+
+    def factory():
+        return protocol
+
+    transport, _ = await create_websocket_connection(
+        factory,
+        url,
+        *args,
+        **kwargs
+    )
     writer = streams.StreamWriter(transport, protocol, reader, loop)
     return reader, writer
