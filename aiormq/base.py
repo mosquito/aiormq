@@ -2,7 +2,9 @@ import abc
 import asyncio
 from contextlib import suppress
 from functools import wraps
-from typing import Any, Callable, Coroutine, Optional, Set, TypeVar, Union
+from typing import (
+    Any, Callable, Coroutine, Optional, Set, TypeVar, Union, Literal
+)
 from weakref import WeakSet
 
 from .abc import (
@@ -25,6 +27,7 @@ class FutureStore(AbstractFutureStore):
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.futures = set()
         self.loop = loop
+        self.reject_reason: Optional[ExceptionType] | Literal[False] = False
         self.parent: Optional[FutureStore] = None
 
     def __on_task_done(
@@ -38,6 +41,12 @@ class FutureStore(AbstractFutureStore):
         return remover
 
     def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
+        if self.reject_reason is not False:
+            if isinstance(future, TaskWrapper):
+                future.throw(self.reject_reason or Exception)
+            elif isinstance(future, asyncio.Future):
+                future.set_exception(self.reject_reason or Exception)
+
         self.futures.add(future)
         future.add_done_callback(self.__on_task_done(future))
 
@@ -46,6 +55,7 @@ class FutureStore(AbstractFutureStore):
 
     @shield
     async def reject_all(self, exception: Optional[ExceptionType]) -> None:
+        self.reject_reason = exception
         tasks = []
 
         while self.futures:
