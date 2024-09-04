@@ -286,7 +286,9 @@ class Connection(Base, AbstractConnection):
         if self.url.path == "/" or not self.url.path:
             self.vhost = "/"
         else:
-            self.vhost = self.url.path[1:]
+            quoted_vhost = self.url.path[1:]
+            # yarl>=1.9.5 skips unquoting backslashes in path
+            self.vhost = quoted_vhost.replace("%2F", "/")
 
         self.ssl_context = context
         self.ssl_certs = SSLCerts(
