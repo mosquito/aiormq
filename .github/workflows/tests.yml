@@ -76,13 +76,6 @@ jobs:
   tests:
     runs-on: ubuntu-latest
 
-    services:
-      rabbitmq:
-        image: docker://mosquito/aiormq-rabbitmq
-        ports:
-          - 5672:5672
-          - 5671:5671
-
     strategy:
       fail-fast: false
 
@@ -107,6 +100,8 @@ jobs:
           key: venv-${{ runner.os }}-${{ github.job }}-${{ github.ref }}-${{ matrix.python }}
       - run: python -m pip install poetry
       - run: poetry install --with=uvloop
+      - name:
+        run: docker compose up -d && sleep 10
       - name: pytest
         run: >-
           poetry run pytest \
@@ -123,6 +118,8 @@ jobs:
           COVERALLS_PARALLEL: 'true'
           COVERALLS_SERVICE_NAME: github
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cleanup
+        run: docker-compose down && docker-compose rm --force
 
   finish:
     needs:
