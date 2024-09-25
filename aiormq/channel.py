@@ -1,15 +1,16 @@
+from functools import wraps
 import asyncio
 import io
 import logging
 from collections import OrderedDict
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from functools import partial
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
 from typing import (
-    Any, Awaitable, Callable, Dict, List, Mapping, Optional, Set, Tuple, Type,
-    Union,
+    Any, AsyncGenerator, Awaitable, Callable, Dict, List, Mapping, Optional,
+    Set, Tuple, Type, TypeVar, Union,
 )
 from uuid import UUID
 
@@ -28,7 +29,7 @@ from .abc import (
     ConfirmationFrameType, ConsumerCallback, DeliveredMessage, ExceptionType,
     FrameType, GetResultType, ReturnCallback, RpcReturnType, TimeoutType,
 )
-from .base import Base, task
+from .base import Base
 from .exceptions import (
     AMQPChannelError, AMQPError, ChannelAccessRefused, ChannelClosed,
     ChannelInvalidStateError, ChannelLockedResource, ChannelNotFoundEntity,
@@ -46,6 +47,21 @@ EXCEPTION_MAPPING: Mapping[int, Type[AMQPChannelError]] = MappingProxyType({
     405: ChannelLockedResource,
     406: ChannelPreconditionFailed,
 })
+
+
+T = TypeVar("T")
+
+TaskFunctionType = Callable[..., T]
+
+
+def task(func: TaskFunctionType) -> TaskFunctionType:
+    @wraps(func)
+    async def wrap(self: "Channel", *args: Any, **kwargs: Any) -> Any:
+        if self.is_closed:
+            raise ChannelInvalidStateError("%r closed" % self)
+        return await self.create_task(func(self, *args, **kwargs))
+
+    return wrap
 
 
 def exception_by_code(frame: spec.Channel.Close) -> AMQPError:
@@ -140,11 +156,14 @@ class Channel(Base, AbstractChannel):
         self.__close_method_id = method_id
 
     @property
-    def lock(self) -> asyncio.Lock:
+    @asynccontextmanager
+    async def lock(self) -> AsyncGenerator[None, None]:
         if self.is_closed:
             raise ChannelInvalidStateError("%r closed" % self)
-
-        return self.__lock
+        async with self.__lock:
+            if self.is_closed:
+                raise ChannelInvalidStateError("%r closed" % self)
+            yield
 
     async def _get_frame(self) -> FrameType:
         weight, frame = await self.frames.get()
@@ -478,17 +497,21 @@ class Channel(Base, AbstractChannel):
         countdown = Countdown(timeout)
         async with countdown.enter_context(self.getter_lock):
             self.getter = self.create_future()
+            try:
+                await self.rpc(
+                    spec.Basic.Get(queue=queue, no_ack=no_ack),
+                    timeout=countdown.get_timeout(),
+                )
+            except BaseException:
+                self.getter.cancel()
+                raise
+            else:
+                frame: Union[spec.Basic.GetEmpty, spec.Basic.GetOk]
+                message: DeliveredMessage
 
-            await self.rpc(
-                spec.Basic.Get(queue=queue, no_ack=no_ack),
-                timeout=countdown.get_timeout(),
-            )
-
-            frame: Union[spec.Basic.GetEmpty, spec.Basic.GetOk]
-            message: DeliveredMessage
-
-            frame, message = await countdown(self.getter)
-            del self.getter
+                frame, message = await countdown(self.getter)
+            finally:
+                del self.getter
 
         return message
 
