@@ -9,7 +9,7 @@ from .abc import (
     AbstractBase, AbstractFutureStore, CoroutineType, ExceptionType, TaskType,
     TaskWrapper, TimeoutType,
 )
-from .tools import Countdown, shield
+from .tools import legacy_timeout, shield
 
 
 T = TypeVar("T")
@@ -130,15 +130,13 @@ class Base(AbstractBase):
         with suppress(Exception):
             await self._cancel_tasks(exc)
 
+    @legacy_timeout
     async def close(
         self, exc: Optional[ExceptionType] = asyncio.CancelledError,
-        timeout: TimeoutType = None,
     ) -> None:
         if self.is_closed:
             return None
-
-        countdown = Countdown(timeout)
-        await countdown(self.__closer(exc))
+        await self.__closer(exc)
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__
