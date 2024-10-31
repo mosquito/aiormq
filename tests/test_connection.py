@@ -4,7 +4,7 @@ import os
 import ssl
 import uuid
 from binascii import hexlify
-from typing import Optional
+from typing import Any, Optional
 
 import aiomisc
 import pytest
@@ -14,7 +14,12 @@ from yarl import URL
 import aiormq
 from aiormq.abc import DeliveredMessage
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
-from aiormq.connection import parse_int, parse_timeout, parse_bool
+from aiormq.connection import (
+    TransportFactory,
+    parse_int,
+    parse_timeout,
+    parse_bool
+)
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
@@ -113,6 +118,37 @@ async def test_properties(amqp_connection):
 async def test_open(amqp_connection):
     with pytest.raises(RuntimeError):
         await amqp_connection.connect()
+
+    channel = await amqp_connection.channel()
+    await channel.close()
+    await amqp_connection.close()
+
+
+class _TcpTransportFactory(TransportFactory):
+    @staticmethod
+    def is_ssl_url(url: URL) -> bool:
+        return url.scheme == "amqps"
+
+    async def create(
+            self,
+            url: URL, ssl: Optional[ssl.SSLContext],
+            **kwargs: dict[str, Any]
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader(loop=loop)
+        protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
+        transport, _ = await loop.create_connection(
+            lambda: protocol, url.host, url.port, ssl=ssl,
+        )
+        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
+        return reader, writer
+
+
+async def test_open_with_transport_factory(amqp_url):
+    amqp_connection = await aiormq.connect(
+        amqp_url,
+        transport_factory=_TcpTransportFactory(),
+    )
 
     channel = await amqp_connection.channel()
     await channel.close()
