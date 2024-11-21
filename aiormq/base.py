@@ -57,7 +57,7 @@ class FutureStore(AbstractFutureStore):
             if isinstance(future, TaskWrapper):
                 future.throw(exception or Exception)
                 tasks.append(future)
-            elif isinstance(future, asyncio.Future):
+            elif asyncio.isfuture(future):
                 future.set_exception(exception or Exception)
 
         if tasks:
