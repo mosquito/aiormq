@@ -304,31 +304,44 @@ class TransportFactory(ABC):
     transports.
     """
 
-    @staticmethod
-    @abstractmethod
-    def is_ssl_url(url: URL) -> bool:
-        pass
-
     @abstractmethod
     async def create(
             self,
-            url: URL, ssl: Optional[ssl.SSLContext],
-            **kwargs: dict[str, Any]
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+            url: URL,
+            *,
+            ssl_context_provider: SSLContextProvider,
+            **kwargs: Any
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Create a transport connection to the AMQP server."""
         pass
 
 
-class _DefaultTransportFactory(TransportFactory):
-    @staticmethod
-    def is_ssl_url(url: URL) -> bool:
-        return url.scheme == "amqps"
-
+class TCPTransportFactory(TransportFactory):
     async def create(
             self,
-            url: URL, ssl: Optional[ssl.SSLContext],
+            url: URL,
+            *,
+            ssl_context_provider: SSLContextProvider,
             **kwargs: Any
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        try:
+            return await asyncio.open_connection(
+                host=url.host, port=url.port, ssl=None, **kwargs,
+            )
+        except OSError as e:
+            raise AMQPConnectionError(*e.args) from e
+
+
+class TLSTransportFactory(TransportFactory):
+    async def create(
+            self,
+            url: URL,
+            *,
+            ssl_context_provider: SSLContextProvider,
+            **kwargs: Any
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        ssl = await ssl_context_provider.get_context()
+
         try:
             return await asyncio.open_connection(
                 host=url.host, port=url.port, ssl=ssl, **kwargs,
@@ -407,9 +420,12 @@ class Connection(Base, AbstractConnection):
         self.last_channel_lock = asyncio.Lock()
         self.connected = asyncio.Event()
         self.connection_name = self.url.query.get("name")
-        self._transport_factory = (
-            transport_factory or _DefaultTransportFactory()
-        )
+        if transport_factory:
+            self._transport_factory = transport_factory
+        elif self.url.scheme == "amqps":
+            self._transport_factory = TLSTransportFactory()
+        else:
+            self._transport_factory = TCPTransportFactory()
 
         self.__close_reply_code: int = REPLY_SUCCESS
         self.__close_reply_text: str = "normally closed"
@@ -522,20 +538,15 @@ class Connection(Base, AbstractConnection):
         if self.is_opened:
             raise RuntimeError("Connection already opened")
 
-        ssl_context = self.ssl_context
-        is_ssl_url = self._transport_factory.is_ssl_url(self.url)
-        if ssl_context is None and is_ssl_url:
-            ssl_context = await SSLContextProvider(
-                ssl_context=ssl_context,
-                ssl_certs=self.ssl_certs,
-                loop=self.loop
-            ).get_context()
-            self.ssl_context = ssl_context
-
         log.debug("Connecting to: %s", self)
         try:
             reader, writer = await self._transport_factory.create(
-                self.url, ssl=self.ssl_context,
+                self.url,
+                ssl_context_provider=SSLContextProvider(
+                    ssl_context=self.ssl_context,
+                    ssl_certs=self.ssl_certs,
+                    loop=self.loop
+                ),
                 **self.__create_connection_kwargs,
             )
         except Exception as e:

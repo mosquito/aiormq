@@ -4,7 +4,7 @@ import os
 import ssl
 import uuid
 from binascii import hexlify
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 import aiomisc
 import pytest
@@ -12,7 +12,6 @@ from pamqp.commands import Basic
 from yarl import URL
 
 import aiormq
-from aiormq.abc import DeliveredMessage
 from aiormq.abc import DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
 from aiormq.connection import (
@@ -127,18 +126,22 @@ async def test_open(amqp_connection):
 
 
 class _TcpTransportFactory(TransportFactory):
-    @staticmethod
-    def is_ssl_url(url: URL) -> bool:
-        return url.scheme == "amqps"
-
     async def create(
             self,
-            url: URL, ssl: Optional[ssl.SSLContext],
-            **kwargs: dict[str, Any]
-    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+            url: URL,
+            ssl_context_provider: ssl.SSLContext,
+            **kwargs: Any,
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        assert isinstance(ssl_context_provider, SSLContextProvider)
+
         loop = asyncio.get_event_loop()
         reader = asyncio.StreamReader(loop=loop)
         protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
+        if url.scheme == "amqps":
+            ssl = await ssl_context_provider.get_context()
+        else:
+            ssl = None
+
         transport, _ = await loop.create_connection(
             lambda: protocol, url.host, url.port, ssl=ssl,
         )
