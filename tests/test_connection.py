@@ -13,8 +13,10 @@ from yarl import URL
 
 import aiormq
 from aiormq.abc import DeliveredMessage
+from aiormq.abc import DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
 from aiormq.connection import (
+    SSLContextProvider,
     TransportFactory,
     parse_int,
     parse_timeout,
@@ -536,6 +538,52 @@ async def test_connection_close_stairway(
     for _ in range(5):
         with pytest.raises(aiormq.AMQPError):
             await run()
+
+
+async def test_ssl_context_provider_static(loop):
+    certs = SSLCerts(
+        cert=None,
+        key=None,
+        capath=None,
+        cafile=None,
+        cadata=None,
+        verify=False,
+    )
+
+    static_context = ssl.create_default_context()
+    provider = SSLContextProvider(
+        ssl_context=static_context,
+        ssl_certs=certs,
+        loop=loop
+    )
+
+    provided_context = await provider.get_context()
+    assert provided_context is static_context
+
+
+async def test_ssl_context_provider_created(loop):
+    certs = SSLCerts(
+        cert=cert_path("client.pem"),
+        key=cert_path("client.key"),
+        capath=None,
+        cafile=cert_path("ca.pem"),
+        cadata=None,
+        verify=True,
+    )
+
+    default_context = ssl.create_default_context()
+
+    provider = SSLContextProvider(
+        ssl_context=None,
+        ssl_certs=certs,
+        loop=loop
+    )
+
+    provided_context = await provider.get_context()
+    assert provided_context != default_context
+
+    second_provided_context = await provider.get_context()
+    assert provided_context is second_provided_context
 
 
 PARSE_INT_PARAMS = (

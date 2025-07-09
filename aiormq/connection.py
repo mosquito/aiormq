@@ -247,6 +247,57 @@ class FrameGenerator(AsyncIterable):
         return frame
 
 
+class SSLContextProvider:
+    """Provides `ssl.SSLContext`.
+
+    The context can be optionally provided at initialization by
+    `ssl_context` arg. If it's not, the context is created using the
+    certificate information provided in `ssl_certs` arg.
+    """
+    def __init__(
+        self,
+        *,
+        ssl_context: Optional[ssl.SSLContext],
+        ssl_certs: SSLCerts,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        self._ssl_context = ssl_context
+        self._ssl_certs = ssl_certs
+        self._loop = loop
+
+    async def get_context(self) -> ssl.SSLContext:
+        """ Obtain `ssl.SSLContext` instance.
+
+        If the context is provided at initialization, it is returned. Otherwise
+        a new context is created using the provided certificate information.
+        """
+        if self._ssl_context:
+            return self._ssl_context
+
+        ssl_context = await self._loop.run_in_executor(
+            None, self._create_context
+        )
+        self._ssl_context = ssl_context
+        return ssl_context
+
+    def _create_context(self) -> ssl.SSLContext:
+        context = ssl.create_default_context(
+            ssl.Purpose.SERVER_AUTH,
+            capath=self._ssl_certs.capath,
+            cafile=self._ssl_certs.cafile,
+            cadata=self._ssl_certs.cadata,
+        )
+
+        if self._ssl_certs.cert:
+            context.load_cert_chain(self._ssl_certs.cert, self._ssl_certs.key)
+
+        if not self._ssl_certs.verify:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
+        return context
+
+
 class TransportFactory(ABC):
     """
     Abstract factory class allowing to open connections with generic
@@ -405,23 +456,6 @@ class Connection(Base, AbstractConnection):
     def __str__(self) -> str:
         return str(censor_url(self.url))
 
-    def _get_ssl_context(self) -> ssl.SSLContext:
-        context = ssl.create_default_context(
-            ssl.Purpose.SERVER_AUTH,
-            capath=self.ssl_certs.capath,
-            cafile=self.ssl_certs.cafile,
-            cadata=self.ssl_certs.cadata,
-        )
-
-        if self.ssl_certs.cert:
-            context.load_cert_chain(self.ssl_certs.cert, self.ssl_certs.key)
-
-        if not self.ssl_certs.verify:
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-        return context
-
     def _client_properties(self, **kwargs: Any) -> Dict[str, Any]:
         properties = {
             "platform": PLATFORM,
@@ -491,9 +525,11 @@ class Connection(Base, AbstractConnection):
         ssl_context = self.ssl_context
         is_ssl_url = self._transport_factory.is_ssl_url(self.url)
         if ssl_context is None and is_ssl_url:
-            ssl_context = await self.loop.run_in_executor(
-                None, self._get_ssl_context,
-            )
+            ssl_context = await SSLContextProvider(
+                ssl_context=ssl_context,
+                ssl_certs=self.ssl_certs,
+                loop=self.loop
+            ).get_context()
             self.ssl_context = ssl_context
 
         log.debug("Connecting to: %s", self)
