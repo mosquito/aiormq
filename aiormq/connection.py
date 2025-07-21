@@ -308,8 +308,6 @@ class TransportFactory(ABC):
     async def create(
             self,
             url: URL,
-            *,
-            ssl_context_provider: SSLContextProvider,
             **kwargs: Any
     ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Create a transport connection to the AMQP server."""
@@ -320,10 +318,10 @@ class TCPTransportFactory(TransportFactory):
     async def create(
             self,
             url: URL,
-            *,
-            ssl_context_provider: SSLContextProvider,
             **kwargs: Any
     ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        # unexpected for asyncio.open_connection ignoring it
+        _ = kwargs.pop("ssl_context_provider", None)
         try:
             return await asyncio.open_connection(
                 host=url.host, port=url.port, ssl=None, **kwargs,
@@ -336,10 +334,9 @@ class TLSTransportFactory(TransportFactory):
     async def create(
             self,
             url: URL,
-            *,
-            ssl_context_provider: SSLContextProvider,
             **kwargs: Any
     ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        ssl_context_provider = kwargs.pop("ssl_context_provider")
         ssl = await ssl_context_provider.get_context()
 
         try:

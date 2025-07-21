@@ -129,9 +129,9 @@ class _TcpTransportFactory(TransportFactory):
     async def create(
             self,
             url: URL,
-            ssl_context_provider: ssl.SSLContext,
             **kwargs: Any,
     ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        ssl_context_provider = kwargs.pop("ssl_context_provider")
         assert isinstance(ssl_context_provider, SSLContextProvider)
 
         loop = asyncio.get_event_loop()
