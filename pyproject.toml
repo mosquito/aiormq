@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "aiormq"
-version = "6.8.1"
+version = "6.9.0"
 description = "Pure python AMQP asynchronous client library"
 authors = ["Dmitry Orlov <me@mosquito.su>"]
 readme = "README.rst"
@@ -22,11 +22,11 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
@@ -38,9 +38,8 @@ packages = [{ include = "aiormq" }]
 "Documentation" = "https://github.com/mosquito/aiormq/blob/master/README.rst"
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.9"
 pamqp = "3.3.0"
-setuptools = [{ version = '*', python = "< 3.8" }]
 yarl = [{ version = '*'}]
 
 [tool.poetry.group.dev.dependencies]
@@ -57,7 +56,7 @@ aiomisc-pytest = "^1.1.1"
 setuptools = "^69.0.3"
 
 [tool.poetry.group.uvloop.dependencies]
-uvloop = ["^0.18"]
+uvloop = ["^0.21"]
 
 [build-system]
 requires = ["poetry-core"]
