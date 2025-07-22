@@ -1032,53 +1032,55 @@ zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
 name = "uvloop"
-version = "0.18.0"
+version = "0.21.0"
 description = "Fast implementation of asyncio event loop on top of libuv"
 optional = false
-python-versions = ">=3.7.0"
+python-versions = ">=3.8.0"
 groups = ["uvloop"]
 files = [
-    {file = "uvloop-0.18.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:1f354d669586fca96a9a688c585b6257706d216177ac457c92e15709acaece10"},
-    {file = "uvloop-0.18.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:280904236a5b333a273292b3bcdcbfe173690f69901365b973fa35be302d7781"},
-    {file = "uvloop-0.18.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ad79cd30c7e7484bdf6e315f3296f564b3ee2f453134a23ffc80d00e63b3b59e"},
-    {file = "uvloop-0.18.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:99deae0504547d04990cc5acf631d9f490108c3709479d90c1dcd14d6e7af24d"},
-    {file = "uvloop-0.18.0-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:edbb4de38535f42f020da1e3ae7c60f2f65402d027a08a8c60dc8569464873a6"},
-    {file = "uvloop-0.18.0-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:54b211c46facb466726b227f350792770fc96593c4ecdfaafe20dc00f3209aef"},
-    {file = "uvloop-0.18.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:25b714f07c68dcdaad6994414f6ec0f2a3b9565524fba181dcbfd7d9598a3e73"},
-    {file = "uvloop-0.18.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:1121087dfeb46e9e65920b20d1f46322ba299b8d93f7cb61d76c94b5a1adc20c"},
-    {file = "uvloop-0.18.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:74020ef8061678e01a40c49f1716b4f4d1cc71190d40633f08a5ef8a7448a5c6"},
-    {file = "uvloop-0.18.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1f4a549cd747e6f4f8446f4b4c8cb79504a8372d5d3a9b4fc20e25daf8e76c05"},
-    {file = "uvloop-0.18.0-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:6132318e1ab84a626639b252137aa8d031a6c0550250460644c32ed997604088"},
-    {file = "uvloop-0.18.0-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:585b7281f9ea25c4a5fa993b1acca4ad3d8bc3f3fe2e393f0ef51b6c1bcd2fe6"},
-    {file = "uvloop-0.18.0-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:61151cc207cf5fc88863e50de3d04f64ee0fdbb979d0b97caf21cae29130ed78"},
-    {file = "uvloop-0.18.0-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:c65585ae03571b73907b8089473419d8c0aff1e3826b3bce153776de56cbc687"},
-    {file = "uvloop-0.18.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e3d301e23984dcbc92d0e42253e0e0571915f0763f1eeaf68631348745f2dccc"},
-    {file = "uvloop-0.18.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:680da98f12a7587f76f6f639a8aa7708936a5d17c5e7db0bf9c9d9cbcb616593"},
-    {file = "uvloop-0.18.0-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:75baba0bfdd385c886804970ae03f0172e0d51e51ebd191e4df09b929771b71e"},
-    {file = "uvloop-0.18.0-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:ed3c28337d2fefc0bac5705b9c66b2702dc392f2e9a69badb1d606e7e7f773bb"},
-    {file = "uvloop-0.18.0-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:8849b8ef861431543c07112ad8436903e243cdfa783290cbee3df4ce86d8dd48"},
-    {file = "uvloop-0.18.0-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:211ce38d84118ae282a91408f61b85cf28e2e65a0a8966b9a97e0e9d67c48722"},
-    {file = "uvloop-0.18.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b0a8f706b943c198dcedf1f2fb84899002c195c24745e47eeb8f2fb340f7dfc3"},
-    {file = "uvloop-0.18.0-cp37-cp37m-musllinux_1_1_aarch64.whl", hash = "sha256:58e44650cbc8607a218caeece5a689f0a2d10be084a69fc32f7db2e8f364927c"},
-    {file = "uvloop-0.18.0-cp37-cp37m-musllinux_1_1_x86_64.whl", hash = "sha256:2b8b7cf7806bdc745917f84d833f2144fabcc38e9cd854e6bc49755e3af2b53e"},
-    {file = "uvloop-0.18.0-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:56c1026a6b0d12b378425e16250acb7d453abaefe7a2f5977143898db6cfe5bd"},
-    {file = "uvloop-0.18.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:12af0d2e1b16780051d27c12de7e419b9daeb3516c503ab3e98d364cc55303bb"},
-    {file = "uvloop-0.18.0-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b028776faf9b7a6d0a325664f899e4c670b2ae430265189eb8d76bd4a57d8a6e"},
-    {file = "uvloop-0.18.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:53aca21735eee3859e8c11265445925911ffe410974f13304edb0447f9f58420"},
-    {file = "uvloop-0.18.0-cp38-cp38-musllinux_1_1_aarch64.whl", hash = "sha256:847f2ed0887047c63da9ad788d54755579fa23f0784db7e752c7cf14cf2e7506"},
-    {file = "uvloop-0.18.0-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:6e20bb765fcac07879cd6767b6dca58127ba5a456149717e0e3b1f00d8eab51c"},
-    {file = "uvloop-0.18.0-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:e14de8800765b9916d051707f62e18a304cde661fa2b98a58816ca38d2b94029"},
-    {file = "uvloop-0.18.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:f3b18663efe0012bc4c315f1b64020e44596f5fabc281f5b0d9bc9465288559c"},
-    {file = "uvloop-0.18.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c6d341bc109fb8ea69025b3ec281fcb155d6824a8ebf5486c989ff7748351a37"},
-    {file = "uvloop-0.18.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:895a1e3aca2504638a802d0bec2759acc2f43a0291a1dff886d69f8b7baff399"},
-    {file = "uvloop-0.18.0-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:4d90858f32a852988d33987d608bcfba92a1874eb9f183995def59a34229f30d"},
-    {file = "uvloop-0.18.0-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:db1fcbad5deb9551e011ca589c5e7258b5afa78598174ac37a5f15ddcfb4ac7b"},
-    {file = "uvloop-0.18.0.tar.gz", hash = "sha256:d5d1135beffe9cd95d0350f19e2716bc38be47d5df296d7cc46e3b7557c0d1ff"},
+    {file = "uvloop-0.21.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:ec7e6b09a6fdded42403182ab6b832b71f4edaf7f37a9a0e371a01db5f0cb45f"},
+    {file = "uvloop-0.21.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:196274f2adb9689a289ad7d65700d37df0c0930fd8e4e743fa4834e850d7719d"},
+    {file = "uvloop-0.21.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f38b2e090258d051d68a5b14d1da7203a3c3677321cf32a95a6f4db4dd8b6f26"},
+    {file = "uvloop-0.21.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:87c43e0f13022b998eb9b973b5e97200c8b90823454d4bc06ab33829e09fb9bb"},
+    {file = "uvloop-0.21.0-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:10d66943def5fcb6e7b37310eb6b5639fd2ccbc38df1177262b0640c3ca68c1f"},
+    {file = "uvloop-0.21.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:67dd654b8ca23aed0a8e99010b4c34aca62f4b7fce88f39d452ed7622c94845c"},
+    {file = "uvloop-0.21.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:c0f3fa6200b3108919f8bdabb9a7f87f20e7097ea3c543754cabc7d717d95cf8"},
+    {file = "uvloop-0.21.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:0878c2640cf341b269b7e128b1a5fed890adc4455513ca710d77d5e93aa6d6a0"},
+    {file = "uvloop-0.21.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b9fb766bb57b7388745d8bcc53a359b116b8a04c83a2288069809d2b3466c37e"},
+    {file = "uvloop-0.21.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8a375441696e2eda1c43c44ccb66e04d61ceeffcd76e4929e527b7fa401b90fb"},
+    {file = "uvloop-0.21.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:baa0e6291d91649c6ba4ed4b2f982f9fa165b5bbd50a9e203c416a2797bab3c6"},
+    {file = "uvloop-0.21.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:4509360fcc4c3bd2c70d87573ad472de40c13387f5fda8cb58350a1d7475e58d"},
+    {file = "uvloop-0.21.0-cp312-cp312-macosx_10_13_universal2.whl", hash = "sha256:359ec2c888397b9e592a889c4d72ba3d6befba8b2bb01743f72fffbde663b59c"},
+    {file = "uvloop-0.21.0-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:f7089d2dc73179ce5ac255bdf37c236a9f914b264825fdaacaded6990a7fb4c2"},
+    {file = "uvloop-0.21.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:baa4dcdbd9ae0a372f2167a207cd98c9f9a1ea1188a8a526431eef2f8116cc8d"},
+    {file = "uvloop-0.21.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:86975dca1c773a2c9864f4c52c5a55631038e387b47eaf56210f873887b6c8dc"},
+    {file = "uvloop-0.21.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:461d9ae6660fbbafedd07559c6a2e57cd553b34b0065b6550685f6653a98c1cb"},
+    {file = "uvloop-0.21.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:183aef7c8730e54c9a3ee3227464daed66e37ba13040bb3f350bc2ddc040f22f"},
+    {file = "uvloop-0.21.0-cp313-cp313-macosx_10_13_universal2.whl", hash = "sha256:bfd55dfcc2a512316e65f16e503e9e450cab148ef11df4e4e679b5e8253a5281"},
+    {file = "uvloop-0.21.0-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:787ae31ad8a2856fc4e7c095341cccc7209bd657d0e71ad0dc2ea83c4a6fa8af"},
+    {file = "uvloop-0.21.0-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:5ee4d4ef48036ff6e5cfffb09dd192c7a5027153948d85b8da7ff705065bacc6"},
+    {file = "uvloop-0.21.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f3df876acd7ec037a3d005b3ab85a7e4110422e4d9c1571d4fc89b0fc41b6816"},
+    {file = "uvloop-0.21.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:bd53ecc9a0f3d87ab847503c2e1552b690362e005ab54e8a48ba97da3924c0dc"},
+    {file = "uvloop-0.21.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:a5c39f217ab3c663dc699c04cbd50c13813e31d917642d459fdcec07555cc553"},
+    {file = "uvloop-0.21.0-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:17df489689befc72c39a08359efac29bbee8eee5209650d4b9f34df73d22e414"},
+    {file = "uvloop-0.21.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:bc09f0ff191e61c2d592a752423c767b4ebb2986daa9ed62908e2b1b9a9ae206"},
+    {file = "uvloop-0.21.0-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f0ce1b49560b1d2d8a2977e3ba4afb2414fb46b86a1b64056bc4ab929efdafbe"},
+    {file = "uvloop-0.21.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e678ad6fe52af2c58d2ae3c73dc85524ba8abe637f134bf3564ed07f555c5e79"},
+    {file = "uvloop-0.21.0-cp38-cp38-musllinux_1_2_aarch64.whl", hash = "sha256:460def4412e473896ef179a1671b40c039c7012184b627898eea5072ef6f017a"},
+    {file = "uvloop-0.21.0-cp38-cp38-musllinux_1_2_x86_64.whl", hash = "sha256:10da8046cc4a8f12c91a1c39d1dd1585c41162a15caaef165c2174db9ef18bdc"},
+    {file = "uvloop-0.21.0-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:c097078b8031190c934ed0ebfee8cc5f9ba9642e6eb88322b9958b649750f72b"},
+    {file = "uvloop-0.21.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:46923b0b5ee7fc0020bef24afe7836cb068f5050ca04caf6b487c513dc1a20b2"},
+    {file = "uvloop-0.21.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:53e420a3afe22cdcf2a0f4846e377d16e718bc70103d7088a4f7623567ba5fb0"},
+    {file = "uvloop-0.21.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:88cb67cdbc0e483da00af0b2c3cdad4b7c61ceb1ee0f33fe00e09c81e3a6cb75"},
+    {file = "uvloop-0.21.0-cp39-cp39-musllinux_1_2_aarch64.whl", hash = "sha256:221f4f2a1f46032b403bf3be628011caf75428ee3cc204a22addf96f586b19fd"},
+    {file = "uvloop-0.21.0-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:2d1f581393673ce119355d56da84fe1dd9d2bb8b3d13ce792524e1607139feff"},
+    {file = "uvloop-0.21.0.tar.gz", hash = "sha256:3bf12b0fda68447806a7ad847bfa591613177275d35b6724b1ee573faa3704e3"},
 ]
 
 [package.extras]
+dev = ["Cython (>=3.0,<4.0)", "setuptools (>=60)"]
 docs = ["Sphinx (>=4.1.2,<4.2.0)", "sphinx-rtd-theme (>=0.5.2,<0.6.0)", "sphinxcontrib-asyncio (>=0.3.0,<0.4.0)"]
-test = ["Cython (>=0.29.36,<0.30.0)", "aiohttp (==3.9.0b0) ; python_version >= \"3.12\"", "aiohttp (>=3.8.1) ; python_version < \"3.12\"", "flake8 (>=5.0,<6.0)", "mypy (>=0.800)", "psutil", "pyOpenSSL (>=23.0.0,<23.1.0)", "pycodestyle (>=2.9.0,<2.10.0)"]
+test = ["aiohttp (>=3.10.5)", "flake8 (>=5.0,<6.0)", "mypy (>=0.800)", "psutil", "pyOpenSSL (>=23.0.0,<23.1.0)", "pycodestyle (>=2.9.0,<2.10.0)"]
 
 [[package]]
 name = "yarl"
@@ -1202,4 +1204,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.9"
-content-hash = "9f8fbb7d692520976f9e7e1344daf238c2d5077f7efa94025ca52fa8f0d4d538"
+content-hash = "af3003a9dd8f0d51878fab1b05da8f81ff5316fe3322c8aaf85d2a0873599ca4"
