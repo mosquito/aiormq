@@ -413,6 +413,7 @@ async def test_ssl_context():
     )
     context.load_cert_chain(cert_path("client.pem"), cert_path("client.key"))
     context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
     connection = aiormq.Connection(url, context=context)
     await connection.connect()
     await connection.close()
