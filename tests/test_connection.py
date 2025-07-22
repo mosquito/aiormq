@@ -4,7 +4,7 @@ import os
 import ssl
 import uuid
 from binascii import hexlify
-from typing import Optional
+from typing import Any, Optional, Tuple
 
 import aiomisc
 import pytest
@@ -12,9 +12,15 @@ from pamqp.commands import Basic
 from yarl import URL
 
 import aiormq
-from aiormq.abc import DeliveredMessage
+from aiormq.abc import DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
-from aiormq.connection import parse_int, parse_timeout, parse_bool
+from aiormq.connection import (
+    SSLContextProvider,
+    TransportFactory,
+    parse_int,
+    parse_timeout,
+    parse_bool
+)
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
@@ -113,6 +119,41 @@ async def test_properties(amqp_connection):
 async def test_open(amqp_connection):
     with pytest.raises(RuntimeError):
         await amqp_connection.connect()
+
+    channel = await amqp_connection.channel()
+    await channel.close()
+    await amqp_connection.close()
+
+
+class _TcpTransportFactory(TransportFactory):
+    async def create(
+            self,
+            url: URL,
+            **kwargs: Any,
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        ssl_context_provider = kwargs.pop("ssl_context_provider")
+        assert isinstance(ssl_context_provider, SSLContextProvider)
+
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader(loop=loop)
+        protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
+        if url.scheme == "amqps":
+            ssl = await ssl_context_provider.get_context()
+        else:
+            ssl = None
+
+        transport, _ = await loop.create_connection(
+            lambda: protocol, url.host, url.port, ssl=ssl,
+        )
+        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
+        return reader, writer
+
+
+async def test_open_with_transport_factory(amqp_url):
+    amqp_connection = await aiormq.connect(
+        amqp_url,
+        transport_factory=_TcpTransportFactory(),
+    )
 
     channel = await amqp_connection.channel()
     await channel.close()
@@ -500,6 +541,52 @@ async def test_connection_close_stairway(
     for _ in range(5):
         with pytest.raises(aiormq.AMQPError):
             await run()
+
+
+async def test_ssl_context_provider_static(loop):
+    certs = SSLCerts(
+        cert=None,
+        key=None,
+        capath=None,
+        cafile=None,
+        cadata=None,
+        verify=False,
+    )
+
+    static_context = ssl.create_default_context()
+    provider = SSLContextProvider(
+        ssl_context=static_context,
+        ssl_certs=certs,
+        loop=loop
+    )
+
+    provided_context = await provider.get_context()
+    assert provided_context is static_context
+
+
+async def test_ssl_context_provider_created(loop):
+    certs = SSLCerts(
+        cert=cert_path("client.pem"),
+        key=cert_path("client.key"),
+        capath=None,
+        cafile=cert_path("ca.pem"),
+        cadata=None,
+        verify=True,
+    )
+
+    default_context = ssl.create_default_context()
+
+    provider = SSLContextProvider(
+        ssl_context=None,
+        ssl_certs=certs,
+        loop=loop
+    )
+
+    provided_context = await provider.get_context()
+    assert provided_context != default_context
+
+    second_provided_context = await provider.get_context()
+    assert provided_context is second_provided_context
 
 
 PARSE_INT_PARAMS = (

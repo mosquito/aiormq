@@ -3,6 +3,7 @@ import logging
 import platform
 import ssl
 import sys
+from abc import abstractmethod, ABC
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
@@ -246,6 +247,106 @@ class FrameGenerator(AsyncIterable):
         return frame
 
 
+class SSLContextProvider:
+    """Provides `ssl.SSLContext`.
+
+    The context can be optionally provided at initialization by
+    `ssl_context` arg. If it's not, the context is created using the
+    certificate information provided in `ssl_certs` arg.
+    """
+    def __init__(
+        self,
+        *,
+        ssl_context: Optional[ssl.SSLContext],
+        ssl_certs: SSLCerts,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        self._ssl_context = ssl_context
+        self._ssl_certs = ssl_certs
+        self._loop = loop
+
+    async def get_context(self) -> ssl.SSLContext:
+        """ Obtain `ssl.SSLContext` instance.
+
+        If the context is provided at initialization, it is returned. Otherwise
+        a new context is created using the provided certificate information.
+        """
+        if self._ssl_context:
+            return self._ssl_context
+
+        ssl_context = await self._loop.run_in_executor(
+            None, self._create_context
+        )
+        self._ssl_context = ssl_context
+        return ssl_context
+
+    def _create_context(self) -> ssl.SSLContext:
+        context = ssl.create_default_context(
+            ssl.Purpose.SERVER_AUTH,
+            capath=self._ssl_certs.capath,
+            cafile=self._ssl_certs.cafile,
+            cadata=self._ssl_certs.cadata,
+        )
+
+        if self._ssl_certs.cert:
+            context.load_cert_chain(self._ssl_certs.cert, self._ssl_certs.key)
+
+        if not self._ssl_certs.verify:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
+        return context
+
+
+class TransportFactory(ABC):
+    """
+    Abstract factory class allowing to open connections with generic
+    transports.
+    """
+
+    @abstractmethod
+    async def create(
+            self,
+            url: URL,
+            **kwargs: Any
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Create a transport connection to the AMQP server."""
+        pass
+
+
+class TCPTransportFactory(TransportFactory):
+    async def create(
+            self,
+            url: URL,
+            **kwargs: Any
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        # unexpected for asyncio.open_connection ignoring it
+        _ = kwargs.pop("ssl_context_provider", None)
+        try:
+            return await asyncio.open_connection(
+                host=url.host, port=url.port, ssl=None, **kwargs,
+            )
+        except OSError as e:
+            raise AMQPConnectionError(*e.args) from e
+
+
+class TLSTransportFactory(TransportFactory):
+    async def create(
+            self,
+            url: URL,
+            **kwargs: Any
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        ssl_context_provider = kwargs.pop("ssl_context_provider")
+        ssl = await ssl_context_provider.get_context()
+
+        try:
+            return await asyncio.open_connection(
+                host=url.host, port=url.port, ssl=ssl, **kwargs,
+            )
+        except OSError as e:
+            raise AMQPConnectionError(*e.args) from e
+
+
 class Connection(Base, AbstractConnection):
     FRAME_BUFFER_SIZE = 10
     # Interval between sending heartbeats based on the heartbeat(timeout)
@@ -274,6 +375,7 @@ class Connection(Base, AbstractConnection):
         *,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         context: Optional[ssl.SSLContext] = None,
+        transport_factory: Optional[TransportFactory] = None,
         **create_connection_kwargs: Any,
     ):
 
@@ -315,6 +417,12 @@ class Connection(Base, AbstractConnection):
         self.last_channel_lock = asyncio.Lock()
         self.connected = asyncio.Event()
         self.connection_name = self.url.query.get("name")
+        if transport_factory:
+            self._transport_factory = transport_factory
+        elif self.url.scheme == "amqps":
+            self._transport_factory = TLSTransportFactory()
+        else:
+            self._transport_factory = TCPTransportFactory()
 
         self.__close_reply_code: int = REPLY_SUCCESS
         self.__close_reply_text: str = "normally closed"
@@ -360,23 +468,6 @@ class Connection(Base, AbstractConnection):
 
     def __str__(self) -> str:
         return str(censor_url(self.url))
-
-    def _get_ssl_context(self) -> ssl.SSLContext:
-        context = ssl.create_default_context(
-            ssl.Purpose.SERVER_AUTH,
-            capath=self.ssl_certs.capath,
-            cafile=self.ssl_certs.cafile,
-            cadata=self.ssl_certs.cadata,
-        )
-
-        if self.ssl_certs.cert:
-            context.load_cert_chain(self.ssl_certs.cert, self.ssl_certs.key)
-
-        if not self.ssl_certs.verify:
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-        return context
 
     def _client_properties(self, **kwargs: Any) -> Dict[str, Any]:
         properties = {
@@ -444,25 +535,22 @@ class Connection(Base, AbstractConnection):
         if self.is_opened:
             raise RuntimeError("Connection already opened")
 
-        ssl_context = self.ssl_context
-
-        if ssl_context is None and self.url.scheme == "amqps":
-            ssl_context = await self.loop.run_in_executor(
-                None, self._get_ssl_context,
-            )
-            self.ssl_context = ssl_context
-
         log.debug("Connecting to: %s", self)
         try:
-            reader, writer = await asyncio.open_connection(
-                self.url.host, self.url.port, ssl=ssl_context,
+            reader, writer = await self._transport_factory.create(
+                self.url,
+                ssl_context_provider=SSLContextProvider(
+                    ssl_context=self.ssl_context,
+                    ssl_certs=self.ssl_certs,
+                    loop=self.loop
+                ),
                 **self.__create_connection_kwargs,
             )
+        except Exception as e:
+            log.error("error when creating transport: %r", e)
+            raise e
 
-            frame_receiver = FrameReceiver(reader)
-        except OSError as e:
-            raise AMQPConnectionError(*e.args) from e
-
+        frame_receiver = FrameReceiver(reader)
         frame: Optional[FrameTypes]
 
         try:

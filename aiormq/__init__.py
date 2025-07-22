@@ -2,7 +2,9 @@ from pamqp import commands as spec
 
 from . import abc
 from .channel import Channel
-from .connection import Connection, connect
+from .connection import (
+    Connection, connect, SSLContextProvider, TransportFactory,
+)
 from .exceptions import (
     AMQPChannelError, AMQPConnectionError, AMQPError, AMQPException,
     AuthenticationError, ChannelAccessRefused, ChannelClosed,
@@ -34,6 +36,8 @@ __all__ = (
     "ConnectionChannelError",
     "ConnectionClosed",
     "ConnectionCommandInvalid",
+    "SSLContextProvider",
+    "TransportFactory",
     "ConnectionFrameError",
     "ConnectionInternalError",
     "ConnectionNotAllowed",
