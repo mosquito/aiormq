@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import platform
 import time
 from functools import wraps
@@ -34,7 +35,7 @@ def awaitable(
     func: Callable[..., Union[T, Awaitable[T]]],
 ) -> Callable[..., Coroutine[Any, Any, T]]:
     # Avoid python 3.8+ warning
-    if asyncio.iscoroutinefunction(func):
+    if inspect.iscoroutinefunction(func):
         return func     # type: ignore
 
     @wraps(func)
