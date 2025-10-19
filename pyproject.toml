@@ -22,11 +22,11 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
@@ -38,7 +38,7 @@ packages = [{ include = "aiormq" }]
 "Documentation" = "https://github.com/mosquito/aiormq/blob/master/README.rst"
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 pamqp = "3.3.0"
 yarl = [{ version = '*'}]
 
