@@ -543,6 +543,34 @@ async def test_connection_close_stairway(
         with pytest.raises(aiormq.AMQPError):
             await run()
 
+async def test_connection_close_publish(proxy, amqp_url: URL):
+    url = amqp_url.with_host(
+        proxy.proxy_host,
+    ).with_port(
+        proxy.proxy_port,
+    ).update_query(heartbeat="1")
+
+    async def run():
+        connection = await aiormq.connect(url)
+        channel = await connection.channel()
+        declare_ok = await channel.queue_declare(auto_delete=True)
+
+        # This test a bug where a disconnection happening during a call waiting
+        # for the channel lock would result in a deadlock. Here we get the lock
+        # so the call to basic_publish end up holding the lock when we have the
+        # proxy disconnecting.
+        async with channel.lock:
+            task = asyncio.create_task(channel.basic_publish(
+                b"data", routing_key=declare_ok.queue
+            ))
+            await asyncio.sleep(0.5)
+            proxy.disconnect_all()
+            await asyncio.sleep(0.5)
+
+        with pytest.raises(aiormq.ChannelInvalidStateError):
+            await task
+
+    await asyncio.wait_for(run(), timeout=5)
 
 async def test_ssl_context_provider_static(event_loop):
     certs = SSLCerts(
@@ -588,7 +616,6 @@ async def test_ssl_context_provider_created(event_loop):
 
     second_provided_context = await provider.get_context()
     assert provided_context is second_provided_context
-
 
 PARSE_INT_PARAMS = (
     (1, 1),
