@@ -879,6 +879,12 @@ class Connection(Base, AbstractConnection):
         await asyncio.gather(
             self._reader_task, self._writer_task, return_exceptions=True,
         )
+        if self.closing.done():
+            return
+        if ex is None:
+            self.closing.set_result(None)
+        else:
+            self.closing.set_exception(ex)
 
     @property
     def server_capabilities(self) -> ArgumentsType:

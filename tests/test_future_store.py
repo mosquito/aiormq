@@ -7,30 +7,28 @@ from aiormq.base import FutureStore
 
 
 @pytest.fixture
-def root_store(loop):
-    store = FutureStore(loop=loop)
+def root_store(event_loop):
+    store = FutureStore(loop=event_loop)
     try:
         yield store
     finally:
-        loop.run_until_complete(
+        event_loop.run_until_complete(
             store.reject_all(Exception("Cancelling")),
         )
 
 
 @pytest.fixture
-def child_store(loop, root_store):
+def child_store(event_loop, root_store):
     store = root_store.get_child()
     try:
         yield store
     finally:
-        loop.run_until_complete(
+        event_loop.run_until_complete(
             store.reject_all(Exception("Cancelling")),
         )
 
 
-async def test_reject_all(
-    loop, root_store: FutureStore, child_store: FutureStore,
-):
+async def test_reject_all(root_store: FutureStore, child_store: FutureStore):
 
     future1 = root_store.create_future()
     future2 = child_store.create_future()
@@ -47,9 +45,7 @@ async def test_reject_all(
     assert not child_store.futures
 
 
-async def test_result(
-    loop, root_store: FutureStore, child_store: FutureStore,
-):
+async def test_result(root_store: FutureStore, child_store: FutureStore):
     async def result():
         await asyncio.sleep(0.1)
         return "result"
@@ -57,9 +53,7 @@ async def test_result(
     assert await child_store.create_task(result()) == "result"
 
 
-async def test_siblings(
-    loop, root_store: FutureStore, child_store: FutureStore,
-):
+async def test_siblings(root_store: FutureStore, child_store: FutureStore):
     async def coro(store):
         await asyncio.sleep(0.1)
         await store.reject_all(RuntimeError)
@@ -93,8 +87,8 @@ async def test_siblings(
     assert not child.futures
 
 
-async def test_task_wrapper(loop):
-    future = loop.create_future()
+async def test_task_wrapper(event_loop):
+    future = event_loop.create_future()
     wrapped = TaskWrapper(future)
 
     wrapped.throw(RuntimeError())
