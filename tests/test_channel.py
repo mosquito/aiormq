@@ -67,17 +67,17 @@ async def test_blank_body(amqp_channel: aiormq.Channel):
     assert message.body == b"foo bar"
 
 
-async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
+async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
     channel: aiormq.Channel = amqp_channel
     await channel.basic_qos(prefetch_count=1)
 
     declare_ok = await channel.queue_declare()
 
-    future = loop.create_future()
+    future = event_loop.create_future()
 
     await channel.basic_publish(b"urgent", routing_key=declare_ok.queue)
 
-    consumer_tag = loop.create_future()
+    consumer_tag = event_loop.create_future()
 
     async def bad_consumer(message):
         await channel.basic_cancel(await consumer_tag)
@@ -94,7 +94,7 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, loop):
     await channel.basic_reject(message.delivery.delivery_tag, requeue=True)
     assert message.body == b"urgent"
 
-    future = loop.create_future()
+    future = event_loop.create_future()
 
     await channel.basic_consume(
         declare_ok.queue, future.set_result, no_ack=True,
