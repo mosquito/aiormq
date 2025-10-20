@@ -34,7 +34,7 @@ class FutureStore(AbstractFutureStore):
         self, future: Union[asyncio.Future, TaskWrapper],
     ) -> Callable[..., Any]:
         def remover(*_: Any) -> None:
-            nonlocal future
+            nonlocal future     # noqa
             if future in self.futures:
                 self.futures.remove(future)
 
@@ -67,7 +67,7 @@ class FutureStore(AbstractFutureStore):
             if isinstance(future, TaskWrapper):
                 future.throw(exception or Exception)
                 tasks.append(future)
-            elif isinstance(future, asyncio.Future):
+            elif asyncio.isfuture(future):
                 future.set_exception(exception or Exception)
 
         if tasks:

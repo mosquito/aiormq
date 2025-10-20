@@ -4,7 +4,7 @@ import os
 import ssl
 import uuid
 from binascii import hexlify
-from typing import Optional
+from typing import Any, Optional, Tuple
 
 import aiomisc
 import pytest
@@ -12,9 +12,15 @@ from pamqp.commands import Basic
 from yarl import URL
 
 import aiormq
-from aiormq.abc import DeliveredMessage
+from aiormq.abc import DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
-from aiormq.connection import parse_int, parse_timeout, parse_bool
+from aiormq.connection import (
+    SSLContextProvider,
+    TransportFactory,
+    parse_int,
+    parse_timeout,
+    parse_bool
+)
 
 from .conftest import AMQP_URL, cert_path, skip_when_quick_test
 
@@ -119,6 +125,41 @@ async def test_open(amqp_connection):
     await amqp_connection.close()
 
 
+class _TcpTransportFactory(TransportFactory):
+    async def create(
+            self,
+            url: URL,
+            **kwargs: Any,
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        ssl_context_provider = kwargs.pop("ssl_context_provider")
+        assert isinstance(ssl_context_provider, SSLContextProvider)
+
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader(loop=loop)
+        protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
+        if url.scheme == "amqps":
+            ssl = await ssl_context_provider.get_context()
+        else:
+            ssl = None
+
+        transport, _ = await loop.create_connection(
+            lambda: protocol, url.host, url.port, ssl=ssl,
+        )
+        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
+        return reader, writer
+
+
+async def test_open_with_transport_factory(amqp_url):
+    amqp_connection = await aiormq.connect(
+        amqp_url,
+        transport_factory=_TcpTransportFactory(),
+    )
+
+    channel = await amqp_connection.channel()
+    await channel.close()
+    await amqp_connection.close()
+
+
 async def test_channel_close(amqp_connection):
     channel = await amqp_connection.channel()
 
@@ -129,18 +170,18 @@ async def test_channel_close(amqp_connection):
     assert channel.number not in amqp_connection.channels
 
 
-async def test_conncetion_reject(loop):
+async def test_conncetion_reject(event_loop):
     with pytest.raises(ConnectionError):
         await aiormq.connect(
-            "amqp://guest:guest@127.0.0.1:59999/", loop=loop,
+            "amqp://guest:guest@127.0.0.1:59999/", loop=event_loop,
         )
 
     connection = aiormq.Connection(
-        "amqp://guest:guest@127.0.0.1:59999/", loop=loop,
+        "amqp://guest:guest@127.0.0.1:59999/", loop=event_loop,
     )
 
     with pytest.raises(ConnectionError):
-        await loop.create_task(connection.connect())
+        await event_loop.create_task(connection.connect())
 
 
 async def test_auth_base(amqp_connection):
@@ -148,7 +189,7 @@ async def test_auth_base(amqp_connection):
         AuthBase(amqp_connection).marshal()
 
 
-async def test_auth_plain(amqp_connection, loop):
+async def test_auth_plain(amqp_connection, event_loop):
     auth = PlainAuth(amqp_connection).marshal()
 
     assert auth == PlainAuth(amqp_connection).marshal()
@@ -158,7 +199,7 @@ async def test_auth_plain(amqp_connection, loop):
 
     connection = aiormq.Connection(
         amqp_connection.url.with_user("foo").with_password("bar"),
-        loop=loop,
+        loop=event_loop,
     )
 
     auth = PlainAuth(connection).marshal()
@@ -172,7 +213,7 @@ async def test_auth_plain(amqp_connection, loop):
     assert auth.marshal() == "boo"
 
 
-async def test_auth_external(loop):
+async def test_auth_external():
 
     url = AMQP_URL.with_scheme("amqps")
     url.update_query(auth="external")
@@ -205,55 +246,55 @@ async def test_channel_closed(amqp_connection):
     await amqp_connection.close()
 
 
-async def test_timeout_default(loop):
-    connection = aiormq.Connection(AMQP_URL, loop=loop)
+async def test_timeout_default(event_loop):
+    connection = aiormq.Connection(AMQP_URL, loop=event_loop)
     await connection.connect()
     assert connection.timeout == 60
     await connection.close()
 
 
-async def test_timeout_1000(loop):
+async def test_timeout_1000(event_loop):
     url = AMQP_URL.update_query(timeout=1000)
-    connection = aiormq.Connection(url, loop=loop)
+    connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.timeout
     await connection.close()
 
 
-async def test_heartbeat_0(loop):
+async def test_heartbeat_0(event_loop):
     url = AMQP_URL.update_query(heartbeat=0)
-    connection = aiormq.Connection(url, loop=loop)
+    connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
     await connection.close()
 
 
-async def test_heartbeat_default(loop):
-    connection = aiormq.Connection(AMQP_URL, loop=loop)
+async def test_heartbeat_default(event_loop):
+    connection = aiormq.Connection(AMQP_URL, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 60
     await connection.close()
 
 
-async def test_heartbeat_above_range(loop):
+async def test_heartbeat_above_range(event_loop):
     url = AMQP_URL.update_query(heartbeat=70000)
-    connection = aiormq.Connection(url, loop=loop)
+    connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
     await connection.close()
 
 
-async def test_heartbeat_under_range(loop):
+async def test_heartbeat_under_range(event_loop):
     url = AMQP_URL.update_query(heartbeat=-1)
-    connection = aiormq.Connection(url, loop=loop)
+    connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
     await connection.close()
 
 
-async def test_heartbeat_not_int(loop):
+async def test_heartbeat_not_int(event_loop):
     url = AMQP_URL.update_query(heartbeat="None")
-    connection = aiormq.Connection(url, loop=loop)
+    connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
     await connection.close()
@@ -323,7 +364,7 @@ async def test_return_message(amqp_connection: aiormq.Connection):
     assert result.delivery.routing_key == routing_key
 
 
-async def test_cancel_on_queue_deleted(amqp_connection, loop):
+async def test_cancel_on_queue_deleted(amqp_connection):
     conn: aiormq.Connection = amqp_connection
     channel: aiormq.Channel = await conn.channel()
     deaclare_ok = await channel.queue_declare(auto_delete=True)
@@ -372,14 +413,15 @@ async def test_ssl_context():
     )
     context.load_cert_chain(cert_path("client.pem"), cert_path("client.key"))
     context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
     connection = aiormq.Connection(url, context=context)
     await connection.connect()
     await connection.close()
 
 
 @pytest.mark.parametrize("url,vhost", URL_VHOSTS)
-async def test_connection_urls_vhosts(url, vhost, loop):
-    assert aiormq.Connection(url, loop=loop).vhost == vhost
+async def test_connection_urls_vhosts(url, vhost, event_loop):
+    assert aiormq.Connection(url, loop=event_loop).vhost == vhost
 
 
 async def test_update_secret(amqp_connection, amqp_url: URL):
@@ -501,7 +543,6 @@ async def test_connection_close_stairway(
         with pytest.raises(aiormq.AMQPError):
             await run()
 
-
 async def test_connection_close_publish(proxy, amqp_url: URL):
     url = amqp_url.with_host(
         proxy.proxy_host,
@@ -530,6 +571,51 @@ async def test_connection_close_publish(proxy, amqp_url: URL):
             await task
 
     await asyncio.wait_for(run(), timeout=5)
+
+async def test_ssl_context_provider_static(event_loop):
+    certs = SSLCerts(
+        cert=None,
+        key=None,
+        capath=None,
+        cafile=None,
+        cadata=None,
+        verify=False,
+    )
+
+    static_context = ssl.create_default_context()
+    provider = SSLContextProvider(
+        ssl_context=static_context,
+        ssl_certs=certs,
+        loop=event_loop
+    )
+
+    provided_context = await provider.get_context()
+    assert provided_context is static_context
+
+
+async def test_ssl_context_provider_created(event_loop):
+    certs = SSLCerts(
+        cert=cert_path("client.pem"),
+        key=cert_path("client.key"),
+        capath=None,
+        cafile=cert_path("ca.pem"),
+        cadata=None,
+        verify=True,
+    )
+
+    default_context = ssl.create_default_context()
+
+    provider = SSLContextProvider(
+        ssl_context=None,
+        ssl_certs=certs,
+        loop=event_loop
+    )
+
+    provided_context = await provider.get_context()
+    assert provided_context != default_context
+
+    second_provided_context = await provider.get_context()
+    assert provided_context is second_provided_context
 
 PARSE_INT_PARAMS = (
     (1, 1),
