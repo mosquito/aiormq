@@ -163,8 +163,7 @@ Simple publisher
         print(f" [x] Received message from {declare_ok.queue!r}")
 
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
 
     assert MESSAGE is not None
     assert MESSAGE.routing_key == "hello"

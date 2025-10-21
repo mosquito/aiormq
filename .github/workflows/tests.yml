@@ -99,7 +99,7 @@ jobs:
             tests
         env:
           FORCE_COLOR: 1
-      - run: poetry run coveralls
+      - run: uv run coveralls
         env:
           COVERALLS_PARALLEL: 'true'
           COVERALLS_SERVICE_NAME: github
