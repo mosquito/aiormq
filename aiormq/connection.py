@@ -8,7 +8,7 @@ from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
 from types import MappingProxyType, TracebackType
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Awaitable, Callable, Generator, Mapping
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -987,11 +987,11 @@ class Connection(Base, AbstractConnection):
                 self.__update_secret_future = None
         return response
 
-    async def _old_style_connect(self) -> AbstractConnection:
+    async def _old_style_connect(self) -> "Connection":
         await self.connect()
         return self
 
-    def __await__(self):
+    def __await__(self) -> Generator[Any, Any, "Connection"]:
         warnings.warn(
             "Using 'await Connection.connect()' is deprecated since aiormq 7.0. "
             "Use 'async with Connection(...)' instead.",
@@ -1020,4 +1020,4 @@ def connect(
     client_properties: FieldTable | None = None,
     **kwargs: Any,
 ) -> AbstractConnection:
-    return Connection(url, client_properties=client_properties, *args, **kwargs)
+    return Connection(url, *args, client_properties=client_properties, **kwargs)
