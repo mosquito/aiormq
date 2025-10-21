@@ -38,6 +38,37 @@ async def test_simple(amqp_channel: aiormq.Channel):
     assert message.body == b"foo bar"
 
 
+async def test_simple_nowait(amqp_channel: aiormq.Channel):
+    if amqp_channel.publisher_confirms:
+        pytest.skip("nowait makes no sense with publisher_confirms")
+    await amqp_channel.basic_qos(prefetch_count=1)
+    assert amqp_channel.number
+
+    queue = asyncio.Queue()
+
+    deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
+    consume_ok = await amqp_channel.basic_consume(deaclare_ok.queue, queue.put)
+    amqp_channel.basic_publish_nowait(
+        b"foo",
+        routing_key=deaclare_ok.queue,
+        properties=aiormq.spec.Basic.Properties(message_id="123"),
+    )
+
+    message: DeliveredMessage = await queue.get()
+    assert message.body == b"foo"
+
+    cancel_ok = await amqp_channel.basic_cancel(consume_ok.consumer_tag)
+    assert cancel_ok.consumer_tag == consume_ok.consumer_tag
+    assert cancel_ok.consumer_tag not in amqp_channel.consumers
+    await amqp_channel.queue_delete(deaclare_ok.queue)
+
+    deaclare_ok = await amqp_channel.queue_declare(auto_delete=True)
+    amqp_channel.basic_publish_nowait(b"foo bar", routing_key=deaclare_ok.queue)
+
+    message = await amqp_channel.basic_get(deaclare_ok.queue, no_ack=True)
+    assert message.body == b"foo bar"
+
+
 async def test_blank_body(amqp_channel: aiormq.Channel):
     await amqp_channel.basic_qos(prefetch_count=1)
     assert amqp_channel.number
