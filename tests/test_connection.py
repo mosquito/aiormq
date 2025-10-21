@@ -4,7 +4,7 @@ import os
 import ssl
 import uuid
 from binascii import hexlify
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import aiomisc
 import pytest
@@ -14,18 +14,9 @@ from yarl import URL
 import aiormq
 from aiormq.abc import DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
-from aiormq.connection import (
-    SSLContextProvider,
-    TransportFactory,
-    parse_int,
-    parse_timeout,
-    parse_bool
-)
+from aiormq.connection import SSLContextProvider, TransportFactory, parse_bool, parse_int, parse_timeout
 
-from .conftest import AMQP_URL, cert_path, skip_when_quick_test
-
-
-CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
+from .conftest import AMQP_URL, skip_when_quick_test
 
 
 async def test_simple(amqp_connection: aiormq.Connection):
@@ -53,7 +44,9 @@ async def test_simple(amqp_connection: aiormq.Connection):
 
     with pytest.raises(aiormq.exceptions.PublishError) as e:
         await channel.basic_publish(
-            b"bar", routing_key=deaclare_ok.queue + "foo", mandatory=True,
+            b"bar",
+            routing_key=deaclare_ok.queue + "foo",
+            mandatory=True,
         )
 
     message = e.value.message
@@ -127,10 +120,10 @@ async def test_open(amqp_connection):
 
 class _TcpTransportFactory(TransportFactory):
     async def create(
-            self,
-            url: URL,
-            **kwargs: Any,
-    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        self,
+        url: URL,
+        **kwargs: Any,
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         ssl_context_provider = kwargs.pop("ssl_context_provider")
         assert isinstance(ssl_context_provider, SSLContextProvider)
 
@@ -143,7 +136,10 @@ class _TcpTransportFactory(TransportFactory):
             ssl = None
 
         transport, _ = await loop.create_connection(
-            lambda: protocol, url.host, url.port, ssl=ssl,
+            lambda: protocol,
+            url.host,
+            url.port,
+            ssl=ssl,
         )
         writer = asyncio.StreamWriter(transport, protocol, reader, loop)
         return reader, writer
@@ -173,11 +169,13 @@ async def test_channel_close(amqp_connection):
 async def test_conncetion_reject(event_loop):
     with pytest.raises(ConnectionError):
         await aiormq.connect(
-            "amqp://guest:guest@127.0.0.1:59999/", loop=event_loop,
+            "amqp://guest:guest@127.0.0.1:59999/",
+            loop=event_loop,
         )
 
     connection = aiormq.Connection(
-        "amqp://guest:guest@127.0.0.1:59999/", loop=event_loop,
+        "amqp://guest:guest@127.0.0.1:59999/",
+        loop=event_loop,
     )
 
     with pytest.raises(ConnectionError):
@@ -214,7 +212,6 @@ async def test_auth_plain(amqp_connection, event_loop):
 
 
 async def test_auth_external():
-
     url = AMQP_URL.with_scheme("amqps")
     url.update_query(auth="external")
 
@@ -229,7 +226,6 @@ async def test_auth_external():
 
 
 async def test_channel_closed(amqp_connection):
-
     for i in range(10):
         channel = await amqp_connection.channel()
 
@@ -240,7 +236,9 @@ async def test_channel_closed(amqp_connection):
 
         with pytest.raises(aiormq.exceptions.ChannelNotFoundEntity):
             await channel.queue_declare(
-                "foo_%s" % i, auto_delete=True, passive=True,
+                f"foo_{i}",
+                auto_delete=True,
+                passive=True,
             )
 
     await amqp_connection.close()
@@ -318,10 +316,7 @@ async def test_non_publisher_confirms(amqp_connection):
 async def test_no_free_channels(amqp_connection: aiormq.Connection):
     await asyncio.wait_for(
         asyncio.gather(
-            *[
-                amqp_connection.channel(n + 1)
-                for n in range(amqp_connection.connection_tune.channel_max)
-            ],
+            *[amqp_connection.channel(n + 1) for n in range(amqp_connection.connection_tune.channel_max)],
         ),
         timeout=120,
     )
@@ -354,8 +349,10 @@ async def test_return_message(amqp_connection: aiormq.Connection):
         on_return_raises=False,
     )
 
-    result: Optional[Basic.Return] = await channel.basic_publish(
-        body, routing_key=routing_key, mandatory=True,
+    result: Basic.Return | None = await channel.basic_publish(
+        body,
+        routing_key=routing_key,
+        mandatory=True,
     )
 
     assert result is not None
@@ -374,7 +371,9 @@ async def test_cancel_on_queue_deleted(amqp_connection):
 
     with pytest.raises(aiormq.DuplicateConsumerTag):
         await channel.basic_consume(
-            deaclare_ok.queue, print, consumer_tag=consume_ok.consumer_tag,
+            deaclare_ok.queue,
+            print,
+            consumer_tag=consume_ok.consumer_tag,
         )
 
     await channel.queue_delete(deaclare_ok.queue)
@@ -400,18 +399,18 @@ URL_VHOSTS = [
 
 async def test_ssl_verification_fails_without_trusted_ca():
     url = AMQP_URL.with_scheme("amqps")
-    with pytest.raises(ConnectionError, match=".*CERTIFICATE_VERIFY_FAILED.*"):
+    with pytest.raises(ConnectionError, match=".*CERTIFICATE_VERIFY_FAILED.*"):  # noqa: RUF043
         connection = aiormq.Connection(url)
         await connection.connect()
 
 
-async def test_ssl_context():
+async def test_ssl_context(cert_path):
     url = AMQP_URL.with_scheme("amqps")
     context = ssl.create_default_context(
         purpose=ssl.Purpose.SERVER_AUTH,
-        cafile=cert_path("ca.pem"),
+        cafile=cert_path / "ca.pem",
     )
-    context.load_cert_chain(cert_path("client.pem"), cert_path("client.key"))
+    context.load_cert_chain(cert_path / "client.pem", cert_path / "client.key")
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
     connection = aiormq.Connection(url, context=context)
@@ -426,18 +425,23 @@ async def test_connection_urls_vhosts(url, vhost, event_loop):
 
 async def test_update_secret(amqp_connection, amqp_url: URL):
     respone = await amqp_connection.update_secret(
-        amqp_url.password, timeout=1,
+        amqp_url.password,
+        timeout=1,
     )
     assert isinstance(respone, aiormq.spec.Connection.UpdateSecretOk)
 
 
 @aiomisc.timeout(20)
 async def test_connection_stuck(proxy, amqp_url: URL):
-    url = amqp_url.with_host(
-        proxy.proxy_host,
-    ).with_port(
-        proxy.proxy_port,
-    ).update_query(heartbeat="1")
+    url = (
+        amqp_url.with_host(
+            proxy.proxy_host,
+        )
+        .with_port(
+            proxy.proxy_port,
+        )
+        .update_query(heartbeat="1")
+    )
 
     connection = await aiormq.connect(url)
 
@@ -448,14 +452,14 @@ async def test_connection_stuck(proxy, amqp_url: URL):
             while connection.is_opened:
                 await asyncio.sleep(1)
 
-        writer_task: asyncio.Task = connection._writer_task      # type: ignore
+        writer_task: asyncio.Task = connection._writer_task  # type: ignore
 
         assert writer_task.done()
 
         with pytest.raises(asyncio.CancelledError):
             assert writer_task.result()
 
-        reader_task: asyncio.Task = connection._reader_task      # type: ignore
+        reader_task: asyncio.Task = connection._reader_task  # type: ignore
 
         assert reader_task.done()
 
@@ -501,40 +505,49 @@ DISCONNECT_OFFSETS = [2 << i for i in range(1, 10)]
 STAIR_STEPS = list(
     itertools.product([0.0, 0.005, 0.05, 0.1], DISCONNECT_OFFSETS),
 )
-STAIR_STEPS_IDS = [
-    f"[{i // len(DISCONNECT_OFFSETS)}] {t}-{s}"
-    for i, (t, s) in enumerate(STAIR_STEPS)
-]
+STAIR_STEPS_IDS = [f"[{i // len(DISCONNECT_OFFSETS)}] {t}-{s}" for i, (t, s) in enumerate(STAIR_STEPS)]
 
 
 @aiomisc.timeout(30)
 @pytest.mark.parametrize(
-    "disconnect_time,stair", STAIR_STEPS,
+    "disconnect_time,stair",
+    STAIR_STEPS,
     ids=STAIR_STEPS_IDS,
 )
 async def test_connection_close_stairway(
-    disconnect_time: float, stair: int, proxy, amqp_url: URL,
+    disconnect_time: float,
+    stair: int,
+    proxy,
+    amqp_url: URL,
 ):
-    url = amqp_url.with_host(
-        proxy.proxy_host,
-    ).with_port(
-        proxy.proxy_port,
-    ).update_query(heartbeat="1")
+    url = (
+        amqp_url.with_host(
+            proxy.proxy_host,
+        )
+        .with_port(
+            proxy.proxy_port,
+        )
+        .update_query(heartbeat="1")
+    )
 
     BadNetwork(proxy, stair, disconnect_time)
 
     async def run():
-        connection = await aiormq.connect(url)
+        connection = aiormq.connect(url)
+        await connection.connect()
         queue = asyncio.Queue()
         channel = await connection.channel()
         declare_ok = await channel.queue_declare(auto_delete=True)
         await channel.basic_consume(
-            declare_ok.queue, queue.put, no_ack=True,
+            declare_ok.queue,
+            queue.put,
+            no_ack=True,
         )
 
         while True:
             await channel.basic_publish(
-                b"test", routing_key=declare_ok.queue,
+                b"test",
+                routing_key=declare_ok.queue,
             )
             message: DeliveredMessage = await queue.get()
             assert message.body == b"test"
@@ -542,6 +555,38 @@ async def test_connection_close_stairway(
     for _ in range(5):
         with pytest.raises(aiormq.AMQPError):
             await run()
+
+
+async def test_connection_close_publish(proxy, amqp_url: URL):
+    url = (
+        amqp_url.with_host(
+            proxy.proxy_host,
+        )
+        .with_port(
+            proxy.proxy_port,
+        )
+        .update_query(heartbeat="1")
+    )
+
+    async def run():
+        connection = await aiormq.connect(url)
+        channel = await connection.channel()
+        declare_ok = await channel.queue_declare(auto_delete=True)
+
+        # This test a bug where a disconnection happening during a call waiting
+        # for the channel lock would result in a deadlock. Here we get the lock
+        # so the call to basic_publish end up holding the lock when we have the
+        # proxy disconnecting.
+        async with channel.lock:
+            task = asyncio.create_task(channel.basic_publish(b"data", routing_key=declare_ok.queue))
+            await asyncio.sleep(0.5)
+            proxy.disconnect_all()
+            await asyncio.sleep(0.5)
+
+        with pytest.raises(aiormq.ChannelInvalidStateError):
+            await task
+
+    await asyncio.wait_for(run(), timeout=5)
 
 
 async def test_ssl_context_provider_static(event_loop):
@@ -555,33 +600,25 @@ async def test_ssl_context_provider_static(event_loop):
     )
 
     static_context = ssl.create_default_context()
-    provider = SSLContextProvider(
-        ssl_context=static_context,
-        ssl_certs=certs,
-        loop=event_loop
-    )
+    provider = SSLContextProvider(ssl_context=static_context, ssl_certs=certs, loop=event_loop)
 
     provided_context = await provider.get_context()
     assert provided_context is static_context
 
 
-async def test_ssl_context_provider_created(event_loop):
+async def test_ssl_context_provider_created(event_loop, cert_path):
     certs = SSLCerts(
-        cert=cert_path("client.pem"),
-        key=cert_path("client.key"),
+        cert=cert_path / "client.pem",
+        key=cert_path / "client.key",
         capath=None,
-        cafile=cert_path("ca.pem"),
+        cafile=cert_path / "ca.pem",
         cadata=None,
         verify=True,
     )
 
     default_context = ssl.create_default_context()
 
-    provider = SSLContextProvider(
-        ssl_context=None,
-        ssl_certs=certs,
-        loop=event_loop
-    )
+    provider = SSLContextProvider(ssl_context=None, ssl_certs=certs, loop=event_loop)
 
     provided_context = await provider.get_context()
     assert provided_context != default_context

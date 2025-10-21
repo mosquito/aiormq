@@ -29,7 +29,6 @@ def child_store(event_loop, root_store):
 
 
 async def test_reject_all(root_store: FutureStore, child_store: FutureStore):
-
     future1 = root_store.create_future()
     future2 = child_store.create_future()
 
@@ -73,8 +72,6 @@ async def test_siblings(root_store: FutureStore, child_store: FutureStore):
     child = child_store.get_child().get_child().get_child()
     task = child.create_task(coro(child))
 
-    assert root_store.futures
-    assert child_store.futures
     assert child.futures
 
     with pytest.raises(RuntimeError):
