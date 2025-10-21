@@ -85,7 +85,9 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
         raise Exception
 
     consume_ok = await channel.basic_consume(
-        declare_ok.queue, bad_consumer, no_ack=False,
+        declare_ok.queue,
+        bad_consumer,
+        no_ack=False,
     )
 
     consumer_tag.set_result(consume_ok.consumer_tag)
@@ -97,7 +99,9 @@ async def test_bad_consumer(amqp_channel: aiormq.Channel, event_loop):
     future = event_loop.create_future()
 
     await channel.basic_consume(
-        declare_ok.queue, future.set_result, no_ack=True,
+        declare_ok.queue,
+        future.set_result,
+        no_ack=True,
     )
 
     message = await future
@@ -150,15 +154,18 @@ async def test_confirm_multiple(amqp_channel: aiormq.Channel):
     try:
         declare_ok = await channel.queue_declare(exclusive=True)
         await channel.queue_bind(
-            declare_ok.queue, exchange, routing_key="test.5",
+            declare_ok.queue,
+            exchange,
+            routing_key="test.5",
         )
 
         for i in range(10):
             messages = [
                 asyncio.ensure_future(
                     channel.basic_publish(
-                        b"test", exchange=exchange,
-                        routing_key="test.{}".format(i),
+                        b"test",
+                        exchange=exchange,
+                        routing_key=f"test.{i}",
                     ),
                 )
                 for i in range(10)
@@ -191,7 +198,8 @@ async def test_exclusive_queue_locked(amqp_connection):
 async def test_remove_writer_when_closed(amqp_channel: aiormq.Channel):
     with pytest.raises(aiormq.exceptions.ChannelClosed):
         await amqp_channel.queue_declare(
-            "amq.forbidden_queue_name", auto_delete=True,
+            "amq.forbidden_queue_name",
+            auto_delete=True,
         )
 
     with pytest.raises(aiormq.exceptions.ChannelInvalidStateError):
@@ -212,7 +220,9 @@ async def test_declare_queue_timeout(proxy_connection, proxy: TCPProxy):
         with proxy.slowdown(read_delay=5, write_delay=0):
             with pytest.raises(asyncio.TimeoutError):
                 await channel.queue_declare(
-                    qname, auto_delete=True, timeout=0.5,
+                    qname,
+                    auto_delete=True,
+                    timeout=0.5,
                 )
 
 

@@ -3,6 +3,7 @@ import gc
 import logging
 import os
 import tracemalloc
+from pathlib import Path
 
 import pamqp
 import pytest
@@ -11,37 +12,35 @@ from yarl import URL
 
 from aiormq import Connection
 
-
-def cert_path(*args):
-    return os.path.join(
-        os.path.abspath(os.path.dirname(__file__)), "certs", *args,
-    )
-
-
+CERT_PATH = Path(__file__).parent / "certs"
 AMQP_URL = URL(os.getenv("AMQP_URL", "amqp://guest:guest@localhost/"))
 
 amqp_urls = {
     "amqp": AMQP_URL,
     "amqp-named": AMQP_URL.update_query(name="pytest"),
     "amqps": AMQP_URL.with_scheme("amqps").with_query(
-        {"cafile": cert_path("ca.pem"), "no_verify_ssl": 1},
+        {"cafile": str(CERT_PATH / "ca.pem"), "no_verify_ssl": 1},
     ),
     "amqps-client": AMQP_URL.with_scheme("amqps").with_query(
         {
-            "cafile": cert_path("ca.pem"),
-            "keyfile": cert_path("client.key"),
-            "certfile": cert_path("client.pem"),
+            "cafile": str(CERT_PATH / "ca.pem"),
+            "keyfile": str(CERT_PATH / "client.key"),
+            "certfile": str(CERT_PATH / "client.pem"),
             "no_verify_ssl": 1,
         },
     ),
 }
-
 
 amqp_url_list, amqp_url_ids = [], []
 
 for name, url in amqp_urls.items():
     amqp_url_list.append(url)
     amqp_url_ids.append(name)
+
+
+@pytest.fixture(scope="session")
+def cert_path():
+    return CERT_PATH.resolve()
 
 
 @pytest.fixture(params=amqp_url_list, ids=amqp_url_ids)
@@ -73,7 +72,8 @@ async def amqp_channel(request, amqp_connection):
 
 
 skip_when_quick_test = pytest.mark.skipif(
-    os.getenv("TEST_QUICK") is not None, reason="quick test",
+    os.getenv("TEST_QUICK") is not None,
+    reason="quick test",
 )
 
 
@@ -92,15 +92,14 @@ def memory_tracer():
     def format_stat(stats):
         items = [
             "TOP STATS:",
-            "%-90s %6s %6s %6s" % ("Traceback", "line", "size", "count"),
+            "%-90s %6s %6s %6s" % ("Traceback", "line", "size", "count"),  # noqa: UP031
         ]
 
         for stat in stats:
             fname = stat.traceback[0].filename
             lineno = stat.traceback[0].lineno
             items.append(
-                "%-90s %6s %6s %6s"
-                % (fname, lineno, stat.size_diff, stat.count_diff),
+                "%-90s %6s %6s %6s" % (fname, lineno, stat.size_diff, stat.count_diff),  # noqa: UP031
             )
 
         return "\n".join(items)
@@ -113,7 +112,9 @@ def memory_tracer():
         snapshot_after = tracemalloc.take_snapshot().filter_traces(filters)
 
         top_stats = snapshot_after.compare_to(
-            snapshot_before, "lineno", cumulative=True,
+            snapshot_before,
+            "lineno",
+            cumulative=True,
         )
 
         if top_stats:

@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from pamqp.base import Frame
 from pamqp.commands import Basic
@@ -11,9 +11,7 @@ class AMQPError(Exception):
 
     def __repr__(self) -> str:
         try:
-            return "<%s: %s>" % (
-                self.__class__.__name__, self.reason % self.args,
-            )
+            return f"<{self.__class__.__name__}: {self.reason % self.args}>"
         except TypeError:
             # FIXME: if you are here file an issue
             return f"<{self.__class__.__name__}: {self.args!r}>"
@@ -45,10 +43,7 @@ class AuthenticationError(AMQPConnectionError):
 
 
 class ProbableAuthenticationError(AMQPConnectionError):
-    reason = (
-        "Client was disconnected at a connection stage indicating a "
-        "probable authentication error: %s"
-    )
+    reason = "Client was disconnected at a connection stage indicating a probable authentication error: %s"
 
 
 class ConnectionClosed(AMQPConnectionError):
@@ -112,10 +107,7 @@ class ConnectionNotAllowed(ConnectionClosed):
 
 
 class ConnectionNotImplemented(ConnectionClosed):
-    reason = (
-        "The client tried to use functionality that is "
-        "not implemented in the server: %r"
-    )
+    reason = "The client tried to use functionality that is not implemented in the server: %r"
 
 
 class ConnectionInternalError(ConnectionClosed):
@@ -135,17 +127,11 @@ class ChannelClosed(AMQPChannelError):
 
 
 class ChannelAccessRefused(ChannelClosed):
-    reason = (
-        "The client attempted to work with a server entity to "
-        "which it has no access due to security settings: %r"
-    )
+    reason = "The client attempted to work with a server entity to which it has no access due to security settings: %r"
 
 
 class ChannelNotFoundEntity(ChannelClosed):
-    reason = (
-        "The client attempted to work with a server "
-        "entity that does not exist: %r"
-    )
+    reason = "The client attempted to work with a server entity that does not exist: %r"
 
 
 class ChannelLockedResource(ChannelClosed):
@@ -157,10 +143,7 @@ class ChannelLockedResource(ChannelClosed):
 
 
 class ChannelPreconditionFailed(ChannelClosed):
-    reason = (
-        "The client requested a method that was not allowed because "
-        "some precondition failed: %r"
-    )
+    reason = "The client requested a method that was not allowed because some precondition failed: %r"
 
 
 class DuplicateConsumerTag(ChannelClosed):
@@ -180,13 +163,15 @@ class MethodNotImplemented(AMQPError):
 
 
 class DeliveryError(AMQPError):
-    __slots__ = "message", "frame"
+    __slots__ = "frame", "message"
 
     reason = "Error when delivery message %r, frame %r"
 
     def __init__(
-        self, message: Optional[DeliveredMessage],
-        frame: Frame, *args: Any,
+        self,
+        message: DeliveredMessage | None,
+        frame: Frame,
+        *args: Any,
     ):
         self.message = message
         self.frame = frame
@@ -204,7 +189,9 @@ class PublishError(DeliveryError):
         self.frame = frame
 
         super(DeliveryError, self).__init__(
-            message.delivery.reply_text, message.delivery.routing_key, *args,
+            message.delivery.reply_text,
+            message.delivery.routing_key,
+            *args,
         )
 
 

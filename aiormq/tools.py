@@ -4,15 +4,11 @@ import platform
 import time
 from functools import wraps
 from types import TracebackType
-from typing import (
-    Any, AsyncContextManager, Awaitable, Callable, Coroutine, Optional, Type,
-    TypeVar, Union,
-)
+from typing import Any, AsyncContextManager, Awaitable, Callable, Coroutine, TypeVar
 
 from yarl import URL
 
 from aiormq.abc import TimeoutType
-
 
 T = TypeVar("T")
 
@@ -32,36 +28,38 @@ def shield(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
 
 
 def awaitable(
-    func: Callable[..., Union[T, Awaitable[T]]],
+    func: Callable[..., T | Awaitable[T]],
 ) -> Callable[..., Coroutine[Any, Any, T]]:
     # Avoid python 3.8+ warning
     if inspect.iscoroutinefunction(func):
-        return func     # type: ignore
+        return func  # type: ignore
 
     @wraps(func)
     async def wrap(*args: Any, **kwargs: Any) -> T:
         result = func(*args, **kwargs)
 
         if hasattr(result, "__await__"):
-            return await result     # type: ignore
+            return await result  # type: ignore
         if asyncio.iscoroutine(result) or asyncio.isfuture(result):
             return await result
 
-        return result               # type: ignore
+        return result  # type: ignore
 
     return wrap
 
 
 class Countdown:
-    __slots__ = "loop", "deadline"
+    __slots__ = "deadline", "loop"
 
     if platform.system() == "Windows":
+
         @staticmethod
         def _now() -> float:
             # windows monotonic timer resolution is not enough.
             # Have to use time.time()
             return time.time()
     else:
+
         @staticmethod
         def _now() -> float:
             return time.monotonic()
@@ -96,14 +94,12 @@ class Countdown:
             return await coro
         return await asyncio.wait_for(coro, timeout=timeout)
 
-    def enter_context(
-        self, ctx: AsyncContextManager[T],
-    ) -> AsyncContextManager[T]:
+    def enter_context(self, ctx: AsyncContextManager[T]) -> "CountdownContext[T]":
         return CountdownContext(self, ctx)
 
 
-class CountdownContext(AsyncContextManager):
-    def __init__(self, countdown: Countdown, ctx: AsyncContextManager):
+class CountdownContext(AsyncContextManager[T]):
+    def __init__(self, countdown: Countdown, ctx: AsyncContextManager[T]):
         self.countdown: Countdown = countdown
         self.ctx: AsyncContextManager = ctx
 
@@ -111,8 +107,10 @@ class CountdownContext(AsyncContextManager):
         return await self.countdown(self.ctx.__aenter__())
 
     async def __aexit__(
-        self, exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException], exc_tb: Optional[TracebackType],
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> Any:
         return await self.countdown(
             self.ctx.__aexit__(exc_type, exc_val, exc_tb),
