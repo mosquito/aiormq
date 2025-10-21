@@ -30,7 +30,7 @@ wheels = [
 
 [[package]]
 name = "aiormq"
-version = "6.9.2"
+version = "7.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "pamqp" },
