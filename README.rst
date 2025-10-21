@@ -162,6 +162,8 @@ Simple publisher
         MESSAGE = await channel.basic_get(declare_ok.queue)
         print(f" [x] Received message from {declare_ok.queue!r}")
 
+        await channel.close()
+        await connection.close()
 
     asyncio.run(main())
 
