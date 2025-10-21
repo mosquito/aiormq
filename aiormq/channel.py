@@ -140,32 +140,100 @@ class Channel(Base, AbstractChannel):
         self.__close_method_id = method_id
 
     @property
-    def lock(self) -> asyncio.Lock:
+    @asynccontextmanager
+    async def lock(self) -> AsyncIterator[None]:
         if self.is_closed:
-            raise ChannelInvalidStateError("%r closed" % self)
-
-        return self.__lock
+            raise ChannelInvalidStateError(f"{self!r} closed")
+        async with self.__lock:
+            if self.is_closed:
+                raise ChannelInvalidStateError(f"{self!r} closed")
+            yield
 
     async def _get_frame(self) -> FrameType:
-        weight, frame = await self.frames.get()
+        _, frame = await self.frames.get()
         self.frames.task_done()
         return frame
 
     def __str__(self) -> str:
         return str(self.number)
 
-    @task
-    async def rpc(
-        self, frame: Frame, timeout: TimeoutType = None,
-    ) -> RpcReturnType:
+    @overload
+    async def rpc(self, frame: spec.Basic.Get, timeout: TimeoutType = None) -> GetResultType: ...
 
+    @overload
+    async def rpc(self, frame: spec.Queue.Declare, timeout: TimeoutType = None) -> spec.Queue.DeclareOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Channel.Open, timeout: TimeoutType = None) -> spec.Channel.OpenOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Channel.Close, timeout: TimeoutType = None) -> spec.Channel.CloseOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Basic.Cancel, timeout: TimeoutType = None) -> spec.Basic.CancelOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Basic.Consume, timeout: TimeoutType = None) -> spec.Basic.ConsumeOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Basic.Qos, timeout: TimeoutType = None) -> spec.Basic.QosOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Basic.Recover, timeout: TimeoutType = None) -> spec.Basic.RecoverOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Basic.RecoverAsync, timeout: TimeoutType = None) -> spec.Basic.RecoverOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Exchange.Declare, timeout: TimeoutType = None) -> spec.Exchange.DeclareOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Exchange.Delete, timeout: TimeoutType = None) -> spec.Exchange.DeleteOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Exchange.Bind, timeout: TimeoutType = None) -> spec.Exchange.BindOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Exchange.Unbind, timeout: TimeoutType = None) -> spec.Exchange.UnbindOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Queue.Delete, timeout: TimeoutType = None) -> spec.Queue.DeleteOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Queue.Bind, timeout: TimeoutType = None) -> spec.Queue.BindOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Queue.Unbind, timeout: TimeoutType = None) -> spec.Queue.UnbindOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Queue.Purge, timeout: TimeoutType = None) -> spec.Queue.PurgeOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Tx.Select, timeout: TimeoutType = None) -> spec.Tx.SelectOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Tx.Commit, timeout: TimeoutType = None) -> spec.Tx.CommitOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Tx.Rollback, timeout: TimeoutType = None) -> spec.Tx.RollbackOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Channel.Flow, timeout: TimeoutType = None) -> spec.Channel.FlowOk: ...
+
+    @overload
+    async def rpc(self, frame: spec.Confirm.Select, timeout: TimeoutType = None) -> spec.Confirm.SelectOk: ...
+
+    @task(closed_exception=ChannelInvalidStateError("Channel is closed"))
+    async def rpc(
+        self,
+        frame: Frame,
+        timeout: TimeoutType = None,
+    ) -> RpcReturnType:
         if self.__close_event.is_set():
             raise ChannelInvalidStateError("Channel closed by RPC timeout")
 
         countdown = Countdown(timeout)
-        lock = self.lock
-
-        async with countdown.enter_context(lock):
+        async with countdown.enter_context(self.lock):
             try:
                 await countdown(
                     self.write_queue.put(
