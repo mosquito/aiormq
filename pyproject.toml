@@ -1,12 +1,19 @@
-[tool.poetry]
+[project]
 name = "aiormq"
-version = "6.9.2"
+version = "7.0.0"
 description = "Pure python AMQP asynchronous client library"
-authors = ["Dmitry Orlov <me@mosquito.su>"]
+authors = [{ name = "Dmitry Orlov", email = "orlovdl@gmail.com" }]
+requires-python = "~=3.10"
 readme = "README.rst"
 license = "Apache-2.0"
-keywords=["rabbitmq", "asyncio", "amqp", "amqp 0.9.1", "driver", "pamqp"]
-homepage = "https://github.com/mosquito/aiormq"
+keywords = [
+    "rabbitmq",
+    "asyncio",
+    "amqp",
+    "amqp 0.9.1",
+    "driver",
+    "pamqp",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: Apache Software License",
@@ -30,37 +37,49 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
-packages = [{ include = "aiormq" }]
+dependencies = [
+    "pamqp==3.3.0",
+    "yarl",
+]
 
-[tool.poetry.urls]
-"Source" = "https://github.com/mosquito/aiormq"
-"Tracker" = "https://github.com/mosquito/aiormq/issues"
-"Documentation" = "https://github.com/mosquito/aiormq/blob/master/README.rst"
+[project.urls]
+Homepage = "https://github.com/mosquito/aiormq"
+Source = "https://github.com/mosquito/aiormq"
+Tracker = "https://github.com/mosquito/aiormq/issues"
+Documentation = "https://github.com/mosquito/aiormq/blob/master/README.rst"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-pamqp = "3.3.0"
-yarl = [{ version = '*'}]
+[dependency-groups]
+dev = [
+    "pytest~=8.4",
+    "coverage~=6.5",
+    "coveralls>=3.3.1,<4",
+    "pylama>=8.4.1,<9",
+    "pytest-cov>=4.0.0,<5",
+    "collective-checkdocs>=0.2,<0.3",
+    "mypy~=1.18",
+    "pytest-rst>=0.1,<0.2",
+    "types-setuptools~=80.9",
+    "aiomisc-pytest~=1.1",
+    "setuptools~=80.9",
+    "ruff>=0.14.1,<0.15",
+]
+uvloop = ["uvloop>=0.22,<0.23"]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.4"
-coverage = "^6.5"
-coveralls = "^3.3.1"
-pylama = "^8.4.1"
-pytest-cov = "^4.0.0"
-collective-checkdocs = "^0.2"
-mypy = "^1.18"
-pytest-rst = "^0.1"
-types-setuptools = "^80.9"
-aiomisc-pytest = "^1.1"
-setuptools = "^80.9"
+[tool.uv]
+default-groups = [
+    "dev",
+    "uvloop",
+]
 
-[tool.poetry.group.uvloop.dependencies]
-uvloop = ["^0.22"]
+[tool.hatch.build.targets.sdist]
+include = ["aiormq"]
+
+[tool.hatch.build.targets.wheel]
+include = ["aiormq"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.mypy]
 check_untyped_defs = true
@@ -77,3 +96,20 @@ warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = false
 files = "aiormq"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 119
+
+[tool.ruff.lint]
+select = [
+    "B", "C4", "DTZ", "E", "ERA", "F", "G", "I", "N", "PERF", "PTH", "RUF", "SIM", "T20", "TCH", "TID", "UP", "W"
+]
+extend-ignore = [
+    "B008", "B019", "C408", "E203", "ERA001", "PERF401", "PERF403", "RUF005", "RUF013", "SIM117",
+    "T20", "TC002", "TID251", "UP035", "N818", "TC001"
+]
+exclude = [".git", ".venv", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
