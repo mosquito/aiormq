@@ -170,9 +170,14 @@ class Base(AbstractBase):
 TaskFunctionType = Callable[..., T]
 
 
-def task(func: TaskFunctionType) -> TaskFunctionType:
-    @wraps(func)
-    async def wrap(self: Base, *args: Any, **kwargs: Any) -> Any:
-        return await self.create_task(func(self, *args, **kwargs))
+def task(closed_exception: ExceptionType | None = None) -> Callable[..., TaskFunctionType]:
+    def decorator(func: TaskFunctionType) -> TaskFunctionType:
+        @wraps(func)
+        async def wrap(self: Base, *args: Any, **kwargs: Any) -> Any:
+            if self.closing.done():
+                raise (closed_exception or asyncio.CancelledError(f"{self.__class__.__name__} is closing or closed"))
+            return await self.create_task(func(self, *args, **kwargs))
 
-    return wrap
+        return wrap
+
+    return decorator
