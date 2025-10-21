@@ -148,22 +148,18 @@ Simple publisher
         body = b'Hello World!'
 
         # Perform connection
-        connection = await aiormq.connect("amqp://guest:guest@localhost//")
+        async with aiormq.connect("amqp://guest:guest@localhost//") as connection:
+            # Creating a channel
+            channel = await connection.channel()
 
-        # Creating a channel
-        channel = await connection.channel()
+            declare_ok = await channel.queue_declare("hello", auto_delete=True)
 
-        declare_ok = await channel.queue_declare("hello", auto_delete=True)
+            # Sending the message
+            await channel.basic_publish(body, routing_key='hello')
+            print(f" [x] Sent {body}")
 
-        # Sending the message
-        await channel.basic_publish(body, routing_key='hello')
-        print(f" [x] Sent {body}")
-
-        MESSAGE = await channel.basic_get(declare_ok.queue)
-        print(f" [x] Received message from {declare_ok.queue!r}")
-
-        await channel.close()
-        await connection.close()
+            MESSAGE = await channel.basic_get(declare_ok.queue)
+            print(f" [x] Received message from {declare_ok.queue!r}")
 
     asyncio.run(main())
 

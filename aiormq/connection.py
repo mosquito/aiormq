@@ -2,6 +2,7 @@ import asyncio
 import logging
 import platform
 import ssl
+import warnings
 from abc import ABC, abstractmethod
 from base64 import b64decode
 from collections.abc import AsyncIterable
@@ -371,6 +372,7 @@ class Connection(Base, AbstractConnection):
         loop: asyncio.AbstractEventLoop | None = None,
         context: ssl.SSLContext | None = None,
         transport_factory: TransportFactory | None = None,
+        client_properties: FieldTable | None = None,
         **create_connection_kwargs: Any,
     ):
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
@@ -428,6 +430,7 @@ class Connection(Base, AbstractConnection):
         self.__heartbeat_grace_timeout = (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
         self.__last_frame_time: float = self.loop.time()
         self.__create_connection_kwargs = create_connection_kwargs
+        self.__client_properties = client_properties or {}
 
     async def ready(self) -> None:
         await self.connected.wait()
@@ -525,6 +528,7 @@ class Connection(Base, AbstractConnection):
             raise RuntimeError("Connection already opened")
 
         log.debug("Connecting to: %s", self)
+
         try:
             reader, writer = await self._transport_factory.create(
                 self.url,
@@ -556,11 +560,12 @@ class Connection(Base, AbstractConnection):
         server_properties: ArgumentsType = frame.server_properties
 
         try:
+            if client_properties is not None:
+                self.__client_properties = client_properties
+
             frame = await self._rpc(
                 spec.Connection.StartOk(
-                    client_properties=self._client_properties(
-                        **(client_properties or {}),
-                    ),
+                    client_properties=self._client_properties(**(self.__client_properties)),
                     mechanism=credentials.name,
                     response=credentials.value(self).marshal(),
                 ),
@@ -982,6 +987,19 @@ class Connection(Base, AbstractConnection):
                 self.__update_secret_future = None
         return response
 
+    async def _old_style_connect(self) -> AbstractConnection:
+        await self.connect()
+        return self
+
+    def __await__(self):
+        warnings.warn(
+            "Using 'await Connection.connect()' is deprecated since aiormq 7.0. "
+            "Use 'async with Connection(...)' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._old_style_connect().__await__()
+
     async def __aenter__(self) -> AbstractConnection:
         if not self.is_opened:
             await self.connect()
@@ -996,13 +1014,10 @@ class Connection(Base, AbstractConnection):
         await self.close(exc_val)
 
 
-async def connect(
+def connect(
     url: URLorStr,
     *args: Any,
     client_properties: FieldTable | None = None,
     **kwargs: Any,
 ) -> AbstractConnection:
-    connection = Connection(url, *args, **kwargs)
-
-    await connection.connect(client_properties or {})
-    return connection
+    return Connection(url, client_properties=client_properties, *args, **kwargs)

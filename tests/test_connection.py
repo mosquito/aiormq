@@ -533,7 +533,8 @@ async def test_connection_close_stairway(
     BadNetwork(proxy, stair, disconnect_time)
 
     async def run():
-        connection = await aiormq.connect(url)
+        connection = aiormq.connect(url)
+        await connection.connect()
         queue = asyncio.Queue()
         channel = await connection.channel()
         declare_ok = await channel.queue_declare(auto_delete=True)
