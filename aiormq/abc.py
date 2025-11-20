@@ -37,7 +37,7 @@ class TaskWrapper:
 
     def throw(self, exception: ExceptionType) -> None:
         self._exception = exception
-        self.task.cancel()
+        self.task.cancel(exception)
 
     async def __inner(self) -> Any:
         try:
