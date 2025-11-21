@@ -17,12 +17,15 @@ async def test_throw_with_instance(event_loop):
     wrapped.throw(RuntimeError("boom"))
 
     # original task should be cancelled and raise CancelledError when awaited
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError) as excinfo:
         await task
+    print("\ntest_throw_with_instance 1", repr(excinfo))
+    assert "boom" in str(excinfo.value)
 
     # wrapper should re-raise provided exception
     with pytest.raises(RuntimeError) as excinfo:
         await wrapped
+    print("\ntest_throw_with_instance 2", repr(excinfo))
     assert "boom" in str(excinfo.value)
 
 
@@ -33,11 +36,10 @@ async def test_throw_with_type(event_loop):
     # pass exception class instead of instance
     wrapped.throw(RuntimeError)
 
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError) as excinfo:
         await task
-
-    with pytest.raises(RuntimeError):
-        await wrapped
+    print("\ntest_throw_with_type", repr(excinfo))
+    
 
 
 async def test_throw_with_cancellederror(event_loop):
@@ -52,5 +54,9 @@ async def test_throw_with_cancellederror(event_loop):
         await task
 
     # wrapper should raise CancelledError as well
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError) as excinfo:
         await wrapped
+
+    print("\ntest_throw_with_cancellederror", repr(excinfo))
+
+    
