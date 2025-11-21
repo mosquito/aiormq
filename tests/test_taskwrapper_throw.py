@@ -50,13 +50,14 @@ async def test_throw_with_cancellederror(event_loop):
     wrapped.throw(asyncio.CancelledError())
 
     # original task raises CancelledError
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises(asyncio.CancelledError) as excinfo:
         await task
+    print("\ntest_throw_with_cancellederror 1", repr(excinfo))
 
     # wrapper should raise CancelledError as well
     with pytest.raises(asyncio.CancelledError) as excinfo:
         await wrapped
 
-    print("\ntest_throw_with_cancellederror", repr(excinfo))
+    print("\ntest_throw_with_cancellederror 2", repr(excinfo))
 
     
