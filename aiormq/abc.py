@@ -370,6 +370,7 @@ class AbstractChannel(AbstractBase):
         mandatory: bool = False,
         immediate: bool = False,
         timeout: TimeoutType = None,
+        wait: bool = True,
     ) -> Optional[ConfirmationFrameType]:
         raise NotImplementedError
 
