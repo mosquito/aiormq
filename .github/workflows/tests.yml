@@ -9,42 +9,30 @@ on:
 
 
 jobs:
-  pylama:
+  ruff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Setup python3.10
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
-      - name: Cache virtualenv
-        id: venv-cache
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ github.job }}-${{ github.ref }}
-      - run: python -m pip install poetry
-      - run: poetry install
-      - run: poetry run pylama
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check
         env:
           FORCE_COLOR: 1
   mypy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Setup python3.10
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
-      - name: Cache virtualenv
-        id: venv-cache
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ github.job }}-${{ github.ref }}
-      - run: python -m pip install poetry
-      - run: poetry install
-      - run: poetry run mypy
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run mypy
         env:
           FORCE_COLOR: 1
   docs:
@@ -53,24 +41,21 @@ jobs:
       rabbitmq:
         image: docker://mosquito/aiormq-rabbitmq
         ports:
-          - 5672:5672
           - 5671:5671
+          - 5672:5672
+          - 15671:15671
+          - 15672:15672
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Setup python3.10
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
-      - name: Cache virtualenv
-        id: venv-cache
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ github.job }}-${{ github.ref }}
-      - run: python -m pip install poetry
-      - run: poetry install
-      - run: poetry run pytest -svv README.rst
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run pytest -svv README.rst
         env:
+          AMQP_URL: amqp://guest:guest@localhost//
           FORCE_COLOR: 1
 
   tests:
@@ -80,8 +65,10 @@ jobs:
       rabbitmq:
         image: docker://mosquito/aiormq-rabbitmq
         ports:
-          - 5672:5672
           - 5671:5671
+          - 5672:5672
+          - 15671:15671
+          - 15672:15672
 
     strategy:
       fail-fast: false
@@ -94,22 +81,16 @@ jobs:
           - '3.13'
           - '3.14'
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Setup python${{ matrix.python }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v6
         with:
           python-version: "${{ matrix.python }}"
-      - name: Cache virtualenv
-        id: venv-cache
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ github.job }}-${{ github.ref }}-${{ matrix.python }}
-      - run: python -m pip install poetry
-      - run: poetry install --with=uvloop
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group uvloop
       - name: pytest
         run: >-
-          poetry run pytest \
+          uv run pytest \
             -vv \
             --cov=aiormq \
             --cov-report=term-missing \
@@ -117,8 +98,9 @@ jobs:
             --aiomisc-test-timeout=120 \
             tests
         env:
+          AMQP_URL: amqp://guest:guest@localhost//
           FORCE_COLOR: 1
-      - run: poetry run coveralls
+      - run: uv run coveralls
         env:
           COVERALLS_PARALLEL: 'true'
           COVERALLS_SERVICE_NAME: github
