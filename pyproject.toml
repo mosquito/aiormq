@@ -1,12 +1,19 @@
-[tool.poetry]
+[project]
 name = "aiormq"
 version = "6.9.2"
 description = "Pure python AMQP asynchronous client library"
-authors = ["Dmitry Orlov <me@mosquito.su>"]
+authors = [{ name = "Dmitry Orlov", email = "me@mosquito.su" }]
+requires-python = ">=3.10,<4"
 readme = "README.rst"
 license = "Apache-2.0"
-keywords=["rabbitmq", "asyncio", "amqp", "amqp 0.9.1", "driver", "pamqp"]
-homepage = "https://github.com/mosquito/aiormq"
+keywords = [
+    "rabbitmq",
+    "asyncio",
+    "amqp",
+    "amqp 0.9.1",
+    "driver",
+    "pamqp",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: Apache Software License",
@@ -30,37 +37,44 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python :: Implementation :: CPython",
 ]
-packages = [{ include = "aiormq" }]
+dependencies = [
+    "pamqp==3.3.0",
+    "yarl",
+]
 
-[tool.poetry.urls]
-"Source" = "https://github.com/mosquito/aiormq"
-"Tracker" = "https://github.com/mosquito/aiormq/issues"
-"Documentation" = "https://github.com/mosquito/aiormq/blob/master/README.rst"
+[project.urls]
+Homepage = "https://github.com/mosquito/aiormq"
+Source = "https://github.com/mosquito/aiormq"
+Tracker = "https://github.com/mosquito/aiormq/issues"
+Documentation = "https://github.com/mosquito/aiormq/blob/master/README.rst"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-pamqp = "3.3.0"
-yarl = [{ version = '*'}]
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<9",
+    "coverage>=6.5,<7",
+    "coveralls>=3.3.1,<4",
+    "ruff",
+    "pytest-cov>=4.0.0,<5",
+    "collective-checkdocs>=0.2,<0.3",
+    "mypy>=1.18,<2",
+    "pytest-rst>=0.1,<0.2",
+    "types-setuptools>=80.9,<81",
+    "aiomisc-pytest>=1.1,<2",
+    "setuptools>=80.9,<81",
+]
+uvloop = ["uvloop>=0.22,<0.23"]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.4"
-coverage = "^6.5"
-coveralls = "^3.3.1"
-pylama = "^8.4.1"
-pytest-cov = "^4.0.0"
-collective-checkdocs = "^0.2"
-mypy = "^1.18"
-pytest-rst = "^0.1"
-types-setuptools = "^80.9"
-aiomisc-pytest = "^1.1"
-setuptools = "^80.9"
+[tool.uv]
+default-groups = "all"
 
-[tool.poetry.group.uvloop.dependencies]
-uvloop = ["^0.22"]
+[tool.uv.build-backend]
+module-name = ["aiormq"]
+module-root = ""
+source-include = ["tests/**"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["uv_build>=0.10.4,<0.11.0"]
+build-backend = "uv_build"
 
 [tool.mypy]
 check_untyped_defs = true
@@ -77,3 +91,33 @@ warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = false
 files = "aiormq"
+
+[tool.pytest.ini_options]
+addopts = "-p no:asyncio"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 80
+exclude = [
+    ".git",
+    ".tox",
+    ".venv",
+    "build",
+    "dist",
+    "env",
+]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "C90"]
+ignore = ["C901"]

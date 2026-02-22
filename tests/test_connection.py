@@ -22,7 +22,7 @@ from aiormq.connection import (
     parse_bool
 )
 
-from .conftest import AMQP_URL, cert_path, skip_when_quick_test
+from .conftest import cert_path
 
 
 CERT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "certs"))
@@ -213,9 +213,9 @@ async def test_auth_plain(amqp_connection, event_loop):
     assert auth.marshal() == "boo"
 
 
-async def test_auth_external():
+async def test_auth_external(amqp_direct_url):
 
-    url = AMQP_URL.with_scheme("amqps")
+    url = amqp_direct_url.with_scheme("amqps")
     url.update_query(auth="external")
 
     connection = aiormq.Connection
@@ -246,54 +246,54 @@ async def test_channel_closed(amqp_connection):
     await amqp_connection.close()
 
 
-async def test_timeout_default(event_loop):
-    connection = aiormq.Connection(AMQP_URL, loop=event_loop)
+async def test_timeout_default(amqp_direct_url, event_loop):
+    connection = aiormq.Connection(amqp_direct_url, loop=event_loop)
     await connection.connect()
     assert connection.timeout == 60
     await connection.close()
 
 
-async def test_timeout_1000(event_loop):
-    url = AMQP_URL.update_query(timeout=1000)
+async def test_timeout_1000(amqp_direct_url, event_loop):
+    url = amqp_direct_url.update_query(timeout=1000)
     connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.timeout
     await connection.close()
 
 
-async def test_heartbeat_0(event_loop):
-    url = AMQP_URL.update_query(heartbeat=0)
+async def test_heartbeat_0(amqp_direct_url, event_loop):
+    url = amqp_direct_url.update_query(heartbeat=0)
     connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
     await connection.close()
 
 
-async def test_heartbeat_default(event_loop):
-    connection = aiormq.Connection(AMQP_URL, loop=event_loop)
+async def test_heartbeat_default(amqp_direct_url, event_loop):
+    connection = aiormq.Connection(amqp_direct_url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 60
     await connection.close()
 
 
-async def test_heartbeat_above_range(event_loop):
-    url = AMQP_URL.update_query(heartbeat=70000)
+async def test_heartbeat_above_range(amqp_direct_url, event_loop):
+    url = amqp_direct_url.update_query(heartbeat=70000)
     connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
     await connection.close()
 
 
-async def test_heartbeat_under_range(event_loop):
-    url = AMQP_URL.update_query(heartbeat=-1)
+async def test_heartbeat_under_range(amqp_direct_url, event_loop):
+    url = amqp_direct_url.update_query(heartbeat=-1)
     connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
     await connection.close()
 
 
-async def test_heartbeat_not_int(event_loop):
-    url = AMQP_URL.update_query(heartbeat="None")
+async def test_heartbeat_not_int(amqp_direct_url, event_loop):
+    url = amqp_direct_url.update_query(heartbeat="None")
     connection = aiormq.Connection(url, loop=event_loop)
     await connection.connect()
     assert connection.connection_tune.heartbeat == 0
@@ -314,7 +314,7 @@ async def test_non_publisher_confirms(amqp_connection):
     await amqp_connection.channel(publisher_confirms=False)
 
 
-@skip_when_quick_test
+@pytest.mark.slow
 async def test_no_free_channels(amqp_connection: aiormq.Connection):
     await asyncio.wait_for(
         asyncio.gather(
@@ -398,15 +398,21 @@ URL_VHOSTS = [
 ]
 
 
-async def test_ssl_verification_fails_without_trusted_ca():
-    url = AMQP_URL.with_scheme("amqps")
+async def test_ssl_verification_fails_without_trusted_ca(
+    amqp_direct_url, rabbitmq_container,
+):
+    url = amqp_direct_url.with_scheme("amqps").with_port(
+        rabbitmq_container.ports["5671/tcp"],
+    )
     with pytest.raises(ConnectionError, match=".*CERTIFICATE_VERIFY_FAILED.*"):
         connection = aiormq.Connection(url)
         await connection.connect()
 
 
-async def test_ssl_context():
-    url = AMQP_URL.with_scheme("amqps")
+async def test_ssl_context(amqp_direct_url, rabbitmq_container):
+    url = amqp_direct_url.with_scheme("amqps").with_port(
+        rabbitmq_container.ports["5671/tcp"],
+    )
     context = ssl.create_default_context(
         purpose=ssl.Purpose.SERVER_AUTH,
         cafile=cert_path("ca.pem"),
