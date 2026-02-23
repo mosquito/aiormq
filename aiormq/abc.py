@@ -10,6 +10,7 @@ from typing import (
 )
 
 import pamqp
+import sys
 from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.body import ContentBody
@@ -37,7 +38,12 @@ class TaskWrapper:
 
     def throw(self, exception: ExceptionType) -> None:
         self._exception = exception
-        self.task.cancel()
+        # On Python 3.11+ Task.cancel(msg) preserves the message; for
+        # older versions call cancel() without args.
+        if sys.version_info >= (3, 11):
+            self.task.cancel(exception)
+        else:
+            self.task.cancel()
 
     async def __inner(self) -> Any:
         try:
