@@ -3,6 +3,7 @@ import logging
 import platform
 import ssl
 import sys
+import traceback
 from abc import abstractmethod, ABC
 from base64 import b64decode
 from collections.abc import AsyncIterable
@@ -626,7 +627,14 @@ class Connection(Base, AbstractConnection):
         log.debug("Reader exited for %r", self)
 
         if not task.cancelled() and task.exception() is not None:
-            log.debug("Cancelling cause reader exited abnormally")
+            log.critical(
+                "Cancelling cause reader exited abnormally\n%s",
+                "".join(traceback.format_exception(
+                    type(task.exception()),
+                    task.exception(),
+                    task.exception().__traceback__,
+                ))
+            )
             self.set_close_reason(
                 reply_code=500, reply_text="reader unexpected closed",
             )
