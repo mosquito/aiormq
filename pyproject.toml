@@ -1,9 +1,9 @@
 [project]
 name = "aiormq"
-version = "6.9.2"
+version = "7.0.0"
 description = "Pure python AMQP asynchronous client library"
 authors = [{ name = "Dmitry Orlov", email = "me@mosquito.su" }]
-requires-python = ">=3.10,<4"
+requires-python = ">=3.11,<4"
 readme = "README.rst"
 license = "Apache-2.0"
 license-files = ["COPYING"]
@@ -30,7 +30,6 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -39,7 +38,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
 ]
 dependencies = [
-    "pamqp==3.3.0",
+    "pamqp>=4,<5",
     "yarl",
 ]
 
@@ -51,17 +50,17 @@ Documentation = "https://github.com/mosquito/aiormq/blob/master/README.rst"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4,<9",
-    "coverage>=6.5,<7",
-    "coveralls>=3.3.1,<4",
+    "pytest>=8.4,<10",
+    "coverage>=6.5,<8",
+    "coveralls>=3.3.1,<5",
     "ruff",
-    "pytest-cov>=4.0.0,<5",
+    "pytest-cov>=4,<8",
     "collective-checkdocs>=0.2,<0.3",
     "mypy>=1.18,<2",
-    "pytest-rst>=0.1,<0.2",
-    "types-setuptools>=80.9,<81",
-    "aiomisc-pytest>=1.1,<2",
-    "setuptools>=80.9,<81",
+    "pytest-rst>=0.1,<0.3",
+    "types-setuptools>=80.9,<82",
+    "aiomisc-pytest>=2,<3",
+    "setuptools>=80.9,<82",
 ]
 uvloop = ["uvloop>=0.22,<0.23"]
 
@@ -74,7 +73,7 @@ module-root = ""
 source-include = ["tests/**"]
 
 [build-system]
-requires = ["uv_build>=0.10.4,<0.11.0"]
+requires = ["uv_build>=0.10.4,<0.12"]
 build-backend = "uv_build"
 
 [tool.mypy]

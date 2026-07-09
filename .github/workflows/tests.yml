@@ -13,10 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Setup python3.10
+      - name: Setup python3.11
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
       - run: uv run ruff check
@@ -26,10 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Setup python3.10
+      - name: Setup python3.11
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
       - run: uv run mypy
@@ -47,10 +47,10 @@ jobs:
           - 15672:15672
     steps:
       - uses: actions/checkout@v6
-      - name: Setup python3.10
+      - name: Setup python3.11
         uses: actions/setup-python@v6
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
       - run: uv run pytest -svv README.rst
@@ -75,7 +75,6 @@ jobs:
 
       matrix:
         python:
-          - '3.10'
           - '3.11'
           - '3.12'
           - '3.13'
