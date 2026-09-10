@@ -838,6 +838,8 @@ class Connection(Base, AbstractConnection):
 
             raise
         finally:
+            if not writer.is_closing():
+                await self.__close_writer(writer)
             log.debug("Writer exited for %r", self)
 
     if sys.version_info < (3, 7):
@@ -850,7 +852,8 @@ class Connection(Base, AbstractConnection):
             with suppress(OSError, RuntimeError):
                 if writer.can_write_eof():
                     writer.write_eof()
-                writer.close()
+            writer.close()
+            with suppress(OSError, RuntimeError):
                 await writer.wait_closed()
 
     @staticmethod
