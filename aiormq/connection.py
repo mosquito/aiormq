@@ -553,22 +553,24 @@ class Connection(Base, AbstractConnection):
         frame_receiver = FrameReceiver(reader)
         frame: Optional[FrameTypes]
 
+        # Every failure after the transport exists must close the writer,
+        # the protocol header exchange included.
         try:
             protocol_header = ProtocolHeader()
             writer.write(protocol_header.marshal())
 
-            _, _, frame = await frame_receiver.get_frame()
-        except EOFError as e:
-            raise IncompatibleProtocolError(*e.args) from e
+            try:
+                _, _, frame = await frame_receiver.get_frame()
+            except EOFError as e:
+                raise IncompatibleProtocolError(*e.args) from e
 
-        if not isinstance(frame, spec.Connection.Start):
-            raise AMQPInternalError("Connection.StartOk", frame)
+            if not isinstance(frame, spec.Connection.Start):
+                raise AMQPInternalError("Connection.StartOk", frame)
 
-        credentials = self._credentials_class(frame)
+            credentials = self._credentials_class(frame)
 
-        server_properties: ArgumentsType = frame.server_properties
+            server_properties: ArgumentsType = frame.server_properties
 
-        try:
             frame = await self._rpc(
                 spec.Connection.StartOk(
                     client_properties=self._client_properties(
