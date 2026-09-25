@@ -45,13 +45,12 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "aiomisc-pytest" },
-    { name = "collective-checkdocs" },
     { name = "coverage" },
     { name = "coveralls" },
+    { name = "markdown-pytest" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "pytest-rst" },
     { name = "ruff" },
     { name = "setuptools" },
     { name = "types-setuptools" },
@@ -69,13 +68,12 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "aiomisc-pytest", specifier = ">=2,<3" },
-    { name = "collective-checkdocs", specifier = ">=0.2,<0.3" },
     { name = "coverage", specifier = ">=6.5,<8" },
     { name = "coveralls", specifier = ">=3.3.1,<5" },
+    { name = "markdown-pytest", specifier = ">=0.6.6,<0.7" },
     { name = "mypy", specifier = ">=1.18,<2" },
     { name = "pytest", specifier = ">=8.4,<10" },
     { name = "pytest-cov", specifier = ">=4,<8" },
-    { name = "pytest-rst", specifier = ">=0.1,<0.3" },
     { name = "ruff" },
     { name = "setuptools", specifier = ">=80.9,<82" },
     { name = "types-setuptools", specifier = ">=80.9,<82" },
@@ -182,15 +180,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/c6/eee9dca4439b1061f76373f06ea855678cc4a64c1c3c90b50e479edbb8eb/charset_normalizer-3.4.9-cp314-cp314t-win_arm64.whl", hash = "sha256:19ac87f93086ce37b86e098888555c4b4bc48102279bae3350098c0ed664b501", size = 158037, upload-time = "2026-07-07T14:34:35.018Z" },
     { url = "https://files.pythonhosted.org/packages/98/2b/f97f1c193fb855c345d678f5077d6926034db0722df74c8f057020e05a25/charset_normalizer-3.4.9-py3-none-any.whl", hash = "sha256:68e5f26a1ad57ded6d1cfb85331d1c1a195314756471d97758c48498bb4dcdf5", size = 64538, upload-time = "2026-07-07T14:34:56.993Z" },
 ]
-
-[[package]]
-name = "collective-checkdocs"
-version = "0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "docutils" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b3/3b/2d3f1d3685ae820f0f7076d098a51d6c65493d086f0101556e8cc28bbb86/collective.checkdocs-0.2.zip", hash = "sha256:3a5328257c5224bc72753820c182910d7fb336bc1dba5e09113d48566655e46e", size = 10865, upload-time = "2014-06-06T10:05:03.747Z" }
 
 [[package]]
 name = "colorama"
@@ -317,15 +306,6 @@ wheels = [
 ]
 
 [[package]]
-name = "docutils"
-version = "0.23"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/39/a4/5180d9afc57e8fca05601dd652bdff19604c218814037fe90ffc7625a50a/docutils-0.23.tar.gz", hash = "sha256:746f5060322511280a1e50eb76846ed6bf2342984b2ac04dc42caa1a8d78799e", size = 2303823, upload-time = "2026-05-27T17:41:06.934Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/91/30151a39f7570f448ed84529390628a651d7f27c87d73c9b887f8189695e/docutils-0.23-py3-none-any.whl", hash = "sha256:25d013af9bf23bc1c7b2b093dff4208166c53a94786c9e447808335ef1185fea", size = 634701, upload-time = "2026-05-27T17:40:58.442Z" },
-]
-
-[[package]]
 name = "idna"
 version = "3.18"
 source = { registry = "https://pypi.org/simple" }
@@ -437,6 +417,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/06/ff/7841249c247aa650a76b9ee4bbaeae59370dc8bfd2f6c01f3630c35eb134/markdown_it_py-4.2.0.tar.gz", hash = "sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49", size = 82454, upload-time = "2026-05-07T12:08:28.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl", hash = "sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a", size = 91687, upload-time = "2026-05-07T12:08:27.182Z" },
+]
+
+[[package]]
+name = "markdown-pytest"
+version = "0.6.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/f7/5d9de5ba944c289e0a41bb881e711f3656d2c22b626c2452a863c6f35908/markdown_pytest-0.6.6.tar.gz", hash = "sha256:903c3d4b2439396d06019768ad0eb7a4a230d4381272e22fa241e86fb223493b", size = 110498, upload-time = "2026-08-07T09:05:08.913Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/91/87cf4e15debb7ac0b1b57dda2caa111bf1695c68a9efa952d814f71290a9/markdown_pytest-0.6.6-py3-none-any.whl", hash = "sha256:83afab0568d72b7f57b9c62837dd784c1e4966a6c6ba9cc0eaf7cc80443d2e60", size = 16084, upload-time = "2026-08-07T09:05:07.827Z" },
 ]
 
 [[package]]
@@ -808,15 +797,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b1/51/a849f96e117386044471c8ec2bd6cfebacda285da9525c9106aeb28da671/pytest_cov-7.1.0.tar.gz", hash = "sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2", size = 55592, upload-time = "2026-03-21T20:11:16.284Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/7a/d968e294073affff457b041c2be9868a40c1c71f4a35fcc1e45e5493067b/pytest_cov-7.1.0-py3-none-any.whl", hash = "sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678", size = 22876, upload-time = "2026-03-21T20:11:14.438Z" },
-]
-
-[[package]]
-name = "pytest-rst"
-version = "0.2.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/16/88/9c4ff99a0b7b12d8da1c77e77e69e6faf7d3529bd2cba931b94f5adcd492/pytest_rst-0.2.3.tar.gz", hash = "sha256:a450372bb203d2d1eda92c809cafdd171f0920ff576dcded4f85b294ca08b068", size = 6460, upload-time = "2026-02-22T00:48:26.423Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/b0/0c1060cf6ad03f12f8eee671183463c1152d0aa2442fb812ec7cb73680a3/pytest_rst-0.2.3-py3-none-any.whl", hash = "sha256:d69592f335dfb706e7cc526c824f3e68497e9571f9733fbd2738b536aafe83e3", size = 5639, upload-time = "2026-02-22T00:48:24.971Z" },
 ]
 
 [[package]]

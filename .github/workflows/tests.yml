@@ -53,7 +53,7 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
-      - run: uv run pytest -svv README.rst
+      - run: uv run pytest -svv README.md
         env:
           AMQP_URL: amqp://guest:guest@localhost//
           FORCE_COLOR: 1

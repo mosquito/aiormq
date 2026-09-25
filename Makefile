@@ -19,7 +19,7 @@ upload:
 
 test:
 	uv run pytest -vvx --cov=aiormq \
-		--cov-report=term-missing tests README.rst
+		--cov-report=term-missing tests README.md
 
 clean:
 	rm -fr *.egg-info .tox
