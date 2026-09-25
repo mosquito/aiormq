@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import itertools
 import os
 import ssl
@@ -12,9 +13,10 @@ from pamqp.commands import Basic
 from yarl import URL
 
 import aiormq
-from aiormq.abc import DeliveredMessage, SSLCerts
+from aiormq.abc import ChannelFrame, DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
 from aiormq.connection import (
+    Connection,
     SSLContextProvider,
     TransportFactory,
     parse_int,
@@ -467,6 +469,79 @@ async def test_connection_stuck(proxy, amqp_url: URL):
 
         with pytest.raises(asyncio.CancelledError):
             assert reader_task.result()
+
+
+class WriterCapturingTransportFactory(TransportFactory):
+    """Wrap a transport factory and keep the last created StreamWriter."""
+
+    def __init__(self, inner: TransportFactory):
+        self.inner = inner
+        self.writer: Optional[asyncio.StreamWriter] = None
+
+    async def create(
+        self, url: URL, **kwargs: Any,
+    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        reader, writer = await self.inner.create(url, **kwargs)
+        self.writer = writer
+        return reader, writer
+
+
+@aiomisc.timeout(30)
+@pytest.mark.parametrize(
+    "scenario", ["server-close", "eof", "eof-reset", "heartbeat-timeout"],
+)
+async def test_writer_closed_on_connection_loss(
+    scenario: str, proxy, amqp_url: URL, event_loop,
+):
+    # Regression test for issue #231. The StreamWriter must be closed when
+    # the connection is lost without a client-initiated close.
+    url = amqp_url.with_host(
+        proxy.proxy_host,
+    ).with_port(
+        proxy.proxy_port,
+    ).update_query(heartbeat="1")
+
+    connection = Connection(url, loop=event_loop)
+    factory = WriterCapturingTransportFactory(connection._transport_factory)
+    connection._transport_factory = factory
+    await connection.connect()
+
+    writer = factory.writer
+    assert writer is not None
+    assert not writer.is_closing()
+
+    if scenario == "server-close":
+        # A channel method on channel 0 is a protocol error. The broker
+        # replies with Connection.Close (504 CHANNEL_ERROR).
+        connection.write_queue.put_nowait(
+            ChannelFrame.marshall(
+                channel_number=0, frames=[aiormq.spec.Basic.Ack()],
+            ),
+        )
+        await asyncio.wait([connection.closing], timeout=10)
+        assert isinstance(
+            connection.closing.exception(),
+            aiormq.exceptions.ConnectionClosed,
+        )
+    elif scenario == "eof":
+        await proxy.disconnect_all()
+        await asyncio.wait([connection.closing], timeout=10)
+    elif scenario == "eof-reset":
+        # After a TCP reset, write_eof() raises ENOTCONN. The writer must
+        # still be closed.
+        def write_eof() -> None:
+            raise OSError(errno.ENOTCONN, "Transport endpoint is not connected")
+
+        writer.write_eof = write_eof     # type: ignore[method-assign]
+        await proxy.disconnect_all()
+        await asyncio.wait([connection.closing], timeout=10)
+    elif scenario == "heartbeat-timeout":
+        # Delay each packet longer than the heartbeat grace timeout.
+        with proxy.slowdown(50, 50):
+            await asyncio.wait([connection.closing], timeout=20)
+
+    assert connection.closing.done()
+    assert writer.is_closing(), "StreamWriter is not closed"
 
 
 class BadNetwork:

@@ -6,7 +6,7 @@ import os
 import socket
 import tracemalloc
 from contextlib import suppress
-from time import sleep
+from time import monotonic, sleep
 from typing import Any, Callable, Generator
 
 import pamqp
@@ -88,12 +88,30 @@ def docker() -> Generator[Callable[..., ContainerInfo], Any, Any]:
             _docker_containers.discard(container_id)
 
 
+def wait_for_broker(host: str, port: int, timeout: float = 60.0) -> None:
+    """Block until the broker answers the AMQP protocol header."""
+    deadline = monotonic() + timeout
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(5)
+            try:
+                sock.connect((host, port))
+                sock.send(b"AMQP\x00\x00\x09\x01")
+                if len(sock.recv(4)) == 4:
+                    return
+            except OSError:
+                pass
+        if monotonic() > deadline:
+            pytest.fail(f"RabbitMQ at {host}:{port} is not ready")
+        sleep(0.3)
+
+
 @pytest.fixture(scope="session")
 def rabbitmq_container(docker) -> ContainerInfo:
     amqp_url = os.environ.get("AMQP_URL")
     if amqp_url:
         url = URL(amqp_url)
-        return ContainerInfo(
+        info = ContainerInfo(
             id="ci-service",
             ports={
                 "5672/tcp": url.port or 5672,
@@ -103,22 +121,14 @@ def rabbitmq_container(docker) -> ContainerInfo:
             },
             host=url.host or "localhost",
         )
-    info = docker(
-        "mosquito/aiormq-rabbitmq",
-        ["5672/tcp", "5671/tcp", "15672/tcp", "15671/tcp"],
-    )
-    # Readiness probe - wait for RabbitMQ to be ready
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            try:
-                sock.connect((info.host, info.ports["5672/tcp"]))
-                sock.send(b"AMQP\x00\x00\x09\x01")
-                data = sock.recv(4)
-                if len(data) == 4:
-                    return info
-            except ConnectionError:
-                pass
-        sleep(0.3)
+    else:
+        info = docker(
+            "mosquito/aiormq-rabbitmq",
+            ["5672/tcp", "5671/tcp", "15672/tcp", "15671/tcp"],
+        )
+    # A CI service container can accept TCP before the broker listens.
+    wait_for_broker(info.host, info.ports["5672/tcp"])
+    return info
 
 
 @pytest.fixture(scope="session")
@@ -229,7 +239,8 @@ def memory_tracer():
 
 @pytest.fixture()
 async def proxy(tcp_proxy, localhost, amqp_url: URL):
-    port = amqp_url.port or 5672 if amqp_url.scheme == "amqp" else 5671
+    default_port = 5672 if amqp_url.scheme == "amqp" else 5671
+    port = amqp_url.port or default_port
     async with tcp_proxy(amqp_url.host, port) as proxy:
         yield proxy
 
