@@ -960,11 +960,9 @@ class Connection(Base, AbstractConnection):
 
         self.channels[channel_number] = channel
 
-        try:
-            await channel.open(timeout=timeout)
-        except Exception:
-            self.channels[channel_number] = None
-            raise
+        # On failure the channel removes itself from self.channels when
+        # its reader task exits. This covers cancellation too.
+        await channel.open(timeout=timeout)
 
         return channel
 

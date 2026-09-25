@@ -122,7 +122,7 @@ class Channel(Base, AbstractChannel):
         self.on_return_callbacks: Set[ReturnCallback] = set()
         self._close_exception = None
 
-        self.create_task(self._reader())
+        self.__reader_task = self.create_task(self._reader())
 
         self.__close_reply_code: int = REPLY_SUCCESS
         self.__close_reply_text: str = ""
@@ -166,6 +166,7 @@ class Channel(Base, AbstractChannel):
         lock = self.lock
 
         async with countdown.enter_context(lock):
+            sent = False
             try:
                 await countdown(
                     self.write_queue.put(
@@ -175,6 +176,7 @@ class Channel(Base, AbstractChannel):
                         ),
                     ),
                 )
+                sent = True
 
                 if not (frame.synchronous or getattr(frame, "nowait", False)):
                     return None
@@ -197,6 +199,13 @@ class Channel(Base, AbstractChannel):
                 )
 
                 self.__close_event.set()
+
+                if not sent:
+                    # The frame did not reach the writer, so the channel
+                    # state on the broker is unchanged. Close locally.
+                    self._close_locally()
+                    raise
+
                 await self.write_queue.put(
                     ChannelFrame.marshall(
                         channel_number=self.number,
@@ -215,13 +224,30 @@ class Channel(Base, AbstractChannel):
 
                 raise
 
-    async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
-        frame: spec.Channel.OpenOk = await self.rpc(
-            spec.Channel.Open(), timeout=timeout,
-        )
+    def _close_locally(self) -> None:
+        """Close the channel without a Channel.Close handshake.
 
-        if self.publisher_confirms:
-            await self.rpc(spec.Confirm.Select())
+        Use it when no frame reached the broker for this channel. The
+        reader task removes the channel from the connection on exit.
+        """
+        self.__close_event.set()
+        self.__reader_task.cancel()
+
+    async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
+        try:
+            frame: spec.Channel.OpenOk = await self.rpc(
+                spec.Channel.Open(), timeout=timeout,
+            )
+
+            if self.publisher_confirms:
+                await self.rpc(spec.Confirm.Select())
+        except BaseException:
+            if not self.__close_event.is_set():
+                # rpc() did not run or failed before it sent a frame, so
+                # the broker has no channel to close. Cancellation before
+                # the rpc task starts takes this path.
+                self._close_locally()
+            raise
 
         if frame is None:  # pragma: no cover
             raise AMQPFrameError(frame)
@@ -450,6 +476,8 @@ class Channel(Base, AbstractChannel):
             last_exception = e
             raise
         finally:
+            # The channel number is free again for every close path.
+            self.connection.channels.pop(self.number, None)
             await self.close(
                 last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT,
             )
