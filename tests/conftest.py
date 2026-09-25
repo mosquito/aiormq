@@ -229,7 +229,8 @@ def memory_tracer():
 
 @pytest.fixture()
 async def proxy(tcp_proxy, localhost, amqp_url: URL):
-    port = amqp_url.port or 5672 if amqp_url.scheme == "amqp" else 5671
+    default_port = 5672 if amqp_url.scheme == "amqp" else 5671
+    port = amqp_url.port or default_port
     async with tcp_proxy(amqp_url.host, port) as proxy:
         yield proxy
 
