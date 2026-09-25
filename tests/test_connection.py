@@ -9,6 +9,7 @@ from typing import Any, Optional, Tuple
 
 import aiomisc
 import pytest
+from pamqp import exceptions as pamqp_exceptions
 from pamqp.commands import Basic
 from yarl import URL
 
@@ -579,6 +580,57 @@ async def test_channel_open_cancelled(
     await connection.close()
     assert factory.writer is not None
     assert factory.writer.is_closing()
+
+
+FIRST_FRAME_FAILURES = {
+    # The server closes the connection before it sends a frame.
+    "eof": b"",
+    # The server sends bytes that are not an AMQP frame.
+    "garbage": b"HTTP/1.1 400 Bad Request\r\n\r\n",
+    # The server sends a valid frame that is not Connection.Start.
+    "heartbeat": b"\x08\x00\x00\x00\x00\x00\x00\xce",
+}
+
+
+@aiomisc.timeout(10)
+@pytest.mark.parametrize("reply", list(FIRST_FRAME_FAILURES))
+async def test_connect_first_frame_failure_closes_transport(
+    reply: str, event_loop,
+):
+    # Regression test for issue #138. A failure before Connection.Start
+    # is received must close the transport.
+    async def serve(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter,
+    ) -> None:
+        await reader.readexactly(8)     # the protocol header
+        writer.write(FIRST_FRAME_FAILURES[reply])
+        await writer.drain()
+        writer.close()
+
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+
+    try:
+        connection = Connection(
+            URL(f"amqp://guest:guest@127.0.0.1:{port}/"), loop=event_loop,
+        )
+        factory = WriterCapturingTransportFactory(
+            connection._transport_factory,
+        )
+        connection._transport_factory = factory
+
+        # AMQPInternalError comes from pamqp and is not an aiormq error.
+        with pytest.raises(
+            (aiormq.exceptions.AMQPError, pamqp_exceptions.AMQPError),
+        ):
+            await connection.connect()
+
+        assert factory.writer is not None
+        assert factory.writer.is_closing(), "transport is not closed"
+        assert connection.is_closed
+    finally:
+        server.close()
+        await server.wait_closed()
 
 
 class BadNetwork:
