@@ -1,13 +1,8 @@
 import asyncio
-import atexit
 import gc
 import logging
 import os
-import socket
 import tracemalloc
-from contextlib import suppress
-from time import monotonic, sleep
-from typing import Any, Callable, Generator
 
 import pamqp
 import pytest
@@ -16,127 +11,10 @@ from yarl import URL
 
 from aiormq import Connection
 
-from .docker_client import (
-    ContainerInfo,
-    DockerClient,
-    DockerHostInfo,
-    DockerNotAvailableError,
-    check_docker_available,
-)
-
-# Cached docker host info from pytest_configure
-_docker_host_info: DockerHostInfo | None = None
-
-# Global registry for atexit cleanup
-_docker_client: DockerClient | None = None
-_docker_containers: set[str] = set()
-
-
-def _atexit_kill_containers() -> None:
-    """Kill all containers on exit (handles crashes/interrupts)."""
-    if _docker_client is None:
-        return
-    for container_id in _docker_containers:
-        with suppress(Exception):
-            _docker_client.kill(container_id)
-        with suppress(Exception):
-            _docker_client.remove(container_id)
-    _docker_containers.clear()
-
-
-atexit.register(_atexit_kill_containers)
-
 
 def cert_path(*args):
     return os.path.join(
         os.path.abspath(os.path.dirname(__file__)), "certs", *args,
-    )
-
-
-def pytest_configure(config: pytest.Config) -> None:
-    """Check Docker availability before running tests."""
-    global _docker_host_info
-    if os.environ.get("AMQP_URL"):
-        return
-    try:
-        _docker_host_info = check_docker_available()
-    except DockerNotAvailableError as e:
-        raise pytest.UsageError(str(e)) from e
-
-
-@pytest.fixture(scope="session")
-def docker() -> Generator[Callable[..., ContainerInfo], Any, Any]:
-    global _docker_client
-    _docker_client = DockerClient(_docker_host_info)
-
-    def docker_run(
-        image: str, ports: list[str],
-        environment: dict[str, str] | None = None,
-    ) -> ContainerInfo:
-        info = _docker_client.run(image, ports, environment=environment)
-        _docker_containers.add(info.id)
-        return info
-
-    try:
-        yield docker_run
-    finally:
-        for container_id in list(_docker_containers):
-            with suppress(Exception):
-                _docker_client.kill(container_id)
-            with suppress(Exception):
-                _docker_client.remove(container_id)
-            _docker_containers.discard(container_id)
-
-
-def wait_for_broker(host: str, port: int, timeout: float = 60.0) -> None:
-    """Block until the broker answers the AMQP protocol header."""
-    deadline = monotonic() + timeout
-    while True:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(5)
-            try:
-                sock.connect((host, port))
-                sock.send(b"AMQP\x00\x00\x09\x01")
-                if len(sock.recv(4)) == 4:
-                    return
-            except OSError:
-                pass
-        if monotonic() > deadline:
-            pytest.fail(f"RabbitMQ at {host}:{port} is not ready")
-        sleep(0.3)
-
-
-@pytest.fixture(scope="session")
-def rabbitmq_container(docker) -> ContainerInfo:
-    amqp_url = os.environ.get("AMQP_URL")
-    if amqp_url:
-        url = URL(amqp_url)
-        info = ContainerInfo(
-            id="ci-service",
-            ports={
-                "5672/tcp": url.port or 5672,
-                "5671/tcp": 5671,
-                "15672/tcp": 15672,
-                "15671/tcp": 15671,
-            },
-            host=url.host or "localhost",
-        )
-    else:
-        info = docker(
-            "mosquito/aiormq-rabbitmq",
-            ["5672/tcp", "5671/tcp", "15672/tcp", "15671/tcp"],
-        )
-    # A CI service container can accept TCP before the broker listens.
-    wait_for_broker(info.host, info.ports["5672/tcp"])
-    return info
-
-
-@pytest.fixture(scope="session")
-def amqp_direct_url(rabbitmq_container: ContainerInfo) -> URL:
-    return URL.build(
-        scheme="amqp", user="guest", password="guest", path="//",
-        host=rabbitmq_container.host,
-        port=rabbitmq_container.ports["5672/tcp"],
     )
 
 
