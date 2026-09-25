@@ -129,6 +129,9 @@ class Channel(Base, AbstractChannel):
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
         self.__close_event: asyncio.Event = asyncio.Event()
+        # True after Channel.Open reached the writer. From that point
+        # the broker has (or will have) a channel with this number.
+        self.__open_sent = False
 
     def set_close_reason(
         self, reply_code: int = REPLY_SUCCESS,
@@ -166,7 +169,11 @@ class Channel(Base, AbstractChannel):
         lock = self.lock
 
         async with countdown.enter_context(lock):
-            sent = False
+            # Another call can close the channel while this call waits for
+            # the lock. Do not send a frame on a closed channel.
+            if self.__close_event.is_set():
+                raise ChannelInvalidStateError("Channel closed by RPC timeout")
+
             try:
                 await countdown(
                     self.write_queue.put(
@@ -176,7 +183,9 @@ class Channel(Base, AbstractChannel):
                         ),
                     ),
                 )
-                sent = True
+
+                if isinstance(frame, spec.Channel.Open):
+                    self.__open_sent = True
 
                 if not (frame.synchronous or getattr(frame, "nowait", False)):
                     return None
@@ -193,45 +202,53 @@ class Channel(Base, AbstractChannel):
                 if self.is_closed:
                     raise
 
-                log.warning(
-                    "Closing channel %r because RPC call %s cancelled",
-                    self, frame,
-                )
-
-                self.__close_event.set()
-
-                if not sent:
-                    # The frame did not reach the writer, so the channel
-                    # state on the broker is unchanged. Close locally.
-                    self._close_locally()
-                    raise
-
-                await self.write_queue.put(
-                    ChannelFrame.marshall(
-                        channel_number=self.number,
-                        frames=[
-                            spec.Channel.Close(
-                                class_id=0,
-                                method_id=0,
-                                reply_code=504,
-                                reply_text=(
-                                    "RPC timeout on frame {!s}".format(frame)
-                                ),
-                            ),
-                        ],
-                    ),
-                )
-
+                await self.__close_after_failure(frame)
                 raise
+
+    async def __close_after_failure(self, frame: Optional[Frame]) -> None:
+        """Close the channel after a cancelled or timed out RPC call.
+
+        When Channel.Open reached the writer, the broker has a channel
+        with this number and a Channel.Close handshake frees the number.
+        Otherwise the channel is closed locally.
+        """
+        self.__close_event.set()
+
+        if not self.__open_sent:
+            log.warning(
+                "Closing channel %r locally because RPC call %s cancelled "
+                "before Channel.Open was sent", self, frame,
+            )
+            self._close_locally()
+            return
+
+        log.warning(
+            "Closing channel %r because RPC call %s cancelled", self, frame,
+        )
+
+        await self.write_queue.put(
+            ChannelFrame.marshall(
+                channel_number=self.number,
+                frames=[
+                    spec.Channel.Close(
+                        class_id=0,
+                        method_id=0,
+                        reply_code=504,
+                        reply_text="RPC timeout on frame {!s}".format(frame),
+                    ),
+                ],
+            ),
+        )
 
     def _close_locally(self) -> None:
         """Close the channel without a Channel.Close handshake.
 
-        Use it when no frame reached the broker for this channel. The
-        reader task removes the channel from the connection on exit.
+        Use it only when Channel.Open did not reach the writer. The broker
+        has no channel with this number, so the number is free at once.
         """
         self.__close_event.set()
         self.__reader_task.cancel()
+        self.connection.channels.pop(self.number, None)
 
     async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
         try:
@@ -243,10 +260,10 @@ class Channel(Base, AbstractChannel):
                 await self.rpc(spec.Confirm.Select())
         except BaseException:
             if not self.__close_event.is_set():
-                # rpc() did not run or failed before it sent a frame, so
-                # the broker has no channel to close. Cancellation before
-                # the rpc task starts takes this path.
-                self._close_locally()
+                # rpc() did not run, or it failed before its own cleanup.
+                # Cancellation before the rpc task starts takes this path,
+                # also between Channel.OpenOk and Confirm.Select.
+                await self.__close_after_failure(None)
             raise
 
         if frame is None:  # pragma: no cover
@@ -476,8 +493,6 @@ class Channel(Base, AbstractChannel):
             last_exception = e
             raise
         finally:
-            # The channel number is free again for every close path.
-            self.connection.channels.pop(self.number, None)
             await self.close(
                 last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT,
             )

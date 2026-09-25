@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from os import urandom
 
+import aiomisc
 import pytest
 from aiomisc_pytest import TCPProxy
 
@@ -246,3 +247,87 @@ async def test_routing_key_too_large(amqp_channel: aiormq.Channel):
         await amqp_channel.queue_unbind(queue.queue, exchange, routing_key)
 
     await amqp_channel.exchange_delete(exchange)
+
+
+@aiomisc.timeout(20)
+async def test_channel_close_after_rpc_timeout(proxy_connection, proxy):
+    # Regression test for issue #83. A timed out RPC call must not block
+    # channel.close() and the connection must stay usable.
+    channel = await proxy_connection.channel()
+
+    with proxy.slowdown(1, 1):
+        with pytest.raises(asyncio.TimeoutError):
+            await channel.queue_declare(auto_delete=True, timeout=0.1)
+
+    await asyncio.wait_for(channel.close(), timeout=5)
+
+    assert not proxy_connection.is_closed
+    channel = await proxy_connection.channel()
+    await channel.queue_declare(auto_delete=True)
+    await channel.close()
+
+
+@aiomisc.timeout(20)
+async def test_channel_close_while_rpc_pending(proxy_connection, proxy):
+    # close() waits for the channel lock while an RPC call is pending. When
+    # that call is cancelled the channel is closed once; a second
+    # Channel.Close on the closed channel would be a protocol error.
+    channel = await proxy_connection.channel()
+
+    with proxy.slowdown(0.5, 0.5):
+        declare = asyncio.ensure_future(
+            channel.queue_declare(auto_delete=True),
+        )
+        await asyncio.sleep(0.1)
+        close = asyncio.ensure_future(channel.close())
+        await asyncio.sleep(0.1)
+        declare.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await declare
+        await asyncio.wait_for(close, timeout=10)
+
+    # Give the broker time to react to the frames it received.
+    await asyncio.sleep(0.5)
+    assert not proxy_connection.is_closed
+    channel = await proxy_connection.channel()
+    await channel.queue_declare(auto_delete=True)
+    await channel.close()
+
+
+@aiomisc.timeout(20)
+async def test_rpc_cancelled_during_put(amqp_connection: aiormq.Connection):
+    # A cancel while the frame waits for the write queue must still close
+    # the open channel on the broker with a Channel.Close handshake.
+    channel = await amqp_connection.channel()
+
+    class BlockingQueue:
+        def __init__(self, queue: asyncio.Queue):
+            self.queue = queue
+            self.block = True
+
+        async def put(self, item):
+            if self.block:
+                self.block = False
+                await asyncio.Event().wait()    # blocks until cancelled
+            await self.queue.put(item)
+
+        def __getattr__(self, name):
+            return getattr(self.queue, name)
+
+    channel.write_queue = BlockingQueue(channel.write_queue)    # type: ignore
+
+    declare = asyncio.ensure_future(channel.queue_declare(auto_delete=True))
+    await asyncio.sleep(0.1)
+    declare.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await declare
+
+    assert channel.number in amqp_connection.channels
+
+    # The broker confirms the close and the number becomes free.
+    while channel.number in amqp_connection.channels:
+        await asyncio.sleep(0.05)
+
+    other = await amqp_connection.channel(channel_number=channel.number)
+    await other.queue_declare(auto_delete=True)
+    await other.close()

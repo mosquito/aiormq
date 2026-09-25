@@ -752,7 +752,9 @@ class Connection(Base, AbstractConnection):
                     continue
 
                 if isinstance(frame, CHANNEL_CLOSE_RESPONSES):
-                    self.channels[channel] = None
+                    # The broker confirmed the close. The number is free
+                    # even when the channel object is already closed.
+                    self.channels.pop(channel, None)
 
                 await ch.frames.put((weight, frame))
         except asyncio.CancelledError:
