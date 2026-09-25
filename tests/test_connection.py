@@ -544,6 +544,43 @@ async def test_writer_closed_on_connection_loss(
     assert writer.is_closing(), "StreamWriter is not closed"
 
 
+@aiomisc.timeout(30)
+@pytest.mark.parametrize("cancel_after", [0.0, 0.1, 0.3, 0.5])
+async def test_channel_open_cancelled(
+    cancel_after: float, proxy, amqp_url: URL, event_loop,
+):
+    # Regression test for issue #139. A cancelled channel open must not
+    # break the connection and must not leak the socket.
+    url = amqp_url.with_host(
+        proxy.proxy_host,
+    ).with_port(
+        proxy.proxy_port,
+    )
+
+    connection = Connection(url, loop=event_loop)
+    factory = WriterCapturingTransportFactory(connection._transport_factory)
+    connection._transport_factory = factory
+    await connection.connect()
+
+    # Each proxied packet is delayed, so Channel.Open and Confirm.Select
+    # take about 0.4 s each. The cancel points hit both RPC calls.
+    with proxy.slowdown(0.2, 0.2):
+        task = asyncio.ensure_future(connection.channel())
+        await asyncio.sleep(cancel_after)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    # The connection must stay usable.
+    channel = await connection.channel()
+    await channel.close()
+    assert not connection.channels
+
+    await connection.close()
+    assert factory.writer is not None
+    assert factory.writer.is_closing()
+
+
 class BadNetwork:
     def __init__(self, proxy, stair: int, disconnect_time: float):
         self.proxy = proxy
