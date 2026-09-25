@@ -16,6 +16,7 @@ from yarl import URL
 import aiormq
 from aiormq.abc import ChannelFrame, DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
+from aiormq.channel import Channel
 from aiormq.connection import (
     Connection,
     SSLContextProvider,
@@ -580,6 +581,42 @@ async def test_channel_open_cancelled(
     await connection.close()
     assert factory.writer is not None
     assert factory.writer.is_closing()
+
+
+@aiomisc.timeout(20)
+async def test_channel_open_cancelled_after_open_ok(
+    amqp_connection: aiormq.Connection, monkeypatch,
+):
+    # A cancel between Channel.OpenOk and Confirm.Select must close the
+    # channel on the broker. A local close would leave the broker channel
+    # open, and a later channel with the same number would break the
+    # connection.
+    original_rpc = Channel.rpc
+
+    async def rpc(self, frame, timeout=None):
+        if isinstance(frame, aiormq.spec.Confirm.Select):
+            task = asyncio.current_task()
+            assert task is not None
+            task.cancel()
+        return await original_rpc(self, frame, timeout=timeout)
+
+    monkeypatch.setattr(Channel, "rpc", rpc)
+    task = asyncio.ensure_future(amqp_connection.channel())
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    monkeypatch.undo()
+
+    numbers = set(amqp_connection.channels)
+    assert len(numbers) == 1, "the number stays reserved until CloseOk"
+    number = numbers.pop()
+
+    # The broker confirms the close and the number becomes free.
+    while number in amqp_connection.channels:
+        await asyncio.sleep(0.05)
+
+    channel = await amqp_connection.channel(channel_number=number)
+    await channel.queue_declare(auto_delete=True)
+    await channel.close()
 
 
 FIRST_FRAME_FAILURES = {

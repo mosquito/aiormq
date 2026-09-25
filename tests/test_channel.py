@@ -292,3 +292,42 @@ async def test_channel_close_while_rpc_pending(proxy_connection, proxy):
     channel = await proxy_connection.channel()
     await channel.queue_declare(auto_delete=True)
     await channel.close()
+
+
+@aiomisc.timeout(20)
+async def test_rpc_cancelled_during_put(amqp_connection: aiormq.Connection):
+    # A cancel while the frame waits for the write queue must still close
+    # the open channel on the broker with a Channel.Close handshake.
+    channel = await amqp_connection.channel()
+
+    class BlockingQueue:
+        def __init__(self, queue: asyncio.Queue):
+            self.queue = queue
+            self.block = True
+
+        async def put(self, item):
+            if self.block:
+                self.block = False
+                await asyncio.Event().wait()    # blocks until cancelled
+            await self.queue.put(item)
+
+        def __getattr__(self, name):
+            return getattr(self.queue, name)
+
+    channel.write_queue = BlockingQueue(channel.write_queue)    # type: ignore
+
+    declare = asyncio.ensure_future(channel.queue_declare(auto_delete=True))
+    await asyncio.sleep(0.1)
+    declare.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await declare
+
+    assert channel.number in amqp_connection.channels
+
+    # The broker confirms the close and the number becomes free.
+    while channel.number in amqp_connection.channels:
+        await asyncio.sleep(0.05)
+
+    other = await amqp_connection.channel(channel_number=channel.number)
+    await other.queue_declare(auto_delete=True)
+    await other.close()
