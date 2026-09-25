@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from os import urandom
 
+import aiomisc
 import pytest
 from aiomisc_pytest import TCPProxy
 
@@ -246,3 +247,48 @@ async def test_routing_key_too_large(amqp_channel: aiormq.Channel):
         await amqp_channel.queue_unbind(queue.queue, exchange, routing_key)
 
     await amqp_channel.exchange_delete(exchange)
+
+
+@aiomisc.timeout(20)
+async def test_channel_close_after_rpc_timeout(proxy_connection, proxy):
+    # Regression test for issue #83. A timed out RPC call must not block
+    # channel.close() and the connection must stay usable.
+    channel = await proxy_connection.channel()
+
+    with proxy.slowdown(1, 1):
+        with pytest.raises(asyncio.TimeoutError):
+            await channel.queue_declare(auto_delete=True, timeout=0.1)
+
+    await asyncio.wait_for(channel.close(), timeout=5)
+
+    assert not proxy_connection.is_closed
+    channel = await proxy_connection.channel()
+    await channel.queue_declare(auto_delete=True)
+    await channel.close()
+
+
+@aiomisc.timeout(20)
+async def test_channel_close_while_rpc_pending(proxy_connection, proxy):
+    # close() waits for the channel lock while an RPC call is pending. When
+    # that call is cancelled the channel is closed once; a second
+    # Channel.Close on the closed channel would be a protocol error.
+    channel = await proxy_connection.channel()
+
+    with proxy.slowdown(0.5, 0.5):
+        declare = asyncio.ensure_future(
+            channel.queue_declare(auto_delete=True),
+        )
+        await asyncio.sleep(0.1)
+        close = asyncio.ensure_future(channel.close())
+        await asyncio.sleep(0.1)
+        declare.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await declare
+        await asyncio.wait_for(close, timeout=10)
+
+    # Give the broker time to react to the frames it received.
+    await asyncio.sleep(0.5)
+    assert not proxy_connection.is_closed
+    channel = await proxy_connection.channel()
+    await channel.queue_declare(auto_delete=True)
+    await channel.close()

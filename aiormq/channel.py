@@ -166,6 +166,11 @@ class Channel(Base, AbstractChannel):
         lock = self.lock
 
         async with countdown.enter_context(lock):
+            # Another call can close the channel while this call waits for
+            # the lock. Do not send a frame on a closed channel.
+            if self.__close_event.is_set():
+                raise ChannelInvalidStateError("Channel closed by RPC timeout")
+
             sent = False
             try:
                 await countdown(
@@ -232,6 +237,8 @@ class Channel(Base, AbstractChannel):
         """
         self.__close_event.set()
         self.__reader_task.cancel()
+        # No frame reached the broker, so the number is free at once.
+        self.connection.channels.pop(self.number, None)
 
     async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
         try:
@@ -476,8 +483,6 @@ class Channel(Base, AbstractChannel):
             last_exception = e
             raise
         finally:
-            # The channel number is free again for every close path.
-            self.connection.channels.pop(self.number, None)
             await self.close(
                 last_exception, timeout=self.CHANNEL_CLOSE_TIMEOUT,
             )
