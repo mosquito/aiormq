@@ -114,6 +114,6 @@ class CountdownContext(AsyncContextManager):
         self, exc_type: Optional[Type[BaseException]],
         exc_val: Optional[BaseException], exc_tb: Optional[TracebackType],
     ) -> Any:
-        return await self.countdown(
-            self.ctx.__aexit__(exc_type, exc_val, exc_tb),
-        )
+        # Do not apply the deadline here. An expired deadline must not
+        # skip the exit of the inner context, or a lock stays acquired.
+        return await self.ctx.__aexit__(exc_type, exc_val, exc_tb)
