@@ -43,6 +43,11 @@ class TaskWrapper:
         try:
             return await self.task
         except asyncio.CancelledError as e:
+            if (
+                isinstance(self._exception, BaseException) and
+                self._exception.__cause__ is not None
+            ):
+                raise self._exception
             raise self._exception from e
 
     def __await__(self, *args: Any, **kwargs: Any) -> Any:

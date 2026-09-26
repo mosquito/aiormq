@@ -187,6 +187,12 @@ On a connection, `close(exc=None)` permits a normal result. Do not use log messa
 reader/writer attributes as a connection health API. `is_closed` is a snapshot;
 the connection can fail immediately after the check.
 
+Pamqp protocol exceptions during frame decoding become `aiormq.InvalidFrameError`,
+with the original exception available as `__cause__`. Unexpected handshake
+frames and protocol headers raise `InvalidFrameError` or `ProtocolSyntaxError`.
+Both belong to `aiormq.AMQPError`, so one handler can catch them together with
+other AMQP errors during connection setup or when awaiting `connection.closing`.
+
 The helper below reports closure while preserving cancellation of the task
 that is waiting. It does not retry operations:
 
@@ -203,14 +209,14 @@ async def observe_closure(connection):
         if asyncio.current_task().cancelling():
             raise  # The application is stopping this task.
         return exc  # Cancellation reported by the connection itself.
-    except aiormq.AMQPConnectionError as exc:
+    except aiormq.AMQPError as exc:
         return exc
     return None
 ```
 <!--
 name: test_observe_closure
 ```python
-for reason in (None, asyncio.CancelledError(), aiormq.ConnectionClosed(320, "shutdown")):
+for reason in (None, asyncio.CancelledError(), aiormq.ConnectionClosed(320, "shutdown"), aiormq.InvalidFrameError("bad frame")):
     async with aiormq.connect(amqp_url) as connection:
         observer = asyncio.create_task(observe_closure(connection))
         await connection.close(exc=reason)
