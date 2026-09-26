@@ -790,7 +790,7 @@ class Connection(Base, AbstractConnection):
             frames=[Heartbeat()], channel_number=0,
         )
 
-        while not self.closing.done():
+        while not self._closing.done():
             if self.is_connection_was_stuck:
                 self._reader_task.cancel()
                 return
@@ -811,7 +811,7 @@ class Connection(Base, AbstractConnection):
 
         try:
             frame_iterator = FrameGenerator(self.write_queue)
-            self.closing.add_done_callback(
+            self._closing.add_done_callback(
                 lambda _: frame_iterator.close_event.set(),
             )
 
@@ -899,12 +899,12 @@ class Connection(Base, AbstractConnection):
         await asyncio.gather(
             self._reader_task, self._writer_task, return_exceptions=True,
         )
-        if self.closing.done():
+        if self._closing.done():
             return
         if ex is None:
-            self.closing.set_result(None)
+            self._closing.set_result(None)
         else:
-            self.closing.set_exception(ex)
+            self._closing.set_exception(ex)
 
     @property
     def server_capabilities(self) -> ArgumentsType:

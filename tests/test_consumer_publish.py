@@ -121,7 +121,7 @@ async def test_publish_preserves_external_cancellation(
         await entered.wait()
         if external != "only":
             channel._close_exception = reason
-            channel.closing.set_exception(reason)
+            channel._closing.set_exception(reason)
         if external == "before":
             task.cancel("user cancellation")
             task.cancel(reason)

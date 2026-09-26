@@ -837,11 +837,11 @@ class Channel(Base, AbstractChannel):
             # rejecting pending confirmations. Inside a consumer, expose
             # the error that caused this cancellation to the publisher.
             task = asyncio.current_task()
-            if self.closing.done() and not self.closing.cancelled():
+            if self._closing.done() and not self._closing.cancelled():
                 reason = self._close_exception
                 if (
                     isinstance(reason, Exception)
-                    and self.closing.exception() is reason
+                    and self._closing.exception() is reason
                     and len(exc.args) == 1
                     and exc.args[0] is reason
                     and task is not None
