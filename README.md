@@ -256,6 +256,20 @@ drain; it does **not** disable publisher confirms. Use `mandatory=True` and the
 default `on_return_raises=True` to receive `PublishError` for an unroutable
 message; routing failure is separate from a disconnect.
 
+A broker `Basic.Nack` raises `DeliveryError`. Its text includes the delivery
+sequence number and whether the reply covers multiple publications;
+`error.frame` retains the original frame. A Nack carries no reason code or
+explanation, so inspect broker logs and queue policies for the cause. For
+example, a full queue configured with `overflow=reject-publish` can reject
+new publications. See [queue overflow behaviour](https://www.rabbitmq.com/docs/maxlength#queue-overflow-behaviour).
+
+`PublishError` is a subclass of `DeliveryError` for returned messages. Its
+text includes `Basic.Return`'s reply code, reply text, exchange and routing
+key; `error.message` contains the returned message. A Nack's delivery tag is
+local to the publishing channel, not an application message identifier.
+Decide whether to retry based on the failure and application requirements;
+aiormq does not retry automatically.
+
 A timeout or lost connection does not establish whether the broker accepted
 the publication. Retrying an unconfirmed message can produce a duplicate if
 only the confirmation was lost. Preserve an application message identifier
