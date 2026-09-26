@@ -144,7 +144,7 @@ class Channel(Base, AbstractChannel):
         self.on_consumer_cancel_callbacks: Set[
             ConsumerCancelCallback
         ] = set()
-        self._close_exception = None
+        self._close_exception: BaseException | None = None
 
         self.__reader_task = self.create_task(self._reader())
 
@@ -606,6 +606,7 @@ class Channel(Base, AbstractChannel):
 
     async def _on_close_frame(self, frame: spec.Channel.Close) -> None:
         exc: BaseException = exception_by_code(frame)
+        self._close_exception = exc
         with suppress(asyncio.QueueFull):
             self.write_queue.put_nowait(
                 ChannelFrame.marshall(
@@ -827,6 +828,31 @@ class Channel(Base, AbstractChannel):
             reader = partial(fp.read, self.max_content_size)
             return list(map(ContentBody, iter(reader, b"")))
 
+    @asynccontextmanager
+    async def _raise_on_channel_close(self) -> AsyncGenerator[None, None]:
+        try:
+            yield
+        except asyncio.CancelledError as exc:
+            # Closing the channel cancels its consumer tasks as well as
+            # rejecting pending confirmations. Inside a consumer, expose
+            # the error that caused this cancellation to the publisher.
+            task = asyncio.current_task()
+            if self.closing.done() and not self.closing.cancelled():
+                reason = self._close_exception
+                if (
+                    isinstance(reason, Exception)
+                    and self.closing.exception() is reason
+                    and len(exc.args) == 1
+                    and exc.args[0] is reason
+                    and task is not None
+                    and task.cancelling() == 1
+                ):
+                    # Remove only our cancellation. A concurrent external
+                    # cancellation must remain a CancelledError.
+                    task.uncancel()
+                    raise reason from exc
+            raise
+
     async def basic_publish(
         self,
         body: bytes,
@@ -863,7 +889,10 @@ class Channel(Base, AbstractChannel):
 
         # Keep cancellation in this task: a wait_for task could enqueue a
         # frame just before its caller is cancelled, making rollback unsafe.
-        async with asyncio.timeout(countdown.get_timeout()):
+        async with (
+            self._raise_on_channel_close(),
+            asyncio.timeout(countdown.get_timeout()),
+        ):
             async with self.lock:
                 self.delivery_tag += 1
                 delivery_tag = self.delivery_tag
