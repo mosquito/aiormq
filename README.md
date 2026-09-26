@@ -16,6 +16,7 @@ aiormq is a pure python AMQP client library.
 * [Features](#features)
 * [Tutorial](#tutorial)
   * [Introduction](#introduction)
+  * [Connection loss and reconnecting](#connection-loss-and-reconnecting)
   * [Work Queues](#work-queues)
   * [Publish Subscribe](#publish-subscribe)
   * [Routing](#routing)
@@ -119,7 +120,7 @@ name: test_simple_consumer
 ```python
     # Keep consuming until the connection closes and report its cause.
     try:
-        await asyncio.shield(connection.closing)
+        await connection.closing
     except aiormq.AMQPConnectionError as exc:
         print(f"Connection lost: {exc}")
 ```
@@ -132,15 +133,12 @@ name: test_simple_consumer
 -->
 
 Connection failures happen in background tasks. Await `connection.closing`
-to receive their exception in your application: a graceful broker shutdown
-raises `ConnectionClosed`, while a transport failure can raise another
-`AMQPConnectionError`. `asyncio.shield` prevents cancellation of the waiting
-task from cancelling the shared closing future. The connection context
-manager handles cleanup when the block exits.
-
-aiormq does not reconnect automatically. To reconnect, create a new connection
-and recreate its channels and consumers, or use
-[aio-pika's robust connections](https://docs.aio-pika.com/quick-start.html).
+to receive their close reason in your application. Each access while the
+connection is open returns an independent observer, so cancelling this wait
+does not cancel the connection's close state. The connection context manager
+handles cleanup when the block exits. See
+[Connection loss and reconnecting](#connection-loss-and-reconnecting) for
+heartbeat cancellation, publication failures and recovery.
 
 #### Simple publisher
 
@@ -158,7 +156,9 @@ async with aiormq.connect(amqp_url) as connection:
     declare_ok = await channel.queue_declare("hello", auto_delete=True)
 
     # Sending the message
-    await channel.basic_publish(body, routing_key='hello')
+    await channel.basic_publish(
+        body, routing_key='hello', mandatory=True, timeout=10,
+    )
     print(f" [x] Sent {body}")
 
     message = await channel.basic_get(declare_ok.queue)
@@ -168,6 +168,123 @@ async with aiormq.connect(amqp_url) as connection:
     assert message.routing_key == "hello"
     assert message.body == b'Hello World!'
 ```
+
+### Connection loss and reconnecting
+
+#### Detecting closure
+
+Both connections and channels expose a `closing` future. Await it to observe
+closure, or register a synchronous callback with
+`connection.closing.add_done_callback(callback)`. The callback receives the
+future; call its `result()` to retrieve the close reason, handling exceptions.
+A channel can close while the connection and its other channels remain usable,
+so watch `channel.closing` too when your application depends on that channel.
+
+A broker shutdown normally raises `ConnectionClosed` (an `AMQPConnectionError`);
+a broken transport can raise another `AMQPConnectionError`. Heartbeat expiry
+and the default `close()` can instead produce `asyncio.CancelledError`.
+On a connection, `close(exc=None)` permits a normal result. Do not use log messages or private
+reader/writer attributes as a connection health API. `is_closed` is a snapshot;
+the connection can fail immediately after the check.
+
+The helper below reports closure while preserving cancellation of the task
+that is waiting. It does not retry operations:
+
+<!-- name: async test_observe_closure; fixtures: amqp_url -->
+```python
+import asyncio
+import aiormq
+
+
+async def observe_closure(connection):
+    try:
+        await connection.closing
+    except asyncio.CancelledError as exc:
+        if asyncio.current_task().cancelling():
+            raise  # The application is stopping this task.
+        return exc  # Cancellation reported by the connection itself.
+    except aiormq.AMQPConnectionError as exc:
+        return exc
+    return None
+```
+<!--
+name: test_observe_closure
+```python
+for reason in (None, asyncio.CancelledError(), aiormq.ConnectionClosed(320, "shutdown")):
+    async with aiormq.connect(amqp_url) as connection:
+        observer = asyncio.create_task(observe_closure(connection))
+        await connection.close(exc=reason)
+        assert await observer is reason
+
+async with aiormq.connect(amqp_url) as connection:
+    observer = asyncio.create_task(observe_closure(connection))
+    await asyncio.sleep(0)
+    observer.cancel()
+    try:
+        await observer
+    except asyncio.CancelledError:
+        pass
+    else:
+        raise AssertionError("Observer cancellation was swallowed")
+    assert not connection.is_closed
+```
+-->
+
+Call `reason = await observe_closure(connection)` on an open connection.
+Use `async with aiormq.connect(url)` or `try/finally` with
+`await connection.close()` to release resources when your task exits.
+Cancelling an observer only stops that observation; it does not close the
+connection. Closure notifications are not a substitute for awaiting cleanup.
+
+#### Publishing during a disconnect
+
+`basic_publish()` uses publisher confirms by default. With confirms enabled,
+it waits for the broker's confirmation; this does not mean that a consumer has
+processed the message. Set `timeout=10`, for example, to bound the operation,
+including waiting for the channel lock, outgoing queue and confirmation.
+Expiry raises `TimeoutError`. Heartbeats help detect a dead peer, but do not
+replace an operation timeout.
+
+Pending publications can fail when their channel or connection closes. Handle
+errors around the awaited publication as well as observing `closing`.
+Cancellation can also propagate from connection shutdown or from your own
+task. Calls made after closure can raise `ChannelInvalidStateError`.
+
+With `publisher_confirms=False`, a successful return provides no broker
+confirmation. `wait=False` only skips waiting for the local write buffer to
+drain; it does **not** disable publisher confirms. Use `mandatory=True` and the
+default `on_return_raises=True` to receive `PublishError` for an unroutable
+message; routing failure is separate from a disconnect.
+
+A timeout or lost connection does not establish whether the broker accepted
+the publication. Retrying an unconfirmed message can produce a duplicate if
+only the confirmation was lost. Preserve an application message identifier
+across retries and make processing idempotent or deduplicate in the consumer;
+setting `message_id` alone does not make RabbitMQ deduplicate messages. See
+[RabbitMQ's reliability guide](https://www.rabbitmq.com/docs/reliability#data-safety-on-the-publisher-side).
+
+#### Restoring consumers and publishers
+
+aiormq does not reconnect or replay publications automatically. After a
+connection failure, create a **new connection**, then recreate channels,
+exchange/queue declarations, bindings, QoS settings and consumer registrations.
+If only one channel failed, recreate that channel on the existing connection
+after addressing the cause. Old channel objects and delivery tags cannot be
+used on the replacement channel.
+
+Use a retry delay with backoff rather than reconnecting in a tight loop, and
+allow task cancellation to stop the retry loop. Decide separately which
+unconfirmed publications to retry. For automatic connection and topology
+recovery, use [aio-pika's `connect_robust()`](https://docs.aio-pika.com/quick-start.html).
+Recovery does not remove the need to handle uncertain publication outcomes.
+
+With manual acknowledgements, unacknowledged deliveries on a closed channel
+can be redelivered while the queue still exists. Expect consumer callbacks to
+be cancelled during shutdown; do not acknowledge their old delivery tags on a
+new channel. With `no_ack=True`, RabbitMQ does not wait for processing to finish
+and cannot recover a delivery lost by the consumer. Exclusive and auto-delete
+queues may disappear when their connection or consumers go away; plan their
+recreation and message retention accordingly.
 
 ### Work Queues
 
