@@ -9,7 +9,7 @@ from random import getrandbits
 from types import MappingProxyType
 from typing import (
     Any, AsyncGenerator, Awaitable, Callable, Dict, List, Mapping, Optional,
-    Set, Tuple, Type, TypeVar, Union,
+    Set, Tuple, Type, TypeVar, Union, overload,
 )
 from uuid import UUID
 
@@ -188,6 +188,120 @@ class Channel(Base, AbstractChannel):
 
     def __str__(self) -> str:
         return str(self.number)
+
+    # The overloads give each RPC call the type of its reply frame.
+    # A call with nowait=True returns None; see the last overload.
+    @overload
+    async def rpc(
+        self, frame: spec.Channel.Open, timeout: TimeoutType = None,
+    ) -> spec.Channel.OpenOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Channel.Close, timeout: TimeoutType = None,
+    ) -> spec.Channel.CloseOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Channel.Flow, timeout: TimeoutType = None,
+    ) -> spec.Channel.FlowOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Confirm.Select, timeout: TimeoutType = None,
+    ) -> spec.Confirm.SelectOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Basic.Get, timeout: TimeoutType = None,
+    ) -> GetResultType: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Basic.Cancel, timeout: TimeoutType = None,
+    ) -> spec.Basic.CancelOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Basic.Consume, timeout: TimeoutType = None,
+    ) -> spec.Basic.ConsumeOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Basic.Qos, timeout: TimeoutType = None,
+    ) -> spec.Basic.QosOk: ...
+
+    @overload
+    async def rpc(
+        self,
+        frame: Union[spec.Basic.Recover, spec.Basic.RecoverAsync],
+        timeout: TimeoutType = None,
+    ) -> spec.Basic.RecoverOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Exchange.Declare, timeout: TimeoutType = None,
+    ) -> spec.Exchange.DeclareOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Exchange.Delete, timeout: TimeoutType = None,
+    ) -> spec.Exchange.DeleteOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Exchange.Bind, timeout: TimeoutType = None,
+    ) -> spec.Exchange.BindOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Exchange.Unbind, timeout: TimeoutType = None,
+    ) -> spec.Exchange.UnbindOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Queue.Declare, timeout: TimeoutType = None,
+    ) -> spec.Queue.DeclareOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Queue.Delete, timeout: TimeoutType = None,
+    ) -> spec.Queue.DeleteOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Queue.Bind, timeout: TimeoutType = None,
+    ) -> spec.Queue.BindOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Queue.Unbind, timeout: TimeoutType = None,
+    ) -> spec.Queue.UnbindOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Queue.Purge, timeout: TimeoutType = None,
+    ) -> spec.Queue.PurgeOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Tx.Select, timeout: TimeoutType = None,
+    ) -> spec.Tx.SelectOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Tx.Commit, timeout: TimeoutType = None,
+    ) -> spec.Tx.CommitOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: spec.Tx.Rollback, timeout: TimeoutType = None,
+    ) -> spec.Tx.RollbackOk: ...
+
+    @overload
+    async def rpc(
+        self, frame: Frame, timeout: TimeoutType = None,
+    ) -> RpcReturnType: ...
 
     @task
     async def rpc(
