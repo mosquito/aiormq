@@ -2,7 +2,9 @@ import asyncio
 import errno
 import inspect
 import itertools
+import logging
 import os
+import struct
 import ssl
 import sys
 import uuid
@@ -20,6 +22,7 @@ import aiormq
 from aiormq.abc import ChannelFrame, DeliveredMessage, SSLCerts
 from aiormq.auth import AuthBase, ExternalAuth, PlainAuth
 from aiormq.channel import Channel
+from aiormq.exceptions import AMQPConnectionError
 from aiormq.connection import (
     Connection,
     SSLContextProvider,
@@ -943,3 +946,43 @@ PARSE_BOOL_PARAMS = (
 @pytest.mark.parametrize("value,expected", PARSE_BOOL_PARAMS)
 def test_parse_bool(value, expected):
     assert parse_bool(value) == expected
+
+
+async def test_reader_failure_is_logged_with_cause(
+    proxy_connection: aiormq.Connection, proxy, caplog,
+):
+    # A frame with an unknown type makes pamqp fail inside the reader task
+    bad_frame = struct.pack(">BHI", 9, 0, 0) + b"\xce"
+
+    proxy.set_content_processors(
+        lambda chunk: chunk,
+        lambda chunk: bad_frame,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="aiormq.connection"):
+        with pytest.raises(Exception):
+            await asyncio.wait_for(proxy_connection.channel(), timeout=5)
+
+        await asyncio.wait_for(
+            asyncio.gather(proxy_connection.closing, return_exceptions=True),
+            timeout=5,
+        )
+
+    records = [
+        record for record in caplog.records
+        if record.getMessage().startswith(
+            "Cancelling cause reader exited abnormally",
+        )
+    ]
+
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert records[0].exc_info is not None
+
+    if proxy_connection.url.scheme == "amqps":
+        # The garbage breaks the TLS record before pamqp sees it
+        expected_cause = AMQPConnectionError
+    else:
+        expected_cause = pamqp_exceptions.UnmarshalingException
+
+    assert isinstance(records[0].exc_info[1], expected_cause)
