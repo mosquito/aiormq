@@ -750,6 +750,9 @@ class Channel(Base, AbstractChannel):
     async def basic_ack(
         self, delivery_tag: int, multiple: bool = False, wait: bool = True,
     ) -> None:
+        if self.is_closed or self.__close_event.is_set():
+            raise ChannelInvalidStateError("%r closed" % self)
+
         drain_future = self.create_future() if wait else None
 
         await self.write_queue.put(
@@ -775,6 +778,9 @@ class Channel(Base, AbstractChannel):
         requeue: bool = True,
         wait: bool = True,
     ) -> None:
+        if self.is_closed or self.__close_event.is_set():
+            raise ChannelInvalidStateError("%r closed" % self)
+
         if not self.connection.basic_nack:
             raise MethodNotImplemented
 
@@ -800,6 +806,9 @@ class Channel(Base, AbstractChannel):
     async def basic_reject(
         self, delivery_tag: int, *, requeue: bool = True, wait: bool = True,
     ) -> None:
+        if self.is_closed or self.__close_event.is_set():
+            raise ChannelInvalidStateError("%r closed" % self)
+
         drain_future = self.create_future()
         await self.write_queue.put(
             ChannelFrame.marshall(
