@@ -833,12 +833,12 @@ class Channel(Base, AbstractChannel):
         *,
         exchange: str = "",
         routing_key: str = "",
-        properties: Optional[spec.Basic.Properties] = None,
+        properties: spec.Basic.Properties | None = None,
         mandatory: bool = False,
         immediate: bool = False,
         timeout: TimeoutType = None,
         wait: bool = True,
-    ) -> Optional[ConfirmationFrameType]:
+    ) -> ConfirmationFrameType | None:
         _check_routing_key(routing_key)
         countdown = Countdown(timeout=timeout)
 
@@ -859,56 +859,68 @@ class Channel(Base, AbstractChannel):
             rnd_uuid = UUID(int=getrandbits(128), version=4)
             content_header.properties.message_id = rnd_uuid.hex
 
-        confirmation: Optional[ConfirmationType] = None
+        confirmation: asyncio.Future | None = None
 
-        async with countdown.enter_context(self.lock):
-            self.delivery_tag += 1
-
-            if self.publisher_confirms:
+        # Keep cancellation in this task: a wait_for task could enqueue a
+        # frame just before its caller is cancelled, making rollback unsafe.
+        async with asyncio.timeout(countdown.get_timeout()):
+            async with self.lock:
+                self.delivery_tag += 1
+                delivery_tag = self.delivery_tag
                 message_id = content_header.properties.message_id
+                drain_future: asyncio.Future | None = None
+                sent = False
 
-                if self.delivery_tag not in self.confirmations:
-                    self.confirmations[
-                        self.delivery_tag
-                    ] = self.create_future()
+                try:
+                    if self.publisher_confirms:
+                        confirmation = self.create_future()
+                        self.confirmations[delivery_tag] = confirmation
+                        self.message_id_delivery_tag[message_id] = delivery_tag
 
-                confirmation = self.confirmations[self.delivery_tag]
-                self.message_id_delivery_tag[message_id] = self.delivery_tag
+                        def forget_message_id(_: asyncio.Future) -> None:
+                            if self.message_id_delivery_tag.get(
+                                message_id,
+                            ) == delivery_tag:
+                                self.message_id_delivery_tag.pop(message_id)
 
-                if confirmation is None:
-                    return
+                    body_frames: list[FrameType | ContentBody]
+                    body_frames = [publish_frame, content_header]
+                    body_frames += self._split_body(body)
 
-                confirmation.add_done_callback(
-                    lambda _: self.message_id_delivery_tag.pop(
-                        message_id, None,
-                    ),
-                )
+                    drain_future = self.create_future() if wait else None
+                    await self.write_queue.put(
+                        ChannelFrame.marshall(
+                            frames=body_frames,
+                            channel_number=self.number,
+                            drain_future=drain_future,
+                        ),
+                    )
+                    sent = True
+                    if confirmation is not None:
+                        confirmation.add_done_callback(forget_message_id)
 
-            body_frames: List[Union[FrameType, ContentBody]]
-            body_frames = [publish_frame, content_header]
-            body_frames += self._split_body(body)
-
-            drain_future = self.create_future() if wait else None
-            await countdown(
-                self.write_queue.put(
-                    ChannelFrame.marshall(
-                        frames=body_frames,
-                        channel_number=self.number,
-                        drain_future=drain_future,
-                    ),
-                ),
-            )
-
-            if drain_future:
-                await drain_future
-
-            if not self.publisher_confirms:
-                return None
+                    if drain_future is not None:
+                        await drain_future
+                except BaseException:
+                    if not sent:
+                        # The broker has not seen this publish. Reuse its
+                        # sequence number while still holding the lock.
+                        self.delivery_tag -= 1
+                        self.confirmations.pop(delivery_tag, None)
+                        if self.message_id_delivery_tag.get(
+                            message_id,
+                        ) == delivery_tag:
+                            self.message_id_delivery_tag.pop(message_id)
+                        if confirmation is not None:
+                            confirmation.cancel()
+                    if drain_future is not None:
+                        drain_future.cancel()
+                    raise
 
             if confirmation is None:
                 return None
 
-        return await countdown(confirmation)
+            return await confirmation
 
     async def basic_qos(
         self,
