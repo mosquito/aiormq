@@ -648,7 +648,10 @@ class Connection(Base, AbstractConnection):
 
         async def close_writer_task() -> None:
             if not self._writer_task.done():
-                self._writer_task.cancel()
+                # A second cancellation would interrupt wait_closed(),
+                # leaving the TLS transport open during shutdown.
+                if not self._writer_task.cancelling():
+                    self._writer_task.cancel()
                 await asyncio.gather(self._writer_task, return_exceptions=True)
             try:
                 exc = task.exception()
@@ -870,6 +873,9 @@ class Connection(Base, AbstractConnection):
                 if writer.can_write_eof():
                     writer.write_eof()
             writer.close()
+            if self.is_connection_was_stuck:
+                # The peer cannot complete the TLS shutdown handshake.
+                writer.transport.abort()
             with suppress(OSError, RuntimeError):
                 await writer.wait_closed()
 
@@ -893,7 +899,10 @@ class Connection(Base, AbstractConnection):
         log.debug("Closing connection %r cause: %r", self, ex)
         if not self._reader_task.done():
             self._reader_task.cancel()
-        if not self._writer_task.done():
+        if (
+            not self._writer_task.done() and
+            not self._writer_task.cancelling()
+        ):
             self._writer_task.cancel()
 
         await asyncio.gather(
