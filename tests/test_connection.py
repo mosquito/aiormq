@@ -986,3 +986,63 @@ async def test_reader_failure_is_logged_with_cause(
         expected_cause = pamqp_exceptions.UnmarshalingException
 
     assert isinstance(records[0].exc_info[1], expected_cause)
+
+
+@pytest.mark.parametrize("close_error", [False, True])
+@pytest.mark.parametrize("target", ["connection", "channel"])
+@pytest.mark.parametrize("cancel_method", ["cancel", "timeout"])
+@aiomisc.timeout(20)
+async def test_closing_waiter_cancellation(
+    amqp_url, event_loop, target, cancel_method, close_error,
+):
+    amqp_connection = Connection(amqp_url, loop=event_loop)
+    factory = WriterCapturingTransportFactory(
+        amqp_connection._transport_factory,
+    )
+    amqp_connection._transport_factory = factory
+    await amqp_connection.connect()
+    channel = await amqp_connection.channel()
+    resource = amqp_connection if target == "connection" else channel
+    observer = resource.closing
+    entered = asyncio.Event()
+
+    async def wait_for_close():
+        entered.set()
+        await resource.closing
+
+    waiter = asyncio.create_task(wait_for_close())
+    await entered.wait()
+    try:
+        if cancel_method == "cancel":
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+        else:
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(waiter, timeout=0.01)
+
+        assert not resource.is_closed
+        assert not observer.done()
+        # The channel must still support RPC after an observer is cancelled.
+        await channel.basic_qos(prefetch_count=1)
+        reason = AMQPConnectionError("test close") if close_error else None
+        await resource.close(exc=reason)
+        if target == "channel":
+            with pytest.raises(aiormq.ChannelClosed):
+                await observer
+        elif close_error:
+            with pytest.raises(AMQPConnectionError) as caught:
+                await observer
+            assert caught.value is reason
+        else:
+            await observer
+        assert resource.is_closed
+        if target == "connection":
+            assert amqp_connection._reader_task.done()
+            assert amqp_connection._writer_task.done()
+            assert factory.writer.is_closing()
+        else:
+            assert not amqp_connection.is_closed
+    finally:
+        observer.cancel()
+        await amqp_connection.close()

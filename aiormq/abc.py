@@ -307,7 +307,11 @@ class AbstractChannel(AbstractBase):
     number: int
     on_return_callbacks: Set[ReturnCallback]
     on_consumer_cancel_callbacks: Set[ConsumerCancelCallback]
-    closing: asyncio.Future
+
+    @property
+    @abstractmethod
+    def closing(self) -> asyncio.Future:
+        raise NotImplementedError
 
     @abstractmethod
     async def open(self) -> spec.Channel.OpenOk:
@@ -548,7 +552,11 @@ class AbstractConnection(AbstractBase):
     channels: Dict[int, Optional[AbstractChannel]]
     write_queue: asyncio.Queue
     url: URL
-    closing: asyncio.Future
+
+    @property
+    @abstractmethod
+    def closing(self) -> asyncio.Future:
+        raise NotImplementedError
 
     @abstractmethod
     def set_close_reason(

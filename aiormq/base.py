@@ -92,7 +92,7 @@ class FutureStore(AbstractFutureStore):
 
 
 class Base(AbstractBase):
-    __slots__ = "loop", "__future_store", "closing"
+    __slots__ = "loop", "__future_store", "_closing"
 
     def __init__(
         self, *, loop: asyncio.AbstractEventLoop,
@@ -105,11 +105,44 @@ class Base(AbstractBase):
         else:
             self.__future_store = FutureStore(loop=self.loop)
 
-        self.closing = self._create_closing_future()
+        self._closing = self._create_closing_future()
 
     def _create_closing_future(self) -> asyncio.Future:
         future = self.__future_store.create_future()
-        future.add_done_callback(lambda x: x.exception())
+        future.add_done_callback(
+            lambda x: None if x.cancelled() else x.exception(),
+        )
+        return future
+
+    @property
+    def closing(self) -> asyncio.Future:
+        """Return an independent observer of closure while the resource is open.
+
+        Cancelling this future only stops that observer. Use close() to
+        shut down the resource.
+        """
+        if self._closing.done():
+            return self._closing
+
+        future = self.loop.create_future()
+
+        def on_close(source: asyncio.Future) -> None:
+            if future.done():
+                return
+            if source.cancelled():
+                future.cancel()
+            elif (exc := source.exception()) is not None:
+                future.set_exception(exc)
+            else:
+                future.set_result(source.result())
+
+        def on_done(observer: asyncio.Future) -> None:
+            self._closing.remove_done_callback(on_close)
+            if not observer.cancelled():
+                observer.exception()
+
+        self._closing.add_done_callback(on_close)
+        future.add_done_callback(on_done)
         return future
 
     def _cancel_tasks(
@@ -164,7 +197,7 @@ class Base(AbstractBase):
 
     @property
     def is_closed(self) -> bool:
-        return self.closing.done()
+        return self._closing.done()
 
 
 TaskFunctionType = Callable[..., T]
