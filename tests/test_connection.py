@@ -697,6 +697,8 @@ FIRST_FRAME_FAILURES = {
     "garbage": b"HTTP/1.1 400 Bad Request\r\n\r\n",
     # The server sends a valid frame that is not Connection.Start.
     "heartbeat": b"\x08\x00\x00\x00\x00\x00\x00\xce",
+    "unknown-type": b"\x09\x00\x00\x00\x00\x00\x01\x00\xce",
+    "protocol-header": b"AMQP\x00\x00\x09\x01",
 }
 
 
@@ -727,10 +729,7 @@ async def test_connect_first_frame_failure_closes_transport(
         )
         connection._transport_factory = factory
 
-        # AMQPInternalError comes from pamqp and is not an aiormq error.
-        with pytest.raises(
-            (aiormq.exceptions.AMQPError, pamqp_exceptions.AMQPError),
-        ):
+        with pytest.raises(aiormq.AMQPError):
             await connection.connect()
 
         assert factory.writer is not None
@@ -964,10 +963,8 @@ async def test_reader_failure_is_logged_with_cause(
         with pytest.raises(Exception):
             await asyncio.wait_for(proxy_connection.channel(), timeout=5)
 
-        await asyncio.wait_for(
-            asyncio.gather(proxy_connection.closing, return_exceptions=True),
-            timeout=5,
-        )
+        with pytest.raises(aiormq.AMQPError) as closed:
+            await asyncio.wait_for(proxy_connection.closing, timeout=5)
 
     records = [
         record for record in caplog.records
@@ -984,9 +981,14 @@ async def test_reader_failure_is_logged_with_cause(
         # The garbage breaks the TLS record before pamqp sees it
         expected_cause = AMQPConnectionError
     else:
-        expected_cause = pamqp_exceptions.UnmarshalingException
+        expected_cause = aiormq.InvalidFrameError
+        assert isinstance(
+            records[0].exc_info[1].__cause__,
+            pamqp_exceptions.UnmarshalingException,
+        )
 
     assert isinstance(records[0].exc_info[1], expected_cause)
+    assert closed.value is records[0].exc_info[1]
 
 
 @pytest.mark.parametrize("close_error", [False, True])

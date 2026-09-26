@@ -20,7 +20,7 @@ from pamqp import commands as spec
 from pamqp.base import Frame
 from pamqp.common import FieldTable
 from pamqp.constants import REPLY_SUCCESS
-from pamqp.exceptions import AMQPFrameError, AMQPInternalError, AMQPSyntaxError
+from pamqp.exceptions import PAMQPException
 from pamqp.frame import FrameTypes
 from pamqp.header import ProtocolHeader
 from pamqp.heartbeat import Heartbeat
@@ -38,7 +38,8 @@ from .exceptions import (
     ConnectionClosed, ConnectionCommandInvalid, ConnectionFrameError,
     ConnectionInternalError, ConnectionNotAllowed, ConnectionNotImplemented,
     ConnectionResourceError, ConnectionSyntaxError, ConnectionUnexpectedFrame,
-    IncompatibleProtocolError, ProbableAuthenticationError,
+    IncompatibleProtocolError, InvalidFrameError, ProbableAuthenticationError,
+    ProtocolSyntaxError,
 )
 from .tools import Countdown, censor_url
 
@@ -184,7 +185,7 @@ class FrameReceiver(AsyncIterable):
 
                     if fp.getvalue() == b"\0x00":
                         fp.write(await self.reader.read())
-                        raise AMQPFrameError(fp.getvalue())
+                        raise InvalidFrameError(fp.getvalue())
 
                     if self.reader is None:
                         raise AMQPConnectionError()
@@ -192,7 +193,9 @@ class FrameReceiver(AsyncIterable):
                     fp.write(await self.reader.readexactly(6))
 
                     if not self.started and fp.getvalue().startswith(b"AMQP"):
-                        raise AMQPSyntaxError
+                        raise ProtocolSyntaxError(
+                            "Unexpected AMQP protocol header",
+                        )
                     else:
                         self.started = True
 
@@ -200,7 +203,7 @@ class FrameReceiver(AsyncIterable):
                         fp.getvalue(),
                     )
                     if frame_length is None:
-                        raise AMQPInternalError("No frame length", None)
+                        raise InvalidFrameError("No frame length")
 
                     fp.write(await self.reader.readexactly(frame_length + 1))
                 except asyncio.IncompleteReadError as e:
@@ -226,7 +229,10 @@ class FrameReceiver(AsyncIterable):
                         f"Server communication error: {e!r}",
                     ) from e
 
-            return pamqp.frame.unmarshal(fp.getvalue())
+            try:
+                return pamqp.frame.unmarshal(fp.getvalue())
+            except PAMQPException as e:
+                raise InvalidFrameError(str(e)) from e
 
     async def __anext__(self) -> ReceivedFrame:
         return await self.get_frame()
@@ -524,8 +530,8 @@ class Connection(Base, AbstractConnection):
         _, _, frame = await frame_receiver.get_frame()
 
         if request.synchronous and frame.name not in request.valid_responses:
-            raise AMQPInternalError(
-                "one of {!r}".format(request.valid_responses), frame,
+            raise InvalidFrameError(
+                f"Expected one of {request.valid_responses!r}, got {frame!r}",
             )
         elif isinstance(frame, spec.Connection.Close):
             if frame.reply_code == 403:
@@ -570,7 +576,9 @@ class Connection(Base, AbstractConnection):
                 raise IncompatibleProtocolError(*e.args) from e
 
             if not isinstance(frame, spec.Connection.Start):
-                raise AMQPInternalError("Connection.StartOk", frame)
+                raise InvalidFrameError(
+                    f"Expected Connection.Start, got {frame!r}",
+                )
 
             credentials = self._credentials_class(frame)
 
@@ -592,7 +600,9 @@ class Connection(Base, AbstractConnection):
             )
 
             if not isinstance(frame, spec.Connection.Tune):
-                raise AMQPInternalError("Connection.Tune", frame)
+                raise InvalidFrameError(
+                    f"Expected Connection.Tune, got {frame!r}",
+                )
 
             connection_tune: spec.Connection.Tune = frame
             connection_tune.heartbeat = self.heartbeat_timeout
@@ -615,7 +625,9 @@ class Connection(Base, AbstractConnection):
             )
 
             if not isinstance(frame, spec.Connection.OpenOk):
-                raise AMQPInternalError("Connection.OpenOk", frame)
+                raise InvalidFrameError(
+                    f"Expected Connection.OpenOk, got {frame!r}",
+                )
         except BaseException as e:
             await self.__close_writer(writer)
             await self.close(e)
