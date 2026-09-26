@@ -193,6 +193,32 @@ class DeliveryError(AMQPError):
 
         super().__init__(self.message, self.frame)
 
+    def __str__(self) -> str:
+        frame = self.frame
+        if isinstance(frame, Basic.Nack):
+            details = (
+                f"delivery_tag={frame.delivery_tag!r}, "
+                f"multiple={frame.multiple!r}"
+            )
+        elif isinstance(frame, Basic.Reject):
+            details = (
+                f"delivery_tag={frame.delivery_tag!r}, "
+                f"requeue={frame.requeue!r}"
+            )
+        elif isinstance(frame, Basic.Return):
+            details = (
+                f"reply_code={frame.reply_code!r}, "
+                f"reply_text={frame.reply_text!r}, "
+                f"exchange={frame.exchange!r}, "
+                f"routing_key={frame.routing_key!r}"
+            )
+        else:
+            details = ""
+        return f"Message delivery failed: {frame.name}({details})"
+
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__}: {self}>"
+
 
 class PublishError(DeliveryError):
     reason = "%r for routing key %r"
