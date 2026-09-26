@@ -17,6 +17,11 @@ from .tools import Countdown, shield
 T = TypeVar("T")
 
 
+def _retrieve_exception(future: asyncio.Future) -> None:
+    if not future.cancelled():
+        future.exception()
+
+
 class FutureStore(AbstractFutureStore):
     __slots__ = "futures", "loop", "parent"
 
@@ -82,6 +87,12 @@ class FutureStore(AbstractFutureStore):
 
     def create_future(self, weak: bool = False) -> asyncio.Future:
         future = self.loop.create_future()
+        # A caller can stop waiting for the future before reject_all()
+        # sets its exception, for example a publish that failed on the
+        # drain future while its confirmation was still pending. Read the
+        # exception once, so asyncio does not log "Future exception was
+        # never retrieved" when the future is collected.
+        future.add_done_callback(_retrieve_exception)
         self.add(future)
         return future
 
@@ -108,11 +119,7 @@ class Base(AbstractBase):
         self._closing = self._create_closing_future()
 
     def _create_closing_future(self) -> asyncio.Future:
-        future = self.__future_store.create_future()
-        future.add_done_callback(
-            lambda x: None if x.cancelled() else x.exception(),
-        )
-        return future
+        return self.__future_store.create_future()
 
     @property
     def closing(self) -> asyncio.Future:
