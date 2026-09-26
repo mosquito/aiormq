@@ -168,6 +168,7 @@ RpcReturnType = Optional[
     Union[
         Basic.CancelOk,
         Basic.ConsumeOk,
+        Basic.GetEmpty,
         Basic.GetOk,
         Basic.QosOk,
         Basic.RecoverOk,
@@ -180,7 +181,7 @@ RpcReturnType = Optional[
         Exchange.DeleteOk,
         Exchange.UnbindOk,
         Queue.BindOk,
-        Queue.DeleteOk,
+        Queue.DeclareOk,
         Queue.DeleteOk,
         Queue.PurgeOk,
         Queue.UnbindOk,
