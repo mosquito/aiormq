@@ -20,6 +20,7 @@ aiormq is a pure python AMQP client library.
   * [Publish Subscribe](#publish-subscribe)
   * [Routing](#routing)
   * [Topics](#topics)
+  * [Consumer cancelled by the broker](#consumer-cancelled-by-the-broker)
   * [Remote procedure call (RPC)](#remote-procedure-call-rpc)
 
 ## Status
@@ -479,6 +480,46 @@ await channel.exchange_delete('topic_logs')
 await connection.close()
 ```
 -->
+
+### Consumer cancelled by the broker
+
+The broker cancels a consumer when its queue is deleted or when a cluster
+node that hosts the queue goes away. Register a callback in
+`channel.on_consumer_cancel_callbacks` to get the `Basic.Cancel` frame and
+react, for example by consuming again or by stopping the application.
+
+<!-- name: async test_consumer_cancel_notification; fixtures: amqp_url -->
+```python
+import asyncio
+import aiormq
+
+
+async def on_message(message):
+    print(f" [x] Received message {message.body!r}")
+
+
+cancelled = asyncio.get_running_loop().create_future()
+
+
+def on_consumer_cancel(frame: aiormq.spec.Basic.Cancel):
+    print(f" [!] Consumer {frame.consumer_tag!r} cancelled by the broker")
+    cancelled.set_result(frame.consumer_tag)
+
+
+connection = await aiormq.connect(amqp_url)
+channel = await connection.channel()
+channel.on_consumer_cancel_callbacks.add(on_consumer_cancel)
+
+declare_ok = await channel.queue_declare('cancel_me', auto_delete=True)
+consume_ok = await channel.basic_consume(declare_ok.queue, on_message)
+
+# Deleting the queue makes the broker cancel the consumer.
+await channel.queue_delete(declare_ok.queue)
+
+assert await cancelled == consume_ok.consumer_tag
+
+await connection.close()
+```
 
 ### Remote procedure call (RPC)
 

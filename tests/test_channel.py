@@ -331,3 +331,66 @@ async def test_rpc_cancelled_during_put(amqp_connection: aiormq.Connection):
     other = await amqp_connection.channel(channel_number=channel.number)
     await other.queue_declare(auto_delete=True)
     await other.close()
+
+
+@aiomisc.timeout(20)
+async def test_consumer_cancel_callbacks(amqp_channel: aiormq.Channel):
+    # The broker cancels the consumer when its queue is deleted. Every
+    # callback in on_consumer_cancel_callbacks gets the Basic.Cancel frame.
+    declare_ok = await amqp_channel.queue_declare(auto_delete=True)
+    consume_ok = await amqp_channel.basic_consume(
+        declare_ok.queue, lambda message: None,
+    )
+
+    async_calls: asyncio.Queue = asyncio.Queue()
+    sync_calls: list = []
+
+    async def on_cancel_async(frame: aiormq.spec.Basic.Cancel) -> None:
+        await async_calls.put(frame)
+
+    def on_cancel_sync(frame: aiormq.spec.Basic.Cancel) -> None:
+        sync_calls.append(frame)
+
+    def on_cancel_broken(frame: aiormq.spec.Basic.Cancel) -> None:
+        raise RuntimeError("callback failure")
+
+    amqp_channel.on_consumer_cancel_callbacks.update(
+        {on_cancel_async, on_cancel_sync, on_cancel_broken},
+    )
+
+    await amqp_channel.queue_delete(declare_ok.queue)
+
+    frame = await asyncio.wait_for(async_calls.get(), timeout=5)
+    assert isinstance(frame, aiormq.spec.Basic.Cancel)
+    assert frame.consumer_tag == consume_ok.consumer_tag
+
+    while not sync_calls:
+        await asyncio.sleep(0.01)
+    assert sync_calls[0].consumer_tag == consume_ok.consumer_tag
+
+    assert consume_ok.consumer_tag not in amqp_channel.consumers
+
+    # The failing callback did not break the channel.
+    assert not amqp_channel.is_closed
+    await amqp_channel.queue_declare(auto_delete=True)
+
+
+@aiomisc.timeout(20)
+async def test_client_cancel_does_not_call_callbacks(
+    amqp_channel: aiormq.Channel,
+):
+    # Basic.CancelOk answers a client basic_cancel() call. It is not a
+    # broker-initiated cancel.
+    declare_ok = await amqp_channel.queue_declare(auto_delete=True)
+    consume_ok = await amqp_channel.basic_consume(
+        declare_ok.queue, lambda message: None,
+    )
+
+    calls: list = []
+    amqp_channel.on_consumer_cancel_callbacks.add(calls.append)
+
+    await amqp_channel.basic_cancel(consume_ok.consumer_tag)
+    await asyncio.sleep(0.1)
+
+    assert calls == []
+    assert consume_ok.consumer_tag not in amqp_channel.consumers

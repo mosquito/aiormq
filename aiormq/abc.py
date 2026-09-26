@@ -134,6 +134,8 @@ ChannelRType = Tuple[int, Channel.OpenOk]
 CallbackCoro = Coroutine[Any, Any, Any]
 ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[DeliveredMessage], Any]
+# Called with the Basic.Cancel frame the broker sent for a consumer.
+ConsumerCancelCallback = Callable[[spec.Basic.Cancel], Any]
 
 ArgumentsType = FieldTable
 
@@ -303,6 +305,7 @@ class AbstractChannel(AbstractBase):
     connection: "AbstractConnection"
     number: int
     on_return_callbacks: Set[ReturnCallback]
+    on_consumer_cancel_callbacks: Set[ConsumerCancelCallback]
     closing: asyncio.Future
 
     @abstractmethod
@@ -627,6 +630,7 @@ __all__ = (
     "AbstractBase", "AbstractChannel", "AbstractConnection",
     "AbstractFutureStore", "ArgumentsType", "CallbackCoro", "ChannelFrame",
     "ChannelRType", "ConfirmationFrameType", "ConsumerCallback",
+    "ConsumerCancelCallback",
     "CoroutineType", "DeliveredMessage", "DrainResult", "ExceptionType",
     "FieldArray", "FieldTable", "FieldValue", "FrameReceived", "FrameType",
     "GetResultType", "ReturnCallback", "RpcReturnType", "SSLCerts",
