@@ -124,3 +124,45 @@ async def test_task_wrapper_throw_reason(event_loop, reason):
         await wrapped
     if not isinstance(reason, type):
         assert exc_info.value is reason
+
+
+@pytest.mark.parametrize("child", [False, True])
+@pytest.mark.parametrize("outcome", ["reject", "exception", "cancel", "result"])
+async def test_unobserved_future(event_loop, root_store, child, outcome):
+    import gc
+    import weakref
+
+    store = root_store.get_child() if child else root_store
+    contexts = []
+    previous = event_loop.get_exception_handler()
+    event_loop.set_exception_handler(
+        lambda loop, context: contexts.append(context),
+    )
+    try:
+        future = store.create_future()
+        reference = weakref.ref(future)
+        if outcome == "reject":
+            await root_store.reject_all(RuntimeError("closed"))
+        elif outcome == "exception":
+            future.set_exception(RuntimeError("failed"))
+        elif outcome == "cancel":
+            future.cancel()
+        else:
+            future.set_result(None)
+        await asyncio.sleep(0)
+        del future
+        gc.collect()
+        assert not contexts
+        assert reference() is None
+    finally:
+        event_loop.set_exception_handler(previous)
+
+
+async def test_retrieved_exception_still_reaches_waiter(event_loop, root_store):
+    future = root_store.create_future()
+    error = RuntimeError("closed")
+    await root_store.reject_all(error)
+    await asyncio.sleep(0)
+    with pytest.raises(RuntimeError) as caught:
+        await future
+    assert caught.value is error
