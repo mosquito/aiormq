@@ -25,7 +25,8 @@ from aiormq.tools import Countdown, awaitable
 
 from .abc import (
     AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ConfirmationFrameType, ConsumerCallback, DeliveredMessage, ExceptionType,
+    ConfirmationFrameType, ConsumerCallback, ConsumerCancelCallback,
+    DeliveredMessage, ExceptionType,
     FrameType, GetResultType, ReturnCallback, RpcReturnType, TimeoutType,
 )
 from .base import Base, task
@@ -120,6 +121,9 @@ class Channel(Base, AbstractChannel):
         self.write_queue = connector.write_queue
         self.on_return_raises = on_return_raises
         self.on_return_callbacks: Set[ReturnCallback] = set()
+        self.on_consumer_cancel_callbacks: Set[
+            ConsumerCancelCallback
+        ] = set()
         self._close_exception = None
 
         self.__reader_task = self.create_task(self._reader())
@@ -438,6 +442,25 @@ class Channel(Base, AbstractChannel):
     ) -> None:
         if frame.consumer_tag is not None:
             self.consumers.pop(frame.consumer_tag, None)
+
+        if not isinstance(frame, spec.Basic.Cancel):
+            # Basic.CancelOk answers a client basic_cancel() call.
+            return
+
+        # The broker cancelled the consumer, for example because the queue
+        # was deleted. Tell the user, a callback error must not stop the
+        # channel reader.
+        log.warning(
+            "Consumer %r cancelled by the broker on %r",
+            frame.consumer_tag, self,
+        )
+
+        for cb in self.on_consumer_cancel_callbacks:
+            # noinspection PyBroadException
+            try:
+                await awaitable(cb)(frame)
+            except Exception:
+                log.exception("Unhandled consumer cancel callback exception")
 
     async def _on_close_frame(self, frame: spec.Channel.Close) -> None:
         exc: BaseException = exception_by_code(frame)
