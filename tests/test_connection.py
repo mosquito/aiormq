@@ -4,6 +4,7 @@ import inspect
 import itertools
 import os
 import ssl
+import sys
 import uuid
 import warnings
 from binascii import hexlify
@@ -193,9 +194,13 @@ async def test_connect_await(amqp_url: URL):
 
 async def test_connect_result_is_a_coroutine(amqp_url: URL, event_loop):
     # Callers that need a real coroutine, such as asyncio.create_task(),
-    # keep working. connect() is still seen as a coroutine function.
-    assert inspect.iscoroutinefunction(aiormq.connect)
-    assert asyncio.iscoroutinefunction(aiormq.connect)
+    # keep working. connect() is still seen as a coroutine function:
+    # inspect.markcoroutinefunction() needs Python 3.12, on 3.11 only the
+    # asyncio check sees the legacy mark.
+    if sys.version_info >= (3, 12):
+        assert inspect.iscoroutinefunction(aiormq.connect)
+    else:
+        assert asyncio.iscoroutinefunction(aiormq.connect)
 
     context = aiormq.connect(amqp_url)
     assert asyncio.iscoroutine(context)
