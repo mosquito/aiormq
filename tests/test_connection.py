@@ -1046,3 +1046,68 @@ async def test_closing_waiter_cancellation(
     finally:
         observer.cancel()
         await amqp_connection.close()
+
+
+@pytest.mark.parametrize("target", ["connection", "channel"])
+@pytest.mark.parametrize("cancel_method", ["cancel", "timeout"])
+@pytest.mark.parametrize("failure", ["disconnect", "heartbeat-timeout"])
+@aiomisc.timeout(30)
+async def test_closing_waiter_cancelled_before_connection_loss(
+    proxy, amqp_url, event_loop, target, cancel_method, failure,
+):
+    url = amqp_url.with_host(proxy.proxy_host).with_port(
+        proxy.proxy_port,
+    ).update_query(heartbeat="1")
+    connection = Connection(url, loop=event_loop)
+    factory = WriterCapturingTransportFactory(connection._transport_factory)
+    connection._transport_factory = factory
+    await connection.connect()
+    channel = await connection.channel()
+    resource = connection if target == "connection" else channel
+    # Include heartbeat and channel tasks, not just the transport reader/writer.
+    background = tuple(connection._Base__future_store.futures)
+    observer = resource.closing
+    entered = asyncio.Event()
+
+    async def wait_for_close():
+        entered.set()
+        await resource.closing
+
+    waiter = asyncio.create_task(wait_for_close())
+    await entered.wait()
+    try:
+        if cancel_method == "cancel":
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+        else:
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(waiter, timeout=0.01)
+
+        assert not resource.is_closed
+        assert not observer.done()
+        await channel.basic_qos(prefetch_count=1)
+
+        if failure == "disconnect":
+            await proxy.disconnect_all()
+            with pytest.raises(AMQPConnectionError):
+                await asyncio.wait_for(observer, timeout=10)
+        else:
+            # Keep TCP open but delay traffic beyond the heartbeat grace time.
+            with proxy.slowdown(50, 50):
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(observer, timeout=20)
+
+        # No explicit close() before these checks: the network failure must
+        # complete cleanup even after the first observer was cancelled.
+        await asyncio.wait_for(
+            asyncio.gather(*background, return_exceptions=True), timeout=5,
+        )
+        assert connection.is_closed
+        assert channel.is_closed
+        assert connection._reader_task.done()
+        assert connection._writer_task.done()
+        assert factory.writer.is_closing()
+    finally:
+        observer.cancel()
+        await connection.close()
