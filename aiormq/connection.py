@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import platform
 import ssl
@@ -10,7 +11,8 @@ from contextlib import suppress
 from io import BytesIO
 from types import MappingProxyType, TracebackType
 from typing import (
-    Any, Awaitable, Callable, Dict, Mapping, Optional, Tuple, Type, Union,
+    Any, Awaitable, Callable, Coroutine, Dict, Generator, Mapping, Optional,
+    Tuple, Type, Union,
 )
 
 import pamqp.frame
@@ -376,10 +378,13 @@ class Connection(Base, AbstractConnection):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         context: Optional[ssl.SSLContext] = None,
         transport_factory: Optional[TransportFactory] = None,
+        client_properties: Optional[FieldTable] = None,
         **create_connection_kwargs: Any,
     ):
 
         super().__init__(loop=loop or asyncio.get_event_loop(), parent=None)
+
+        self.__client_properties: FieldTable = client_properties or {}
 
         self.url = URL(url)
         if self.url.is_absolute() and not self.url.port:
@@ -571,10 +576,13 @@ class Connection(Base, AbstractConnection):
 
             server_properties: ArgumentsType = frame.server_properties
 
+            if client_properties is None:
+                client_properties = self.__client_properties
+
             frame = await self._rpc(
                 spec.Connection.StartOk(
                     client_properties=self._client_properties(
-                        **(client_properties or {}),
+                        **client_properties,
                     ),
                     mechanism=credentials.name,
                     response=credentials.value(self).marshal(),
@@ -1001,6 +1009,7 @@ class Connection(Base, AbstractConnection):
             await self.connect()
         return self
 
+
     async def __aexit__(
         self,
         exc_type: Optional[Type[BaseException]],
@@ -1010,11 +1019,80 @@ class Connection(Base, AbstractConnection):
         await self.close(exc_val)
 
 
-async def connect(
+class ConnectionContext(Coroutine[Any, Any, Connection]):
+    """Result of aiormq.connect().
+
+    `async with aiormq.connect(url) as connection:` opens the connection
+    and closes it on exit. `await aiormq.connect(url)` opens it and
+    returns it, as before aiormq 7.1. The object follows the coroutine
+    protocol, so asyncio.create_task(), asyncio.run() and similar callers
+    accept it like the coroutine that connect() returned before.
+    """
+
+    __slots__ = ("_args", "_kwargs", "_connection", "_coro")
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        self._args = args
+        self._kwargs = kwargs
+        self._connection: Optional[Connection] = None
+        self._coro: Optional[Coroutine[Any, Any, Connection]] = None
+
+    @property
+    def connection(self) -> Connection:
+        # The Connection is built on first use. Its constructor needs an
+        # event loop, and asyncio.run(aiormq.connect(url)) has none yet
+        # when connect() is called.
+        if self._connection is None:
+            self._connection = Connection(*self._args, **self._kwargs)
+        return self._connection
+
+    async def __aenter__(self) -> Connection:
+        await self.connection.__aenter__()
+        return self.connection
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        await self.connection.__aexit__(exc_type, exc_val, exc_tb)
+
+    async def __connect(self) -> Connection:
+        await self.connection.connect()
+        return self.connection
+
+    def __coroutine(self) -> Coroutine[Any, Any, Connection]:
+        if self._coro is None:
+            self._coro = self.__connect()
+        return self._coro
+
+    def __await__(self) -> Generator[Any, None, Connection]:
+        return self.__coroutine().__await__()
+
+    def send(self, value: Any) -> Any:
+        return self.__coroutine().send(value)
+
+    def throw(self, *args: Any) -> Any:
+        return self.__coroutine().throw(*args)
+
+    def close(self) -> None:
+        if self._coro is not None:
+            self._coro.close()
+
+
+def connect(
     url: URLorStr, *args: Any, client_properties: Optional[FieldTable] = None,
     **kwargs: Any,
-) -> AbstractConnection:
-    connection = Connection(url, *args, **kwargs)
+) -> ConnectionContext:
+    """Prepare a connection. See ConnectionContext for the ways to open it."""
+    return ConnectionContext(
+        url, *args, client_properties=client_properties, **kwargs,
+    )
 
-    await connection.connect(client_properties or {})
-    return connection
+
+# connect() was a coroutine function before aiormq 7.1. Keep
+# inspect.iscoroutinefunction() and asyncio.iscoroutinefunction() true.
+if hasattr(inspect, "markcoroutinefunction"):    # Python 3.12+
+    connect = inspect.markcoroutinefunction(connect)
+connect._is_coroutine = asyncio.coroutines._is_coroutine  # type: ignore[attr-defined]  # noqa: E501

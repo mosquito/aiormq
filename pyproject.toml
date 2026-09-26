@@ -96,6 +96,11 @@ addopts = "-p no:asyncio"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+filterwarnings = [
+    # uvloop 0.22 calls asyncio.iscoroutinefunction() in run_in_executor().
+    # The warning is attributed to aiormq because of the stack level.
+    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 branch = true
