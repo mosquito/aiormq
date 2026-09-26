@@ -665,7 +665,7 @@ class Connection(Base, AbstractConnection):
         return
 
     async def __handle_close(self, frame: spec.Connection.Close) -> None:
-        log.exception(
+        log.error(
             "Unexpected connection close from remote \"%s\", "
             "Connection.Close(reply_code=%r, reply_text=%r)",
             self, frame.reply_code, frame.reply_text,
