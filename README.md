@@ -68,10 +68,10 @@ In the examples below `amqp_url` is a connection URL string such as
 `amqp://guest:guest@localhost/`. The examples run inside a coroutine, so
 `await` is used at the top level.
 
-`aiormq.connect()` returns a connection object without opening it.
+`aiormq.connect()` prepares a connection without opening it.
 `async with aiormq.connect(url) as connection:` opens the connection and
 closes it on exit. `await aiormq.connect(url)` from older versions still
-works but is deprecated.
+works.
 
 ### Introduction
 
@@ -154,7 +154,7 @@ import aiormq
 
 # The worker declares the durable queue. Declare it here too, so the
 # task is not lost when no worker runs yet.
-setup_connection = aiormq.connect(amqp_url)
+setup_connection = aiormq.Connection(amqp_url)
 await setup_connection.connect()
 setup_channel = await setup_connection.channel()
 await setup_channel.queue_declare('task_queue', durable=True)
@@ -542,7 +542,7 @@ async def on_message(message: aiormq.abc.DeliveredMessage):
 
 
 # Perform connection
-server_connection = aiormq.connect(amqp_url)
+server_connection = aiormq.Connection(amqp_url)
 await server_connection.connect()
 
 # Creating a channel
@@ -575,7 +575,7 @@ class FibonacciRpcClient:
         self.futures = {}
 
     async def connect(self):
-        self.connection = aiormq.connect(amqp_url)
+        self.connection = aiormq.Connection(amqp_url)
         await self.connection.connect()
 
         self.channel = await self.connection.channel()
