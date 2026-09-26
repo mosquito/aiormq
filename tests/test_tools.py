@@ -61,3 +61,41 @@ async def test_countdown():
         await countdown(task)
 
     assert task.cancelled()
+
+
+async def test_countdown_context_releases_lock_after_timeout_inside():
+    countdown = Countdown(timeout=0.05)
+    lock = asyncio.Lock()
+
+    with pytest.raises(asyncio.TimeoutError):
+        async with countdown.enter_context(lock):
+            assert lock.locked()
+            # The deadline expires here, like a slow write_queue.put()
+            await countdown(asyncio.sleep(1))
+
+    assert not lock.locked()
+
+
+async def test_countdown_context_releases_lock_after_deadline():
+    countdown = Countdown(timeout=0.05)
+    lock = asyncio.Lock()
+
+    async with countdown.enter_context(lock):
+        assert lock.locked()
+        # The body completes, but the deadline is already in the past
+        await asyncio.sleep(0.1)
+
+    assert not lock.locked()
+
+
+async def test_countdown_context_does_not_enter_after_deadline():
+    countdown = Countdown(timeout=0.05)
+    lock = asyncio.Lock()
+
+    await asyncio.sleep(0.1)
+
+    with pytest.raises(asyncio.TimeoutError):
+        async with countdown.enter_context(lock):
+            pytest.fail("The context body must not run")
+
+    assert not lock.locked()
