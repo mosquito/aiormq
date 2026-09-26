@@ -554,8 +554,13 @@ class Channel(Base, AbstractChannel):
 
         if isinstance(confirmation, Returning):
             return
-        elif confirmation.done():  # pragma: nocover
-            log.warning(
+        elif confirmation.done():
+            # Cancellation or a publish timeout can precede the broker's reply.
+            level = (
+                logging.DEBUG if confirmation.cancelled() else logging.WARNING
+            )
+            log.log(
+                level,
                 "Delivery tag %r confirmed %r was ignored", delivery_tag, frame,
             )
             return
