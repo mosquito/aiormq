@@ -460,6 +460,14 @@ class Channel(Base, AbstractChannel):
 
         return frame
 
+    @staticmethod
+    def _on_consumer_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exception = task.exception()
+        if exception is not None:
+            log.error("Consumer callback failed", exc_info=exception)
+
     async def _on_deliver_frame(self, frame: spec.Basic.Deliver) -> None:
         header: ContentHeader = await self.__get_content_header()
         message = await self._read_content(frame, header)
@@ -471,7 +479,8 @@ class Channel(Base, AbstractChannel):
         consumer = self.consumers.get(frame.consumer_tag)
         if consumer is not None:
             # noinspection PyAsyncCall
-            self.create_task(consumer(message))
+            task = self.create_task(consumer(message))
+            task.add_done_callback(self._on_consumer_done)
 
     async def _on_get_frame(
         self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty],
