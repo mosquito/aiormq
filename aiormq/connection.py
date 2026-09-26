@@ -636,7 +636,12 @@ class Connection(Base, AbstractConnection):
         log.debug("Reader exited for %r", self)
 
         if not task.cancelled() and task.exception() is not None:
-            log.debug("Cancelling cause reader exited abnormally")
+            # Show the cause. A debug record without the traceback hides
+            # a malformed frame from the broker.
+            log.warning(
+                "Cancelling cause reader exited abnormally",
+                exc_info=task.exception(),
+            )
             self.set_close_reason(
                 reply_code=500, reply_text="reader unexpected closed",
             )
