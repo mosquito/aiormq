@@ -1,9 +1,11 @@
 import asyncio
 import errno
+import inspect
 import itertools
 import os
 import ssl
 import uuid
+import warnings
 from binascii import hexlify
 from typing import Any, Optional, Tuple
 
@@ -154,14 +156,74 @@ class _TcpTransportFactory(TransportFactory):
 
 
 async def test_open_with_transport_factory(amqp_url):
-    amqp_connection = await aiormq.connect(
+    async with aiormq.connect(
         amqp_url,
         transport_factory=_TcpTransportFactory(),
-    )
+    ) as amqp_connection:
+        channel = await amqp_connection.channel()
+        await channel.close()
 
-    channel = await amqp_connection.channel()
-    await channel.close()
-    await amqp_connection.close()
+
+async def test_connect_context_manager(amqp_url: URL):
+    # aiormq.connect() prepares a connection. The context manager opens it
+    # and closes it on exit.
+    context = aiormq.connect(amqp_url)
+    assert isinstance(context.connection, aiormq.Connection)
+    assert not context.connection.is_opened
+
+    async with context as connection:
+        assert connection is context.connection
+        assert connection.is_opened
+        channel = await connection.channel()
+        await channel.close()
+
+    assert connection.is_closed
+
+
+async def test_connect_await(amqp_url: URL):
+    # The pre-7.1 form works without a warning.
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*aiormq.connect.*")
+        connection = await aiormq.connect(amqp_url)
+
+    assert isinstance(connection, aiormq.Connection)
+    assert connection.is_opened
+    await connection.close()
+
+
+async def test_connect_result_is_a_coroutine(amqp_url: URL, event_loop):
+    # Callers that need a real coroutine, such as asyncio.create_task(),
+    # keep working. connect() is still seen as a coroutine function.
+    assert inspect.iscoroutinefunction(aiormq.connect)
+    assert asyncio.iscoroutinefunction(aiormq.connect)
+
+    context = aiormq.connect(amqp_url)
+    assert asyncio.iscoroutine(context)
+
+    connection = await event_loop.create_task(context)
+    assert connection.is_opened
+    await connection.close()
+
+    # The Connection is created on first use, so a bad URL fails on
+    # await, not on the connect() call, as before.
+    context = aiormq.connect("not a url")
+    with pytest.raises(Exception):
+        await context
+
+
+async def test_connect_client_properties(amqp_url: URL):
+    async with aiormq.connect(
+        amqp_url, client_properties={"connection_name": "from-constructor"},
+    ) as connection:
+        assert connection.is_opened
+
+    # connect() still accepts client_properties and they win.
+    connection = aiormq.Connection(
+        amqp_url, client_properties={"connection_name": "from-constructor"},
+    )
+    await connection.connect({"connection_name": "from-connect"})
+    assert connection.is_opened
+    await connection.close()
 
 
 async def test_channel_close(amqp_connection):
@@ -176,9 +238,10 @@ async def test_channel_close(amqp_connection):
 
 async def test_conncetion_reject(event_loop):
     with pytest.raises(ConnectionError):
-        await aiormq.connect(
+        async with aiormq.connect(
             "amqp://guest:guest@127.0.0.1:59999/", loop=event_loop,
-        )
+        ):
+            pass
 
     connection = aiormq.Connection(
         "amqp://guest:guest@127.0.0.1:59999/", loop=event_loop,
@@ -306,7 +369,8 @@ async def test_heartbeat_not_int(amqp_direct_url, event_loop):
 
 async def test_bad_credentials(amqp_url: URL):
     with pytest.raises(aiormq.exceptions.ProbableAuthenticationError):
-        await aiormq.connect(amqp_url.with_password(uuid.uuid4().hex))
+        async with aiormq.connect(amqp_url.with_password(uuid.uuid4().hex)):
+            pass
 
 
 async def test_non_publisher_confirms(amqp_connection):
@@ -449,9 +513,7 @@ async def test_connection_stuck(proxy, amqp_url: URL):
         proxy.proxy_port,
     ).update_query(heartbeat="1")
 
-    connection = await aiormq.connect(url)
-
-    async with connection:
+    async with aiormq.connect(url) as connection:
         # delay the delivery of each packet by 5 seconds, which
         # is more than the heartbeat
         with proxy.slowdown(50, 50):
@@ -731,7 +793,8 @@ async def test_connection_close_stairway(
     BadNetwork(proxy, stair, disconnect_time)
 
     async def run():
-        connection = await aiormq.connect(url)
+        connection = aiormq.Connection(url)
+        await connection.connect()
         queue = asyncio.Queue()
         channel = await connection.channel()
         declare_ok = await channel.queue_declare(auto_delete=True)

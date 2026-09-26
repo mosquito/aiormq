@@ -68,6 +68,11 @@ In the examples below `amqp_url` is a connection URL string such as
 `amqp://guest:guest@localhost/`. The examples run inside a coroutine, so
 `await` is used at the top level.
 
+`aiormq.connect()` returns a connection object without opening it.
+`async with aiormq.connect(url) as connection:` opens the connection and
+closes it on exit. `await aiormq.connect(url)` from older versions still
+works but is deprecated.
+
 ### Introduction
 
 #### Simple consumer
@@ -91,23 +96,22 @@ async def on_message(message):
 
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
 
-# Creating a channel
-channel = await connection.channel()
-
-# Declaring queue
-declare_ok = await channel.queue_declare('hello', auto_delete=True)
-consume_ok = await channel.basic_consume(
-    declare_ok.queue, on_message, no_ack=True
-)
+    # Declaring queue
+    declare_ok = await channel.queue_declare('hello', auto_delete=True)
+    consume_ok = await channel.basic_consume(
+        declare_ok.queue, on_message, no_ack=True
+    )
+    # The connection stays open while this block runs.
 ```
 <!--
 name: test_simple_consumer
 ```python
-await channel.basic_publish(b"Hello World!", routing_key=declare_ok.queue)
-await wait_for_output("After sleep!")
-await connection.close()
+    await channel.basic_publish(b"Hello World!", routing_key=declare_ok.queue)
+    await wait_for_output("After sleep!")
 ```
 -->
 
@@ -120,25 +124,22 @@ import aiormq
 body = b'Hello World!'
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
 
-# Creating a channel
-channel = await connection.channel()
+    declare_ok = await channel.queue_declare("hello", auto_delete=True)
 
-declare_ok = await channel.queue_declare("hello", auto_delete=True)
+    # Sending the message
+    await channel.basic_publish(body, routing_key='hello')
+    print(f" [x] Sent {body}")
 
-# Sending the message
-await channel.basic_publish(body, routing_key='hello')
-print(f" [x] Sent {body}")
+    message = await channel.basic_get(declare_ok.queue)
+    print(f" [x] Received message from {declare_ok.queue!r}")
 
-message = await channel.basic_get(declare_ok.queue)
-print(f" [x] Received message from {declare_ok.queue!r}")
-
-assert message is not None
-assert message.routing_key == "hello"
-assert message.body == b'Hello World!'
-
-await connection.close()
+    assert message is not None
+    assert message.routing_key == "hello"
+    assert message.body == b'Hello World!'
 ```
 
 ### Work Queues
@@ -153,7 +154,8 @@ import aiormq
 
 # The worker declares the durable queue. Declare it here too, so the
 # task is not lost when no worker runs yet.
-setup_connection = await aiormq.connect(amqp_url)
+setup_connection = aiormq.connect(amqp_url)
+await setup_connection.connect()
 setup_channel = await setup_connection.channel()
 await setup_channel.queue_declare('task_queue', durable=True)
 ```
@@ -162,25 +164,22 @@ await setup_channel.queue_declare('task_queue', durable=True)
 import aiormq
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
 
-# Creating a channel
-channel = await connection.channel()
+    body = b"Hello World!"
 
-body = b"Hello World!"
-
-# Sending the message
-await channel.basic_publish(
-    body,
-    routing_key='task_queue',
-    properties=aiormq.spec.Basic.Properties(
-        delivery_mode=1,
+    # Sending the message
+    await channel.basic_publish(
+        body,
+        routing_key='task_queue',
+        properties=aiormq.spec.Basic.Properties(
+            delivery_mode=1,
+        )
     )
-)
 
-print(f" [x] Sent {body!r}")
-
-await connection.close()
+    print(f" [x] Sent {body!r}")
 ```
 <!--
 name: test_work_queues_new_task
@@ -206,27 +205,26 @@ async def on_message(message: aiormq.abc.DeliveredMessage):
 
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
+    await channel.basic_qos(prefetch_count=1)
 
-# Creating a channel
-channel = await connection.channel()
-await channel.basic_qos(prefetch_count=1)
+    # Declaring queue
+    declare_ok = await channel.queue_declare('task_queue', durable=True)
 
-# Declaring queue
-declare_ok = await channel.queue_declare('task_queue', durable=True)
+    # Start listening the queue with name 'task_queue'
+    await channel.basic_consume(declare_ok.queue, on_message, no_ack=True)
 
-# Start listening the queue with name 'task_queue'
-await channel.basic_consume(declare_ok.queue, on_message, no_ack=True)
-
-print(" [*] Waiting for messages.")
+    print(" [*] Waiting for messages.")
+    # The connection stays open while this block runs.
 ```
 <!--
 name: test_work_queues_worker
 ```python
-await channel.basic_publish(b"task", routing_key='task_queue')
-await wait_for_output("Message body is: b'task'")
-await channel.queue_delete('task_queue')
-await connection.close()
+    await channel.basic_publish(b"task", routing_key='task_queue')
+    await wait_for_output("Message body is: b'task'")
+    await channel.queue_delete('task_queue')
 ```
 -->
 
@@ -239,25 +237,22 @@ await connection.close()
 import aiormq
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
 
-# Creating a channel
-channel = await connection.channel()
+    await channel.exchange_declare(
+        exchange='logs', exchange_type='fanout'
+    )
 
-await channel.exchange_declare(
-    exchange='logs', exchange_type='fanout'
-)
+    body = b"Hello World!"
 
-body = b"Hello World!"
+    # Sending the message
+    await channel.basic_publish(
+        body, routing_key='info', exchange='logs'
+    )
 
-# Sending the message
-await channel.basic_publish(
-    body, routing_key='info', exchange='logs'
-)
-
-print(f" [x] Sent {body!r}")
-
-await connection.close()
+    print(f" [x] Sent {body!r}")
 ```
 
 #### Subscriber
@@ -277,34 +272,33 @@ async def on_message(message: aiormq.abc.DeliveredMessage):
 
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
+    await channel.basic_qos(prefetch_count=1)
 
-# Creating a channel
-channel = await connection.channel()
-await channel.basic_qos(prefetch_count=1)
+    await channel.exchange_declare(
+        exchange='logs', exchange_type='fanout'
+    )
 
-await channel.exchange_declare(
-    exchange='logs', exchange_type='fanout'
-)
+    # Declaring queue
+    declare_ok = await channel.queue_declare(exclusive=True)
 
-# Declaring queue
-declare_ok = await channel.queue_declare(exclusive=True)
+    # Binding the queue to the exchange
+    await channel.queue_bind(declare_ok.queue, 'logs')
 
-# Binding the queue to the exchange
-await channel.queue_bind(declare_ok.queue, 'logs')
+    # Start listening the queue
+    await channel.basic_consume(declare_ok.queue, on_message)
 
-# Start listening the queue
-await channel.basic_consume(declare_ok.queue, on_message)
-
-print(' [*] Waiting for logs.')
+    print(' [*] Waiting for logs.')
+    # The connection stays open while this block runs.
 ```
 <!--
 name: test_publish_subscribe_subscriber
 ```python
-await channel.basic_publish(b"log line", routing_key='info', exchange='logs')
-await wait_for_output("[x] b'log line'")
-await channel.exchange_delete('logs')
-await connection.close()
+    await channel.basic_publish(b"log line", routing_key='info', exchange='logs')
+    await wait_for_output("[x] b'log line'")
+    await channel.exchange_delete('logs')
 ```
 -->
 
@@ -326,42 +320,40 @@ async def on_message(message: aiormq.abc.DeliveredMessage):
 
 
 # Perform connection
-connection = aiormq.Connection(amqp_url)
-await connection.connect()
+async with aiormq.Connection(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
+    await channel.basic_qos(prefetch_count=1)
 
-# Creating a channel
-channel = await connection.channel()
-await channel.basic_qos(prefetch_count=1)
+    severities = ["info", "warning", "error"]
 
-severities = ["info", "warning", "error"]
-
-# Declare an exchange
-await channel.exchange_declare(
-    exchange='direct_logs', exchange_type='direct'
-)
-
-# Declaring random queue
-declare_ok = await channel.queue_declare(durable=True, auto_delete=True)
-
-for severity in severities:
-    await channel.queue_bind(
-        declare_ok.queue, 'direct_logs', routing_key=severity
+    # Declare an exchange
+    await channel.exchange_declare(
+        exchange='direct_logs', exchange_type='direct'
     )
 
-# Start listening the random queue
-await channel.basic_consume(declare_ok.queue, on_message)
+    # Declaring random queue
+    declare_ok = await channel.queue_declare(durable=True, auto_delete=True)
 
-print(" [*] Waiting for messages.")
+    for severity in severities:
+        await channel.queue_bind(
+            declare_ok.queue, 'direct_logs', routing_key=severity
+        )
+
+    # Start listening the random queue
+    await channel.basic_consume(declare_ok.queue, on_message)
+
+    print(" [*] Waiting for messages.")
+    # The connection stays open while this block runs.
 ```
 <!--
 name: test_routing_direct_consumer
 ```python
-await channel.basic_publish(
-    b"disk full", routing_key='error', exchange='direct_logs',
-)
-await wait_for_output("[x] 'error':b'disk full'")
-await channel.exchange_delete('direct_logs')
-await connection.close()
+    await channel.basic_publish(
+        b"disk full", routing_key='error', exchange='direct_logs',
+    )
+    await wait_for_output("[x] 'error':b'disk full'")
+    await channel.exchange_delete('direct_logs')
 ```
 -->
 
@@ -372,29 +364,26 @@ await connection.close()
 import aiormq
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
 
-# Creating a channel
-channel = await connection.channel()
-
-await channel.exchange_declare(
-    exchange='direct_logs', exchange_type='direct'
-)
-
-routing_key = 'info'
-body = b"Hello World!"
-
-# Sending the message
-await channel.basic_publish(
-    body, exchange='direct_logs', routing_key=routing_key,
-    properties=aiormq.spec.Basic.Properties(
-        delivery_mode=1
+    await channel.exchange_declare(
+        exchange='direct_logs', exchange_type='direct'
     )
-)
 
-print(f" [x] Sent {body!r}")
+    routing_key = 'info'
+    body = b"Hello World!"
 
-await connection.close()
+    # Sending the message
+    await channel.basic_publish(
+        body, exchange='direct_logs', routing_key=routing_key,
+        properties=aiormq.spec.Basic.Properties(
+            delivery_mode=1
+        )
+    )
+
+    print(f" [x] Sent {body!r}")
 ```
 
 ### Topics
@@ -406,27 +395,24 @@ await connection.close()
 import aiormq
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
 
-# Creating a channel
-channel = await connection.channel()
+    await channel.exchange_declare('topic_logs', exchange_type='topic')
 
-await channel.exchange_declare('topic_logs', exchange_type='topic')
+    routing_key = 'anonymous.info'
+    body = b"Hello World!"
 
-routing_key = 'anonymous.info'
-body = b"Hello World!"
-
-# Sending the message
-await channel.basic_publish(
-    body, exchange='topic_logs', routing_key=routing_key,
-    properties=aiormq.spec.Basic.Properties(
-        delivery_mode=1
+    # Sending the message
+    await channel.basic_publish(
+        body, exchange='topic_logs', routing_key=routing_key,
+        properties=aiormq.spec.Basic.Properties(
+            delivery_mode=1
+        )
     )
-)
 
-print(f" [x] Sent {body!r}")
-
-await connection.close()
+    print(f" [x] Sent {body!r}")
 ```
 
 #### Consumer
@@ -445,39 +431,38 @@ async def on_message(message: aiormq.abc.DeliveredMessage):
 
 
 # Perform connection
-connection = await aiormq.connect(amqp_url)
+async with aiormq.connect(amqp_url) as connection:
+    # Creating a channel
+    channel = await connection.channel()
+    await channel.basic_qos(prefetch_count=1)
 
-# Creating a channel
-channel = await connection.channel()
-await channel.basic_qos(prefetch_count=1)
+    # Declare an exchange
+    await channel.exchange_declare('topic_logs', exchange_type='topic')
 
-# Declare an exchange
-await channel.exchange_declare('topic_logs', exchange_type='topic')
+    # Declaring queue
+    declare_ok = await channel.queue_declare(exclusive=True)
 
-# Declaring queue
-declare_ok = await channel.queue_declare(exclusive=True)
+    binding_keys = ["*.info", "kern.*"]
 
-binding_keys = ["*.info", "kern.*"]
+    for binding_key in binding_keys:
+        await channel.queue_bind(
+            declare_ok.queue, 'topic_logs', routing_key=binding_key
+        )
 
-for binding_key in binding_keys:
-    await channel.queue_bind(
-        declare_ok.queue, 'topic_logs', routing_key=binding_key
-    )
+    # Start listening the queue
+    await channel.basic_consume(declare_ok.queue, on_message)
 
-# Start listening the queue
-await channel.basic_consume(declare_ok.queue, on_message)
-
-print(" [*] Waiting for messages.")
+    print(" [*] Waiting for messages.")
+    # The connection stays open while this block runs.
 ```
 <!--
 name: test_topics_consumer
 ```python
-await channel.basic_publish(
-    b"critical", routing_key='kern.critical', exchange='topic_logs',
-)
-await wait_for_output("[x] 'kern.critical':b'critical'")
-await channel.exchange_delete('topic_logs')
-await connection.close()
+    await channel.basic_publish(
+        b"critical", routing_key='kern.critical', exchange='topic_logs',
+    )
+    await wait_for_output("[x] 'kern.critical':b'critical'")
+    await channel.exchange_delete('topic_logs')
 ```
 -->
 
@@ -506,19 +491,17 @@ def on_consumer_cancel(frame: aiormq.spec.Basic.Cancel):
     cancelled.set_result(frame.consumer_tag)
 
 
-connection = await aiormq.connect(amqp_url)
-channel = await connection.channel()
-channel.on_consumer_cancel_callbacks.add(on_consumer_cancel)
+async with aiormq.connect(amqp_url) as connection:
+    channel = await connection.channel()
+    channel.on_consumer_cancel_callbacks.add(on_consumer_cancel)
 
-declare_ok = await channel.queue_declare('cancel_me', auto_delete=True)
-consume_ok = await channel.basic_consume(declare_ok.queue, on_message)
+    declare_ok = await channel.queue_declare('cancel_me', auto_delete=True)
+    consume_ok = await channel.basic_consume(declare_ok.queue, on_message)
 
-# Deleting the queue makes the broker cancel the consumer.
-await channel.queue_delete(declare_ok.queue)
+    # Deleting the queue makes the broker cancel the consumer.
+    await channel.queue_delete(declare_ok.queue)
 
-assert await cancelled == consume_ok.consumer_tag
-
-await connection.close()
+    assert await cancelled == consume_ok.consumer_tag
 ```
 
 ### Remote procedure call (RPC)
@@ -559,7 +542,8 @@ async def on_message(message: aiormq.abc.DeliveredMessage):
 
 
 # Perform connection
-server_connection = await aiormq.connect(amqp_url)
+server_connection = aiormq.connect(amqp_url)
+await server_connection.connect()
 
 # Creating a channel
 server_channel = await server_connection.channel()
@@ -591,7 +575,8 @@ class FibonacciRpcClient:
         self.futures = {}
 
     async def connect(self):
-        self.connection = await aiormq.connect(amqp_url)
+        self.connection = aiormq.connect(amqp_url)
+        await self.connection.connect()
 
         self.channel = await self.connection.channel()
         declare_ok = await self.channel.queue_declare(
