@@ -105,15 +105,42 @@ async with aiormq.connect(amqp_url) as connection:
     consume_ok = await channel.basic_consume(
         declare_ok.queue, on_message, no_ack=True
     )
-    # The connection stays open while this block runs.
 ```
 <!--
 name: test_simple_consumer
 ```python
     await channel.basic_publish(b"Hello World!", routing_key=declare_ok.queue)
     await wait_for_output("After sleep!")
+    close_task = asyncio.create_task(
+        connection.close(aiormq.ConnectionClosed(320, "broker shutdown"))
+    )
 ```
 -->
+```python
+    # Keep consuming until the connection closes and report its cause.
+    try:
+        await asyncio.shield(connection.closing)
+    except aiormq.AMQPConnectionError as exc:
+        print(f"Connection lost: {exc}")
+```
+<!--
+name: test_simple_consumer
+```python
+    await close_task
+    await wait_for_output("Connection lost:")
+```
+-->
+
+Connection failures happen in background tasks. Await `connection.closing`
+to receive their exception in your application: a graceful broker shutdown
+raises `ConnectionClosed`, while a transport failure can raise another
+`AMQPConnectionError`. `asyncio.shield` prevents cancellation of the waiting
+task from cancelling the shared closing future. The connection context
+manager handles cleanup when the block exits.
+
+aiormq does not reconnect automatically. To reconnect, create a new connection
+and recreate its channels and consumers, or use
+[aio-pika's robust connections](https://docs.aio-pika.com/quick-start.html).
 
 #### Simple publisher
 
