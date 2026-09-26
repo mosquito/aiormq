@@ -1,10 +1,9 @@
-from functools import wraps
 import asyncio
 import io
 import logging
 from collections import OrderedDict
 from contextlib import asynccontextmanager, suppress
-from functools import partial
+from functools import partial, wraps
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
@@ -56,6 +55,11 @@ TaskFunctionType = Callable[..., T]
 
 
 def task(func: TaskFunctionType) -> TaskFunctionType:
+    """Run the method as a channel task. Reject the call on a closed channel.
+
+    A call that starts after the channel closed would create a future in
+    a rejected FutureStore and wait for it forever.
+    """
     @wraps(func)
     async def wrap(self: "Channel", *args: Any, **kwargs: Any) -> Any:
         if self.is_closed:
@@ -165,6 +169,11 @@ class Channel(Base, AbstractChannel):
     @property
     @asynccontextmanager
     async def lock(self) -> AsyncGenerator[None, None]:
+        """Hold the channel lock. Reject the caller if the channel closed.
+
+        The second check covers a close that happened while the caller
+        waited for the lock.
+        """
         if self.is_closed:
             raise ChannelInvalidStateError("%r closed" % self)
         async with self.__lock:

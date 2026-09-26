@@ -3,7 +3,7 @@ import asyncio
 from contextlib import suppress
 from functools import wraps
 from typing import (
-    Any, Callable, Coroutine, Optional, Set, TypeVar, Union, Literal
+    Any, Callable, Coroutine, Literal, Optional, Set, TypeVar, Union,
 )
 from weakref import WeakSet
 
@@ -27,6 +27,8 @@ class FutureStore(AbstractFutureStore):
     def __init__(self, loop: asyncio.AbstractEventLoop):
         self.futures = set()
         self.loop = loop
+        # False until reject_all() ran. After that every added future is
+        # rejected at once with this reason, so no caller waits forever.
         self.reject_reason: Optional[ExceptionType] | Literal[False] = False
         self.parent: Optional[FutureStore] = None
 
