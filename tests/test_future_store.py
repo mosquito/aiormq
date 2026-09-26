@@ -98,3 +98,29 @@ async def test_task_wrapper(event_loop):
 
     with pytest.raises(RuntimeError):
         await wrapped
+
+
+@pytest.mark.parametrize(
+    "reason", [RuntimeError("boom"), RuntimeError, asyncio.CancelledError()],
+    ids=["instance", "class", "cancelled"],
+)
+async def test_task_wrapper_throw_reason(event_loop, reason):
+    # The cancelled task sees the reason in its CancelledError. The
+    # wrapper raises the reason itself.
+    async def work() -> None:
+        await asyncio.sleep(1)
+
+    task = event_loop.create_task(work())
+    wrapped = TaskWrapper(task)
+
+    wrapped.throw(reason)
+
+    with pytest.raises(asyncio.CancelledError) as exc_info:
+        await task
+    assert exc_info.value.args == (reason,)
+
+    expected = reason if isinstance(reason, type) else type(reason)
+    with pytest.raises(expected) as exc_info:
+        await wrapped
+    if not isinstance(reason, type):
+        assert exc_info.value is reason
