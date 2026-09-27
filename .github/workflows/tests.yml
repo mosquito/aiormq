@@ -17,7 +17,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync
       - run: uv run ruff check
         env:
@@ -30,7 +30,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync
       - run: uv run ty check
         env:
@@ -51,7 +51,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync
       - run: uv run pytest -svv README.md
         env:
@@ -85,7 +85,7 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "${{ matrix.python }}"
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --group uvloop
       - name: pytest
         run: >-
