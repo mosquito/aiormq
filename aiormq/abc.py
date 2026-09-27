@@ -2,7 +2,7 @@ import asyncio
 import dataclasses
 import io
 import logging
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 from types import TracebackType
 from typing import (
     Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Set, Tuple,
@@ -301,7 +301,8 @@ class AbstractBase(ABC):
     def __str__(self) -> str:
         raise NotImplementedError
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def is_closed(self) -> bool:
         raise NotImplementedError
 
@@ -571,7 +572,8 @@ class AbstractConnection(AbstractBase):
     ) -> None:
         raise NotImplementedError
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def is_opened(self) -> bool:
         raise NotImplementedError
 
@@ -585,23 +587,28 @@ class AbstractConnection(AbstractBase):
     ) -> bool:
         raise NotImplementedError
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def server_capabilities(self) -> ArgumentsType:
         raise NotImplementedError
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def basic_nack(self) -> bool:
         raise NotImplementedError
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def consumer_cancel_notify(self) -> bool:
         raise NotImplementedError
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def exchange_exchange_bindings(self) -> bool:
         raise NotImplementedError
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def publisher_confirms(self) -> Optional[bool]:
         raise NotImplementedError
 

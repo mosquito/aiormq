@@ -36,7 +36,7 @@ def awaitable(
 ) -> Callable[..., Coroutine[Any, Any, T]]:
     # Avoid python 3.8+ warning
     if inspect.iscoroutinefunction(func):
-        return func     # type: ignore
+        return func
 
     @wraps(func)
     async def wrap(*args: Any, **kwargs: Any) -> T:
@@ -47,7 +47,7 @@ def awaitable(
         if asyncio.iscoroutine(result) or asyncio.isfuture(result):
             return await result
 
-        return result               # type: ignore
+        return result
 
     return wrap
 

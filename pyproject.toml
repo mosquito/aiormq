@@ -55,9 +55,9 @@ dev = [
     "coveralls>=3.3.1,<5",
     "ruff",
     "pytest-cov>=4,<8",
-    "mypy>=1.18,<2",
     "markdown-pytest>=0.6.6,<0.7",
     "aiomisc-pytest>=2,<3",
+    "ty>=0.0.84",
 ]
 uvloop = ["uvloop>=0.22,<0.23"]
 
@@ -73,21 +73,11 @@ source-include = ["tests/**"]
 requires = ["uv_build>=0.12.19,<0.13"]
 build-backend = "uv_build"
 
-[tool.mypy]
-check_untyped_defs = true
-disallow_any_generics = false
-disallow_incomplete_defs = true
-disallow_subclassing_any = true
-disallow_untyped_calls = true
-disallow_untyped_decorators = true
-disallow_untyped_defs = true
-follow_imports = "silent"
-no_implicit_reexport = true
-strict_optional = true
-warn_redundant_casts = true
-warn_unused_configs = true
-warn_unused_ignores = false
-files = "aiormq"
+[tool.ty.src]
+include = ["aiormq"]
+
+[tool.ty.environment]
+python-version = "3.11"
 
 [tool.pytest.ini_options]
 addopts = "-p no:asyncio"
