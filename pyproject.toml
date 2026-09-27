@@ -59,7 +59,7 @@ dev = [
     "markdown-pytest>=0.6.6,<0.7",
     "types-setuptools>=80.9,<82",
     "aiomisc-pytest>=2,<3",
-    "setuptools>=80.9,<82",
+    "setuptools>=80.9,<84",
 ]
 uvloop = ["uvloop>=0.22,<0.23"]
 
