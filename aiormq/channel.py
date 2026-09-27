@@ -8,8 +8,8 @@ from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
 from typing import (
-    Any, AsyncGenerator, Awaitable, Callable, Dict, List, Mapping, Optional,
-    Set, Tuple, Type, TypeVar, Union, overload,
+    Any, AsyncGenerator, Callable, Dict, List, Mapping, Optional,
+    Set, Type, TypeVar, Union, overload,
 )
 from uuid import UUID
 
@@ -637,30 +637,33 @@ class Channel(Base, AbstractChannel):
         raise ChannelClosed(None, None)
 
     async def _reader(self) -> None:
-        hooks: Mapping[Any, Tuple[bool, Callable[[Any], Awaitable[None]]]]
-
-        hooks = {
-            spec.Basic.Deliver: (False, self._on_deliver_frame),
-            spec.Basic.GetOk: (True, self._on_get_frame),
-            spec.Basic.GetEmpty: (True, self._on_get_frame),
-            spec.Basic.Return: (False, self._on_return_frame),
-            spec.Basic.Cancel: (False, self._on_cancel_frame),
-            spec.Basic.CancelOk: (True, self._on_cancel_frame),
-            spec.Channel.Close: (False, self._on_close_frame),
-            spec.Channel.CloseOk: (False, self._on_close_ok_frame),
-            spec.Basic.Ack: (False, self._on_confirm_frame),
-            spec.Basic.Nack: (False, self._on_confirm_frame),
-        }
-
         last_exception: Optional[BaseException] = None
 
         try:
             while True:
                 frame = await self._get_frame()
-                should_add_to_rpc, hook = hooks.get(type(frame), (True, None))
-
-                if hook is not None:
-                    await hook(frame)
+                should_add_to_rpc = False
+                match frame:
+                    case spec.Basic.Deliver():
+                        await self._on_deliver_frame(frame)
+                    case spec.Basic.GetOk() | spec.Basic.GetEmpty():
+                        await self._on_get_frame(frame)
+                        should_add_to_rpc = True
+                    case spec.Basic.Return():
+                        await self._on_return_frame(frame)
+                    case spec.Basic.Cancel():
+                        await self._on_cancel_frame(frame)
+                    case spec.Basic.CancelOk():
+                        await self._on_cancel_frame(frame)
+                        should_add_to_rpc = True
+                    case spec.Channel.Close():
+                        await self._on_close_frame(frame)
+                    case spec.Channel.CloseOk():
+                        await self._on_close_ok_frame(frame)
+                    case spec.Basic.Ack() | spec.Basic.Nack():
+                        await self._on_confirm_frame(frame)
+                    case _:
+                        should_add_to_rpc = True
 
                 if should_add_to_rpc:
                     await self.rpc_frames.put(frame)

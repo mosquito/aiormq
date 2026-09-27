@@ -12,7 +12,7 @@ from importlib.metadata import version
 from io import BytesIO
 from types import MappingProxyType, TracebackType
 from typing import (
-    Any, Awaitable, Callable, Coroutine, Dict, Generator, Mapping, Optional,
+    Any, Coroutine, Dict, Generator, Mapping, Optional,
     Tuple, Type, Union,
 )
 
@@ -735,19 +735,6 @@ class Connection(Base, AbstractConnection):
         if self.heartbeat_timeout > 0:
             self.create_task(self.__heartbeat())
 
-        channel_frame_handlers: Mapping[Any, Callable[[Any], Awaitable[None]]]
-        channel_frame_handlers = {
-            spec.Connection.CloseOk: self.__handle_close_ok,
-            spec.Connection.Close: self.__handle_close,
-            Heartbeat: self.__handle_heartbeat,
-            spec.Channel.CloseOk: self.__handle_channel_close_ok,
-            spec.Connection.UpdateSecretOk: (
-                self.__handle_channel_update_secret_ok
-            ),
-            spec.Connection.Blocked: self.__handle_connection_blocked,
-            spec.Connection.Unblocked: self.__handle_connection_unblocked,
-        }
-
         try:
             async for weight, channel, frame in frame_receiver:
                 self.__last_frame_time = self.loop.time()
@@ -758,13 +745,23 @@ class Connection(Base, AbstractConnection):
                 )
 
                 if channel == 0:
-                    handler = channel_frame_handlers.get(type(frame))
-
-                    if handler is None:
-                        log.error("Unexpected frame %r", frame)
-                        continue
-
-                    await handler(frame)
+                    match frame:
+                        case spec.Connection.CloseOk():
+                            await self.__handle_close_ok(frame)
+                        case spec.Connection.Close():
+                            await self.__handle_close(frame)
+                        case Heartbeat():
+                            await self.__handle_heartbeat(frame)
+                        case spec.Channel.CloseOk():
+                            await self.__handle_channel_close_ok(frame)
+                        case spec.Connection.UpdateSecretOk():
+                            await self.__handle_channel_update_secret_ok(frame)
+                        case spec.Connection.Blocked():
+                            await self.__handle_connection_blocked(frame)
+                        case spec.Connection.Unblocked():
+                            await self.__handle_connection_unblocked(frame)
+                        case _:
+                            log.error("Unexpected frame %r", frame)
                     continue
 
                 ch: Optional[AbstractChannel] = self.channels.get(channel)
@@ -901,9 +898,9 @@ class Connection(Base, AbstractConnection):
 
     async def _on_close(
         self,
-        ex: Optional[ExceptionType] = ConnectionClosed(0, "normal closed"),
+        exc: ExceptionType | None = ConnectionClosed(0, "normal closed"),
     ) -> None:
-        log.debug("Closing connection %r cause: %r", self, ex)
+        log.debug("Closing connection %r cause: %r", self, exc)
         if not self._reader_task.done():
             self._reader_task.cancel()
         if (
@@ -917,10 +914,10 @@ class Connection(Base, AbstractConnection):
         )
         if self._closing.done():
             return
-        if ex is None:
+        if exc is None:
             self._closing.set_result(None)
         else:
-            self._closing.set_exception(ex)
+            self._closing.set_exception(exc)
 
     @property
     def server_capabilities(self) -> ArgumentsType:
@@ -1116,4 +1113,4 @@ def connect(
 # inspect.iscoroutinefunction() and asyncio.iscoroutinefunction() true.
 if hasattr(inspect, "markcoroutinefunction"):    # Python 3.12+
     connect = inspect.markcoroutinefunction(connect)
-connect._is_coroutine = asyncio.coroutines._is_coroutine  # type: ignore[attr-defined]  # noqa: E501
+connect._is_coroutine = asyncio.coroutines._is_coroutine  # ty: ignore[unresolved-attribute]  # noqa: E501
