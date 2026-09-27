@@ -8,6 +8,7 @@ from abc import abstractmethod, ABC
 from base64 import b64decode
 from collections.abc import AsyncIterable
 from contextlib import suppress
+from importlib.metadata import version
 from io import BytesIO
 from types import MappingProxyType, TracebackType
 from typing import (
@@ -44,13 +45,7 @@ from .exceptions import (
 from .tools import Countdown, censor_url
 
 
-# noinspection PyUnresolvedReferences
-try:
-    from importlib.metadata import Distribution
-    __version__ = Distribution.from_name("aiormq").version
-except ImportError:
-    import pkg_resources
-    __version__ = pkg_resources.get_distribution("aiormq").version
+__version__ = version("aiormq")
 
 
 log = logging.getLogger(__name__)
