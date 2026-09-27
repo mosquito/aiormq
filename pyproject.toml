@@ -57,9 +57,7 @@ dev = [
     "pytest-cov>=4,<8",
     "mypy>=1.18,<2",
     "markdown-pytest>=0.6.6,<0.7",
-    "types-setuptools>=80.9,<82",
     "aiomisc-pytest>=2,<3",
-    "setuptools>=80.9,<82",
 ]
 uvloop = ["uvloop>=0.22,<0.23"]
 
@@ -72,7 +70,7 @@ module-root = ""
 source-include = ["tests/**"]
 
 [build-system]
-requires = ["uv_build>=0.10.4,<0.12"]
+requires = ["uv_build>=0.12.19,<0.13"]
 build-backend = "uv_build"
 
 [tool.mypy]
