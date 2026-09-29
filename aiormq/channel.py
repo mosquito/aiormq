@@ -332,7 +332,10 @@ class Channel(Base, AbstractChannel):
                 if isinstance(frame, spec.Channel.Open):
                     self.__open_sent = True
 
-                if not (frame.synchronous or getattr(frame, "nowait", False)):
+                # An asynchronous method has no reply. A synchronous method
+                # sent with nowait gets no reply either, because AMQP 0-9-1
+                # forbids the broker to answer a no-wait request.
+                if not frame.synchronous or getattr(frame, "nowait", False):
                     return None
 
                 result = await countdown(self.rpc_frames.get())
@@ -725,10 +728,16 @@ class Channel(Base, AbstractChannel):
         self, consumer_tag: str, *, nowait: bool = False,
         timeout: TimeoutType = None,
     ) -> spec.Basic.CancelOk:
-        return await self.rpc(
+        result = await self.rpc(
             spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
             timeout=timeout,
         )
+
+        if nowait:
+            # No Basic.CancelOk arrives, so remove the consumer here.
+            self.consumers.pop(consumer_tag, None)
+
+        return result
 
     async def basic_consume(
         self,
