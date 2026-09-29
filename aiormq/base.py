@@ -1,10 +1,9 @@
 import abc
 import asyncio
+from collections.abc import Callable, Coroutine
 from contextlib import suppress
 from functools import wraps
-from typing import (
-    Any, Callable, Coroutine, Literal, Optional, Set, TypeVar, Union,
-)
+from typing import Any, Literal, TypeVar
 from weakref import WeakSet
 
 from .abc import (
@@ -25,7 +24,7 @@ def _retrieve_exception(future: asyncio.Future) -> None:
 class FutureStore(AbstractFutureStore):
     __slots__ = "futures", "loop", "parent"
 
-    futures: Set[Union[asyncio.Future, TaskType]]
+    futures: set[asyncio.Future | TaskType]
     weak_futures: WeakSet
     loop: asyncio.AbstractEventLoop
 
@@ -34,11 +33,11 @@ class FutureStore(AbstractFutureStore):
         self.loop = loop
         # False until reject_all() ran. After that every added future is
         # rejected at once with this reason, so no caller waits forever.
-        self.reject_reason: Optional[ExceptionType] | Literal[False] = False
-        self.parent: Optional[FutureStore] = None
+        self.reject_reason: ExceptionType | Literal[False] | None = False
+        self.parent: FutureStore | None = None
 
     def __on_task_done(
-        self, future: Union[asyncio.Future, TaskWrapper],
+        self, future: asyncio.Future | TaskWrapper,
     ) -> Callable[..., Any]:
         def remover(*_: Any) -> None:
             nonlocal future     # noqa
@@ -47,7 +46,7 @@ class FutureStore(AbstractFutureStore):
 
         return remover
 
-    def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
+    def add(self, future: asyncio.Future | TaskWrapper) -> None:
         if self.reject_reason is not False:
             if isinstance(future, TaskWrapper):
                 future.throw(self.reject_reason or Exception)
@@ -61,12 +60,12 @@ class FutureStore(AbstractFutureStore):
             self.parent.add(future)
 
     @shield
-    async def reject_all(self, exception: Optional[ExceptionType]) -> None:
+    async def reject_all(self, exception: ExceptionType | None) -> None:
         self.reject_reason = exception
         tasks = []
 
         while self.futures:
-            future: Union[TaskType, asyncio.Future] = self.futures.pop()
+            future: TaskType | asyncio.Future = self.futures.pop()
 
             if future.done():
                 continue
@@ -107,7 +106,7 @@ class Base(AbstractBase):
 
     def __init__(
         self, *, loop: asyncio.AbstractEventLoop,
-        parent: Optional[AbstractBase] = None,
+        parent: AbstractBase | None = None,
     ):
         self.loop: asyncio.AbstractEventLoop = loop
 
@@ -153,7 +152,7 @@ class Base(AbstractBase):
         return future
 
     def _cancel_tasks(
-        self, exc: Optional[ExceptionType] = None,
+        self, exc: ExceptionType | None = None,
     ) -> Coroutine[Any, Any, None]:
         return self.__future_store.reject_all(exc)
 
@@ -168,11 +167,11 @@ class Base(AbstractBase):
 
     @abc.abstractmethod
     async def _on_close(
-        self, exc: Optional[ExceptionType] = None,
+        self, exc: ExceptionType | None = None,
     ) -> None:  # pragma: no cover
         return
 
-    async def __closer(self, exc: Optional[ExceptionType]) -> None:
+    async def __closer(self, exc: ExceptionType | None) -> None:
         if self.is_closed:  # pragma: no cover
             return
 
@@ -183,7 +182,7 @@ class Base(AbstractBase):
             await self._cancel_tasks(exc)
 
     async def close(
-        self, exc: Optional[ExceptionType] = asyncio.CancelledError,
+        self, exc: ExceptionType | None = asyncio.CancelledError,
         timeout: TimeoutType = None,
     ) -> None:
         if self.is_closed:

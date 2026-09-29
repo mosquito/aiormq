@@ -6,15 +6,14 @@ import ssl
 import sys
 from abc import abstractmethod, ABC
 from base64 import b64decode
-from collections.abc import AsyncIterable
+from collections.abc import (
+    AsyncIterable, Coroutine, Generator, Mapping,
+)
 from contextlib import suppress
 from importlib.metadata import version
 from io import BytesIO
 from types import MappingProxyType, TracebackType
-from typing import (
-    Any, Coroutine, Dict, Generator, Mapping, Optional,
-    Tuple, Type, Union,
-)
+from typing import Any
 
 import pamqp.frame
 from pamqp import commands as spec
@@ -66,9 +65,9 @@ PLATFORM = "{} {} ({} build {})".format(
 )
 
 
-TimeType = Union[float, int]
-TimeoutType = Optional[TimeType]
-ReceivedFrame = Tuple[int, int, FrameTypes]
+TimeType = float | int
+TimeoutType = TimeType | None
+ReceivedFrame = tuple[int, int, FrameTypes]
 
 
 EXCEPTION_MAPPING = MappingProxyType({
@@ -143,7 +142,7 @@ def parse_heartbeat(v: str) -> int:
     return result if 0 <= result < 65535 else 0
 
 
-def parse_connection_name(connection_name: Optional[str]) -> Dict[str, str]:
+def parse_connection_name(connection_name: str | None) -> dict[str, str]:
     if not connection_name or not isinstance(connection_name, str):
         return {}
     return dict(connection_name=connection_name)
@@ -260,7 +259,7 @@ class SSLContextProvider:
     def __init__(
         self,
         *,
-        ssl_context: Optional[ssl.SSLContext],
+        ssl_context: ssl.SSLContext | None,
         ssl_certs: SSLCerts,
         loop: asyncio.AbstractEventLoop,
     ) -> None:
@@ -312,7 +311,7 @@ class TransportFactory(ABC):
             self,
             url: URL,
             **kwargs: Any
-    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """Create a transport connection to the AMQP server."""
         pass
 
@@ -322,7 +321,7 @@ class TCPTransportFactory(TransportFactory):
             self,
             url: URL,
             **kwargs: Any
-    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         # unexpected for asyncio.open_connection ignoring it
         _ = kwargs.pop("ssl_context_provider", None)
         try:
@@ -338,7 +337,7 @@ class TLSTransportFactory(TransportFactory):
             self,
             url: URL,
             **kwargs: Any
-    ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         ssl_context_provider = kwargs.pop("ssl_context_provider")
         ssl = await ssl_context_provider.get_context()
 
@@ -366,20 +365,20 @@ class Connection(Base, AbstractConnection):
     write_queue: asyncio.Queue
     server_properties: ArgumentsType
     connection_tune: spec.Connection.Tune
-    channels: Dict[int, Optional[AbstractChannel]]
+    channels: dict[int, AbstractChannel | None]
 
     @staticmethod
-    def _parse_ca_data(data: Optional[str]) -> Optional[bytes]:
+    def _parse_ca_data(data: str | None) -> bytes | None:
         return b64decode(data) if data else None
 
     def __init__(
         self,
         url: URLorStr,
         *,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
-        context: Optional[ssl.SSLContext] = None,
-        transport_factory: Optional[TransportFactory] = None,
-        client_properties: Optional[FieldTable] = None,
+        loop: asyncio.AbstractEventLoop | None = None,
+        context: ssl.SSLContext | None = None,
+        transport_factory: TransportFactory | None = None,
+        client_properties: FieldTable | None = None,
         **create_connection_kwargs: Any,
     ):
 
@@ -435,7 +434,7 @@ class Connection(Base, AbstractConnection):
         self.__close_class_id: int = 0
         self.__close_method_id: int = 0
         self.__update_secret_lock: asyncio.Lock = asyncio.Lock()
-        self.__update_secret_future: Optional[asyncio.Future] = None
+        self.__update_secret_future: asyncio.Future | None = None
         self.__connection_unblocked: asyncio.Event = asyncio.Event()
         self.__heartbeat_grace_timeout = (
             (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
@@ -475,7 +474,7 @@ class Connection(Base, AbstractConnection):
     def __str__(self) -> str:
         return str(censor_url(self.url))
 
-    def _client_properties(self, **kwargs: Any) -> Dict[str, Any]:
+    def _client_properties(self, **kwargs: Any) -> dict[str, Any]:
         properties = {
             "platform": PLATFORM,
             "version": __version__,
@@ -514,7 +513,7 @@ class Connection(Base, AbstractConnection):
         request: Frame, writer: asyncio.StreamWriter,
         frame_receiver: FrameReceiver,
         wait_response: bool = True,
-    ) -> Optional[FrameTypes]:
+    ) -> FrameTypes | None:
 
         writer.write(pamqp.frame.marshal(request, 0))
         await writer.drain()
@@ -536,7 +535,7 @@ class Connection(Base, AbstractConnection):
 
     @task
     async def connect(
-        self, client_properties: Optional[FieldTable] = None,
+        self, client_properties: FieldTable | None = None,
     ) -> bool:
         if self.is_opened:
             raise RuntimeError("Connection already opened")
@@ -557,7 +556,7 @@ class Connection(Base, AbstractConnection):
             raise e
 
         frame_receiver = FrameReceiver(reader)
-        frame: Optional[FrameTypes]
+        frame: FrameTypes | None
 
         # Every failure after the transport exists must close the writer,
         # the protocol header exchange included.
@@ -764,7 +763,7 @@ class Connection(Base, AbstractConnection):
                             log.error("Unexpected frame %r", frame)
                     continue
 
-                ch: Optional[AbstractChannel] = self.channels.get(channel)
+                ch: AbstractChannel | None = self.channels.get(channel)
                 if ch is None:
                     log.error(
                         "Got frame for closed channel %d: %r", channel, frame,
@@ -936,7 +935,7 @@ class Connection(Base, AbstractConnection):
         return bool(self.server_capabilities.get("exchange_exchange_bindings"))
 
     @property
-    def publisher_confirms(self) -> Optional[bool]:
+    def publisher_confirms(self) -> bool | None:
         publisher_confirms = self.server_capabilities.get("publisher_confirms")
         if publisher_confirms is None:
             return None
@@ -944,7 +943,7 @@ class Connection(Base, AbstractConnection):
 
     async def channel(
         self,
-        channel_number: Optional[int] = None,
+        channel_number: int | None = None,
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,
@@ -1030,9 +1029,9 @@ class Connection(Base, AbstractConnection):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         await self.close(exc_val)
 
@@ -1052,8 +1051,8 @@ class ConnectionContext(Coroutine[Any, Any, Connection]):
     def __init__(self, *args: Any, **kwargs: Any):
         self._args = args
         self._kwargs = kwargs
-        self._connection: Optional[Connection] = None
-        self._coro: Optional[Coroutine[Any, Any, Connection]] = None
+        self._connection: Connection | None = None
+        self._coro: Coroutine[Any, Any, Connection] | None = None
 
     @property
     def connection(self) -> Connection:
@@ -1070,9 +1069,9 @@ class ConnectionContext(Coroutine[Any, Any, Connection]):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         await self.connection.__aexit__(exc_type, exc_val, exc_tb)
 
@@ -1100,7 +1099,7 @@ class ConnectionContext(Coroutine[Any, Any, Connection]):
 
 
 def connect(
-    url: URLorStr, *args: Any, client_properties: Optional[FieldTable] = None,
+    url: URLorStr, *args: Any, client_properties: FieldTable | None = None,
     **kwargs: Any,
 ) -> ConnectionContext:
     """Prepare a connection. See ConnectionContext for the ways to open it."""
