@@ -8,7 +8,7 @@ from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
 from typing import (
-    Any, AsyncGenerator, Callable, Dict, List, Mapping, Optional,
+    Any, AsyncGenerator, Callable, Dict, List, Literal, Mapping, Optional,
     Set, Type, TypeVar, Union, overload,
 )
 from uuid import UUID
@@ -724,10 +724,22 @@ class Channel(Base, AbstractChannel):
 
         return message
 
+    @overload
+    async def basic_cancel(
+        self, consumer_tag: str, *, nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Basic.CancelOk: ...
+
+    @overload
+    async def basic_cancel(
+        self, consumer_tag: str, *, nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def basic_cancel(
         self, consumer_tag: str, *, nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Basic.CancelOk:
+    ) -> spec.Basic.CancelOk | None:
         result = await self.rpc(
             spec.Basic.Cancel(consumer_tag=consumer_tag, nowait=nowait),
             timeout=timeout,
@@ -1002,10 +1014,22 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    @overload
+    async def basic_recover(
+        self, *, nowait: Literal[False] = False, requeue: bool = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Basic.RecoverOk: ...
+
+    @overload
+    async def basic_recover(
+        self, *, nowait: Literal[True] = True, requeue: bool = False,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def basic_recover(
         self, *, nowait: bool = False, requeue: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Basic.RecoverOk:
+    ) -> spec.Basic.RecoverOk | None:
         frame: Union[spec.Basic.RecoverAsync, spec.Basic.Recover]
         if nowait:
             frame = spec.Basic.RecoverAsync(requeue=requeue)
@@ -1013,6 +1037,36 @@ class Channel(Base, AbstractChannel):
             frame = spec.Basic.Recover(requeue=requeue)
 
         return await self.rpc(frame, timeout=timeout)
+
+    @overload
+    async def exchange_declare(
+        self,
+        exchange: str = "",
+        *,
+        exchange_type: str = "direct",
+        passive: bool = False,
+        durable: bool = False,
+        auto_delete: bool = False,
+        internal: bool = False,
+        nowait: Literal[False] = False,
+        arguments: dict[str, Any] | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.DeclareOk: ...
+
+    @overload
+    async def exchange_declare(
+        self,
+        exchange: str = "",
+        *,
+        exchange_type: str = "direct",
+        passive: bool = False,
+        durable: bool = False,
+        auto_delete: bool = False,
+        internal: bool = False,
+        nowait: Literal[True] = True,
+        arguments: dict[str, Any] | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     async def exchange_declare(
         self,
@@ -1024,9 +1078,9 @@ class Channel(Base, AbstractChannel):
         auto_delete: bool = False,
         internal: bool = False,
         nowait: bool = False,
-        arguments: Optional[Dict[str, Any]] = None,
+        arguments: dict[str, Any] | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.DeclareOk:
+    ) -> spec.Exchange.DeclareOk | None:
         return await self.rpc(
             spec.Exchange.Declare(
                 exchange=str(exchange),
@@ -1041,6 +1095,26 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    @overload
+    async def exchange_delete(
+        self,
+        exchange: str = "",
+        *,
+        if_unused: bool = False,
+        nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.DeleteOk: ...
+
+    @overload
+    async def exchange_delete(
+        self,
+        exchange: str = "",
+        *,
+        if_unused: bool = False,
+        nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def exchange_delete(
         self,
         exchange: str = "",
@@ -1048,13 +1122,37 @@ class Channel(Base, AbstractChannel):
         if_unused: bool = False,
         nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.DeleteOk:
+    ) -> spec.Exchange.DeleteOk | None:
         return await self.rpc(
             spec.Exchange.Delete(
                 exchange=exchange, nowait=nowait, if_unused=if_unused,
             ),
             timeout=timeout,
         )
+
+    @overload
+    async def exchange_bind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.BindOk: ...
+
+    @overload
+    async def exchange_bind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     async def exchange_bind(
         self,
@@ -1063,9 +1161,9 @@ class Channel(Base, AbstractChannel):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.BindOk:
+    ) -> spec.Exchange.BindOk | None:
         _check_routing_key(routing_key)
         return await self.rpc(
             spec.Exchange.Bind(
@@ -1078,6 +1176,30 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    @overload
+    async def exchange_unbind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.UnbindOk: ...
+
+    @overload
+    async def exchange_unbind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def exchange_unbind(
         self,
         destination: str = "",
@@ -1085,9 +1207,9 @@ class Channel(Base, AbstractChannel):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.UnbindOk:
+    ) -> spec.Exchange.UnbindOk | None:
         _check_routing_key(routing_key)
         return await self.rpc(
             spec.Exchange.Unbind(
@@ -1109,15 +1231,37 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    @overload
+    async def queue_bind(
+        self,
+        queue: str,
+        exchange: str,
+        routing_key: str = "",
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.BindOk: ...
+
+    @overload
+    async def queue_bind(
+        self,
+        queue: str,
+        exchange: str,
+        routing_key: str = "",
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def queue_bind(
         self,
         queue: str,
         exchange: str,
         routing_key: str = "",
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.BindOk:
+    ) -> spec.Queue.BindOk | None:
         _check_routing_key(routing_key)
         return await self.rpc(
             spec.Queue.Bind(
@@ -1130,6 +1274,34 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    @overload
+    async def queue_declare(
+        self,
+        queue: str = "",
+        *,
+        passive: bool = False,
+        durable: bool = False,
+        exclusive: bool = False,
+        auto_delete: bool = False,
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.DeclareOk: ...
+
+    @overload
+    async def queue_declare(
+        self,
+        queue: str = "",
+        *,
+        passive: bool = False,
+        durable: bool = False,
+        exclusive: bool = False,
+        auto_delete: bool = False,
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def queue_declare(
         self,
         queue: str = "",
@@ -1139,9 +1311,9 @@ class Channel(Base, AbstractChannel):
         exclusive: bool = False,
         auto_delete: bool = False,
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.DeclareOk:
+    ) -> spec.Queue.DeclareOk | None:
         return await self.rpc(
             spec.Queue.Declare(
                 queue=queue,
@@ -1155,6 +1327,26 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    @overload
+    async def queue_delete(
+        self,
+        queue: str = "",
+        if_unused: bool = False,
+        if_empty: bool = False,
+        nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.DeleteOk: ...
+
+    @overload
+    async def queue_delete(
+        self,
+        queue: str = "",
+        if_unused: bool = False,
+        if_empty: bool = False,
+        nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def queue_delete(
         self,
         queue: str = "",
@@ -1162,7 +1354,7 @@ class Channel(Base, AbstractChannel):
         if_empty: bool = False,
         nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.DeleteOk:
+    ) -> spec.Queue.DeleteOk | None:
         return await self.rpc(
             spec.Queue.Delete(
                 queue=queue,
@@ -1173,10 +1365,22 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    @overload
+    async def queue_purge(
+        self, queue: str = "", nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.PurgeOk: ...
+
+    @overload
+    async def queue_purge(
+        self, queue: str = "", nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def queue_purge(
         self, queue: str = "", nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.PurgeOk:
+    ) -> spec.Queue.PurgeOk | None:
         return await self.rpc(
             spec.Queue.Purge(queue=queue, nowait=nowait),
             timeout=timeout,
@@ -1214,10 +1418,22 @@ class Channel(Base, AbstractChannel):
     async def tx_select(self, timeout: TimeoutType = None) -> spec.Tx.SelectOk:
         return await self.rpc(spec.Tx.Select(), timeout=timeout)
 
+    @overload
+    async def confirm_delivery(
+        self, nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Confirm.SelectOk: ...
+
+    @overload
+    async def confirm_delivery(
+        self, nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     async def confirm_delivery(
         self, nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Confirm.SelectOk:
+    ) -> spec.Confirm.SelectOk | None:
         return await self.rpc(
             spec.Confirm.Select(nowait=nowait),
             timeout=timeout,

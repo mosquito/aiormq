@@ -5,8 +5,8 @@ import logging
 from abc import ABC, abstractmethod
 from types import TracebackType
 from typing import (
-    Any, Awaitable, Callable, Coroutine, Dict, Iterable, Optional, Set, Tuple,
-    Type, Union,
+    Any, Awaitable, Callable, Coroutine, Dict, Iterable, Literal, Optional,
+    Set, Tuple, Type, Union, overload,
 )
 
 import pamqp
@@ -330,11 +330,23 @@ class AbstractChannel(AbstractBase):
     ) -> DeliveredMessage:
         raise NotImplementedError
 
+    @overload
+    async def basic_cancel(
+        self, consumer_tag: str, *, nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Basic.CancelOk: ...
+
+    @overload
+    async def basic_cancel(
+        self, consumer_tag: str, *, nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     @abstractmethod
     async def basic_cancel(
         self, consumer_tag: str, *, nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Basic.CancelOk:
+    ) -> spec.Basic.CancelOk | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -398,12 +410,54 @@ class AbstractChannel(AbstractBase):
     ) -> spec.Basic.QosOk:
         raise NotImplementedError
 
+    @overload
+    async def basic_recover(
+        self, *, nowait: Literal[False] = False, requeue: bool = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Basic.RecoverOk: ...
+
+    @overload
+    async def basic_recover(
+        self, *, nowait: Literal[True] = True, requeue: bool = False,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     @abstractmethod
     async def basic_recover(
         self, *, nowait: bool = False, requeue: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Basic.RecoverOk:
+    ) -> spec.Basic.RecoverOk | None:
         raise NotImplementedError
+
+    @overload
+    async def exchange_declare(
+        self,
+        exchange: str = "",
+        *,
+        exchange_type: str = "direct",
+        passive: bool = False,
+        durable: bool = False,
+        auto_delete: bool = False,
+        internal: bool = False,
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.DeclareOk: ...
+
+    @overload
+    async def exchange_declare(
+        self,
+        exchange: str = "",
+        *,
+        exchange_type: str = "direct",
+        passive: bool = False,
+        durable: bool = False,
+        auto_delete: bool = False,
+        internal: bool = False,
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     @abstractmethod
     async def exchange_declare(
@@ -416,10 +470,30 @@ class AbstractChannel(AbstractBase):
         auto_delete: bool = False,
         internal: bool = False,
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.DeclareOk:
+    ) -> spec.Exchange.DeclareOk | None:
         raise NotImplementedError
+
+    @overload
+    async def exchange_delete(
+        self,
+        exchange: str = "",
+        *,
+        if_unused: bool = False,
+        nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.DeleteOk: ...
+
+    @overload
+    async def exchange_delete(
+        self,
+        exchange: str = "",
+        *,
+        if_unused: bool = False,
+        nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     @abstractmethod
     async def exchange_delete(
@@ -429,8 +503,32 @@ class AbstractChannel(AbstractBase):
         if_unused: bool = False,
         nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.DeleteOk:
+    ) -> spec.Exchange.DeleteOk | None:
         raise NotImplementedError
+
+    @overload
+    async def exchange_bind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.BindOk: ...
+
+    @overload
+    async def exchange_bind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     @abstractmethod
     async def exchange_bind(
@@ -440,10 +538,34 @@ class AbstractChannel(AbstractBase):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.BindOk:
+    ) -> spec.Exchange.BindOk | None:
         raise NotImplementedError
+
+    @overload
+    async def exchange_unbind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Exchange.UnbindOk: ...
+
+    @overload
+    async def exchange_unbind(
+        self,
+        destination: str = "",
+        source: str = "",
+        routing_key: str = "",
+        *,
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     @abstractmethod
     async def exchange_unbind(
@@ -453,9 +575,9 @@ class AbstractChannel(AbstractBase):
         routing_key: str = "",
         *,
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Exchange.UnbindOk:
+    ) -> spec.Exchange.UnbindOk | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -465,6 +587,28 @@ class AbstractChannel(AbstractBase):
     ) -> spec.Channel.FlowOk:
         raise NotImplementedError
 
+    @overload
+    async def queue_bind(
+        self,
+        queue: str,
+        exchange: str,
+        routing_key: str = "",
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.BindOk: ...
+
+    @overload
+    async def queue_bind(
+        self,
+        queue: str,
+        exchange: str,
+        routing_key: str = "",
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     @abstractmethod
     async def queue_bind(
         self,
@@ -472,10 +616,38 @@ class AbstractChannel(AbstractBase):
         exchange: str,
         routing_key: str = "",
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.BindOk:
+    ) -> spec.Queue.BindOk | None:
         raise NotImplementedError
+
+    @overload
+    async def queue_declare(
+        self,
+        queue: str = "",
+        *,
+        passive: bool = False,
+        durable: bool = False,
+        exclusive: bool = False,
+        auto_delete: bool = False,
+        nowait: Literal[False] = False,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.DeclareOk: ...
+
+    @overload
+    async def queue_declare(
+        self,
+        queue: str = "",
+        *,
+        passive: bool = False,
+        durable: bool = False,
+        exclusive: bool = False,
+        auto_delete: bool = False,
+        nowait: Literal[True] = True,
+        arguments: ArgumentsType | None = None,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     @abstractmethod
     async def queue_declare(
@@ -487,10 +659,30 @@ class AbstractChannel(AbstractBase):
         exclusive: bool = False,
         auto_delete: bool = False,
         nowait: bool = False,
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.DeclareOk:
+    ) -> spec.Queue.DeclareOk | None:
         raise NotImplementedError
+
+    @overload
+    async def queue_delete(
+        self,
+        queue: str = "",
+        if_unused: bool = False,
+        if_empty: bool = False,
+        nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.DeleteOk: ...
+
+    @overload
+    async def queue_delete(
+        self,
+        queue: str = "",
+        if_unused: bool = False,
+        if_empty: bool = False,
+        nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     @abstractmethod
     async def queue_delete(
@@ -500,14 +692,26 @@ class AbstractChannel(AbstractBase):
         if_empty: bool = False,
         nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.DeleteOk:
+    ) -> spec.Queue.DeleteOk | None:
         raise NotImplementedError
+
+    @overload
+    async def queue_purge(
+        self, queue: str = "", nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Queue.PurgeOk: ...
+
+    @overload
+    async def queue_purge(
+        self, queue: str = "", nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
 
     @abstractmethod
     async def queue_purge(
         self, queue: str = "", nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Queue.PurgeOk:
+    ) -> spec.Queue.PurgeOk | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -537,11 +741,23 @@ class AbstractChannel(AbstractBase):
     async def tx_select(self, timeout: TimeoutType = None) -> spec.Tx.SelectOk:
         raise NotImplementedError
 
+    @overload
+    async def confirm_delivery(
+        self, nowait: Literal[False] = False,
+        timeout: TimeoutType = None,
+    ) -> spec.Confirm.SelectOk: ...
+
+    @overload
+    async def confirm_delivery(
+        self, nowait: Literal[True] = True,
+        timeout: TimeoutType = None,
+    ) -> None: ...
+
     @abstractmethod
     async def confirm_delivery(
         self, nowait: bool = False,
         timeout: TimeoutType = None,
-    ) -> spec.Confirm.SelectOk:
+    ) -> spec.Confirm.SelectOk | None:
         raise NotImplementedError
 
 
