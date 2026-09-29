@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from pamqp.base import Frame
 from pamqp.commands import Basic
@@ -185,7 +185,7 @@ class DeliveryError(AMQPError):
     reason = "Error when delivery message %r, frame %r"
 
     def __init__(
-        self, message: Optional[DeliveredMessage],
+        self, message: DeliveredMessage | None,
         frame: Frame, *args: Any,
     ):
         self.message = message

@@ -3,11 +3,9 @@ import dataclasses
 import io
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from types import TracebackType
-from typing import (
-    Any, Awaitable, Callable, Coroutine, Dict, Iterable, Literal, Optional,
-    Set, Tuple, Type, Union, overload,
-)
+from typing import Any, Literal, overload
 
 import pamqp
 from pamqp import commands as spec
@@ -21,14 +19,14 @@ from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 
-ExceptionType = Union[BaseException, Type[BaseException]]
+ExceptionType = BaseException | type[BaseException]
 
 
 # noinspection PyShadowingNames
 class TaskWrapper:
     __slots__ = "_exception", "task"
 
-    _exception: Union[BaseException, Type[BaseException]]
+    _exception: BaseException | type[BaseException]
     task: asyncio.Task
 
     def __init__(self, task: asyncio.Task):
@@ -63,20 +61,20 @@ class TaskWrapper:
         return "<%s: %s>" % (self.__class__.__name__, repr(self.task))
 
 
-TaskType = Union[asyncio.Task, TaskWrapper]
+TaskType = asyncio.Task | TaskWrapper
 CoroutineType = Coroutine[Any, None, Any]
-GetResultType = Union[Basic.GetEmpty, Basic.GetOk]
+GetResultType = Basic.GetEmpty | Basic.GetOk
 
 
 @dataclasses.dataclass(frozen=True)
 class DeliveredMessage:
-    delivery: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType]
+    delivery: spec.Basic.Deliver | spec.Basic.Return | GetResultType
     header: ContentHeader
     body: bytes
     channel: "AbstractChannel"
 
     @property
-    def routing_key(self) -> Optional[str]:
+    def routing_key(self) -> str | None:
         if isinstance(
             self.delivery, (
                 spec.Basic.Return,
@@ -88,7 +86,7 @@ class DeliveredMessage:
         return None
 
     @property
-    def exchange(self) -> Optional[str]:
+    def exchange(self) -> str | None:
         if isinstance(
             self.delivery, (
                 spec.Basic.Return,
@@ -100,7 +98,7 @@ class DeliveredMessage:
         return None
 
     @property
-    def delivery_tag(self) -> Optional[int]:
+    def delivery_tag(self) -> int | None:
         if isinstance(
             self.delivery, (
                 spec.Basic.GetOk,
@@ -111,7 +109,7 @@ class DeliveredMessage:
         return None
 
     @property
-    def redelivered(self) -> Optional[bool]:
+    def redelivered(self) -> bool | None:
         if isinstance(
             self.delivery, (
                 spec.Basic.GetOk,
@@ -122,19 +120,19 @@ class DeliveredMessage:
         return None
 
     @property
-    def consumer_tag(self) -> Optional[str]:
+    def consumer_tag(self) -> str | None:
         if isinstance(self.delivery, spec.Basic.Deliver):
             return self.delivery.consumer_tag
         return None
 
     @property
-    def message_count(self) -> Optional[int]:
+    def message_count(self) -> int | None:
         if isinstance(self.delivery, spec.Basic.GetOk):
             return self.delivery.message_count
         return None
 
 
-ChannelRType = Tuple[int, Channel.OpenOk]
+ChannelRType = tuple[int, Channel.OpenOk]
 
 CallbackCoro = Coroutine[Any, Any, Any]
 ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
@@ -144,18 +142,16 @@ ConsumerCancelCallback = Callable[[spec.Basic.Cancel], Any]
 
 ArgumentsType = FieldTable
 
-ConfirmationFrameType = Union[
-    Basic.Ack, Basic.Nack, Basic.Reject,
-]
+ConfirmationFrameType = Basic.Ack | Basic.Nack | Basic.Reject
 
 
 @dataclasses.dataclass(frozen=True)
 class SSLCerts:
-    cert: Optional[str]
-    key: Optional[str]
-    capath: Optional[str]
-    cafile: Optional[str]
-    cadata: Optional[bytes]
+    cert: str | None
+    key: str | None
+    capath: str | None
+    cafile: str | None
+    cadata: bytes | None
     verify: bool
 
 
@@ -165,43 +161,25 @@ class FrameReceived:
     frame: str
 
 
-URLorStr = Union[URL, str]
+URLorStr = URL | str
 DrainResult = Awaitable[None]
-TimeoutType = Optional[Union[float, int]]
-FrameType = Union[Frame, ContentHeader, ContentBody]
-RpcReturnType = Optional[
-    Union[
-        Basic.CancelOk,
-        Basic.ConsumeOk,
-        Basic.GetEmpty,
-        Basic.GetOk,
-        Basic.QosOk,
-        Basic.RecoverOk,
-        Channel.CloseOk,
-        Channel.FlowOk,
-        Channel.OpenOk,
-        Confirm.SelectOk,
-        Exchange.BindOk,
-        Exchange.DeclareOk,
-        Exchange.DeleteOk,
-        Exchange.UnbindOk,
-        Queue.BindOk,
-        Queue.DeclareOk,
-        Queue.DeleteOk,
-        Queue.PurgeOk,
-        Queue.UnbindOk,
-        Tx.CommitOk,
-        Tx.RollbackOk,
-        Tx.SelectOk,
-    ]
-]
+TimeoutType = float | int | None
+FrameType = Frame | ContentHeader | ContentBody
+RpcReturnType = (
+    Basic.CancelOk | Basic.ConsumeOk | Basic.GetEmpty | Basic.GetOk |
+    Basic.QosOk | Basic.RecoverOk | Channel.CloseOk | Channel.FlowOk |
+    Channel.OpenOk | Confirm.SelectOk | Exchange.BindOk | Exchange.DeclareOk |
+    Exchange.DeleteOk | Exchange.UnbindOk | Queue.BindOk | Queue.DeclareOk |
+    Queue.DeleteOk | Queue.PurgeOk | Queue.UnbindOk | Tx.CommitOk |
+    Tx.RollbackOk | Tx.SelectOk | None
+)
 
 
 @dataclasses.dataclass(frozen=True)
 class ChannelFrame:
     payload: bytes
     should_close: bool
-    drain_future: Optional[asyncio.Future] = None
+    drain_future: asyncio.Future | None = None
 
     def drain(self) -> None:
         if not self.should_drain:
@@ -217,8 +195,8 @@ class ChannelFrame:
     @classmethod
     def marshall(
         cls, channel_number: int,
-        frames: Iterable[Union[FrameType, Heartbeat, ContentBody]],
-        drain_future: Optional[asyncio.Future] = None,
+        frames: Iterable[FrameType | Heartbeat | ContentBody],
+        drain_future: asyncio.Future | None = None,
     ) -> "ChannelFrame":
         should_close = False
 
@@ -249,15 +227,15 @@ class ChannelFrame:
 
 
 class AbstractFutureStore:
-    futures: Set[Union[asyncio.Future, TaskType]]
+    futures: set[asyncio.Future | TaskType]
     loop: asyncio.AbstractEventLoop
 
     @abstractmethod
-    def add(self, future: Union[asyncio.Future, TaskWrapper]) -> None:
+    def add(self, future: asyncio.Future | TaskWrapper) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def reject_all(self, exception: Optional[ExceptionType]) -> Any:
+    def reject_all(self, exception: ExceptionType | None) -> Any:
         raise NotImplementedError
 
     @abstractmethod
@@ -288,12 +266,12 @@ class AbstractBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def _on_close(self, exc: Optional[Exception] = None) -> None:
+    async def _on_close(self, exc: Exception | None = None) -> None:
         raise NotImplementedError
 
     @abstractmethod
     async def close(
-        self, exc: Optional[ExceptionType] = asyncio.CancelledError(),
+        self, exc: ExceptionType | None = asyncio.CancelledError(),
     ) -> None:
         raise NotImplementedError
 
@@ -311,8 +289,8 @@ class AbstractChannel(AbstractBase):
     frames: asyncio.Queue
     connection: "AbstractConnection"
     number: int
-    on_return_callbacks: Set[ReturnCallback]
-    on_consumer_cancel_callbacks: Set[ConsumerCancelCallback]
+    on_return_callbacks: set[ReturnCallback]
+    on_consumer_cancel_callbacks: set[ConsumerCancelCallback]
 
     @property
     @abstractmethod
@@ -357,8 +335,8 @@ class AbstractChannel(AbstractBase):
         *,
         no_ack: bool = False,
         exclusive: bool = False,
-        arguments: Optional[ArgumentsType] = None,
-        consumer_tag: Optional[str] = None,
+        arguments: ArgumentsType | None = None,
+        consumer_tag: str | None = None,
         timeout: TimeoutType = None,
     ) -> spec.Basic.ConsumeOk:
         raise NotImplementedError
@@ -392,19 +370,19 @@ class AbstractChannel(AbstractBase):
         *,
         exchange: str = "",
         routing_key: str = "",
-        properties: Optional[spec.Basic.Properties] = None,
+        properties: spec.Basic.Properties | None = None,
         mandatory: bool = False,
         immediate: bool = False,
         timeout: TimeoutType = None,
-    ) -> Optional[ConfirmationFrameType]:
+    ) -> ConfirmationFrameType | None:
         raise NotImplementedError
 
     @abstractmethod
     async def basic_qos(
         self,
         *,
-        prefetch_size: Optional[int] = None,
-        prefetch_count: Optional[int] = None,
+        prefetch_size: int | None = None,
+        prefetch_count: int | None = None,
         global_: bool = False,
         timeout: TimeoutType = None,
     ) -> spec.Basic.QosOk:
@@ -720,7 +698,7 @@ class AbstractChannel(AbstractBase):
         queue: str = "",
         exchange: str = "",
         routing_key: str = "",
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
         raise NotImplementedError
@@ -771,7 +749,7 @@ class AbstractConnection(AbstractBase):
 
     server_properties: ArgumentsType
     connection_tune: spec.Connection.Tune
-    channels: Dict[int, Optional[AbstractChannel]]
+    channels: dict[int, AbstractChannel | None]
     write_queue: asyncio.Queue
     url: URL
 
@@ -799,7 +777,7 @@ class AbstractConnection(AbstractBase):
 
     @abstractmethod
     async def connect(
-        self, client_properties: Optional[FieldTable] = None,
+        self, client_properties: FieldTable | None = None,
     ) -> bool:
         raise NotImplementedError
 
@@ -825,12 +803,12 @@ class AbstractConnection(AbstractBase):
 
     @property
     @abstractmethod
-    def publisher_confirms(self) -> Optional[bool]:
+    def publisher_confirms(self) -> bool | None:
         raise NotImplementedError
 
     async def channel(
         self,
-        channel_number: Optional[int] = None,
+        channel_number: int | None = None,
         publisher_confirms: bool = True,
         frame_buffer_size: int = FRAME_BUFFER_SIZE,
         timeout: TimeoutType = None,
@@ -845,10 +823,10 @@ class AbstractConnection(AbstractBase):
     @abstractmethod
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> Optional[bool]:
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
         raise NotImplementedError
 
     @abstractmethod

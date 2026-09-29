@@ -2,12 +2,11 @@ import asyncio
 import inspect
 import platform
 import time
+from collections.abc import Awaitable, Callable, Coroutine
+from contextlib import AbstractAsyncContextManager
 from functools import wraps
 from types import TracebackType
-from typing import (
-    Any, AsyncContextManager, Awaitable, Callable, Coroutine, Optional, Type,
-    TypeVar, Union,
-)
+from typing import Any, TypeVar
 
 from yarl import URL
 
@@ -32,7 +31,7 @@ def shield(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
 
 
 def awaitable(
-    func: Callable[..., Union[T, Awaitable[T]]],
+    func: Callable[..., T | Awaitable[T]],
 ) -> Callable[..., Coroutine[Any, Any, T]]:
     # Avoid python 3.8+ warning
     if inspect.iscoroutinefunction(func):
@@ -97,22 +96,22 @@ class Countdown:
         return await asyncio.wait_for(coro, timeout=timeout)
 
     def enter_context(
-        self, ctx: AsyncContextManager[T],
-    ) -> AsyncContextManager[T]:
+        self, ctx: AbstractAsyncContextManager[T],
+    ) -> AbstractAsyncContextManager[T]:
         return CountdownContext(self, ctx)
 
 
-class CountdownContext(AsyncContextManager):
-    def __init__(self, countdown: Countdown, ctx: AsyncContextManager):
+class CountdownContext(AbstractAsyncContextManager):
+    def __init__(self, countdown: Countdown, ctx: AbstractAsyncContextManager):
         self.countdown: Countdown = countdown
-        self.ctx: AsyncContextManager = ctx
+        self.ctx: AbstractAsyncContextManager = ctx
 
     async def __aenter__(self) -> T:
         return await self.countdown(self.ctx.__aenter__())
 
     async def __aexit__(
-        self, exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException], exc_tb: Optional[TracebackType],
+        self, exc_type: type[BaseException] | None,
+        exc_val: BaseException | None, exc_tb: TracebackType | None,
     ) -> Any:
         # Do not apply the deadline here. An expired deadline must not
         # skip the exit of the inner context, or a lock stays acquired.

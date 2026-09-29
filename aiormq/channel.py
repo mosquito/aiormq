@@ -2,15 +2,13 @@ import asyncio
 import io
 import logging
 from collections import OrderedDict
+from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager, suppress
 from functools import partial, wraps
 from io import BytesIO
 from random import getrandbits
 from types import MappingProxyType
-from typing import (
-    Any, AsyncGenerator, Callable, Dict, List, Literal, Mapping, Optional,
-    Set, Type, TypeVar, Union, overload,
-)
+from typing import Any, Literal, TypeVar, overload
 from uuid import UUID
 
 import pamqp.frame
@@ -40,7 +38,7 @@ from .exceptions import (
 log = logging.getLogger(__name__)
 
 
-EXCEPTION_MAPPING: Mapping[int, Type[AMQPChannelError]] = MappingProxyType({
+EXCEPTION_MAPPING: Mapping[int, type[AMQPChannelError]] = MappingProxyType({
     403: ChannelAccessRefused,
     404: ChannelNotFoundEntity,
     405: ChannelLockedResource,
@@ -89,21 +87,21 @@ class Returning(asyncio.Future):
     pass
 
 
-ConfirmationType = Union[asyncio.Future, Returning]
+ConfirmationType = asyncio.Future | Returning
 
 
 class Channel(Base, AbstractChannel):
     # noinspection PyTypeChecker
     CONTENT_FRAME_SIZE = len(pamqp.frame.marshal(ContentBody(b""), 0))
     CHANNEL_CLOSE_TIMEOUT = 10
-    confirmations: Dict[int, ConfirmationType]
+    confirmations: dict[int, ConfirmationType]
 
     def __init__(
         self,
         connector: AbstractConnection,
         number: int,
         publisher_confirms: bool = True,
-        frame_buffer: Optional[int] = None,
+        frame_buffer: int | None = None,
         on_return_raises: bool = True,
     ):
 
@@ -116,13 +114,13 @@ class Channel(Base, AbstractChannel):
         ):  # pragma: no cover
             raise ValueError("Server doesn't support publisher confirms")
 
-        self.consumers: Dict[str, ConsumerCallback] = {}
+        self.consumers: dict[str, ConsumerCallback] = {}
         self.confirmations = OrderedDict()
-        self.message_id_delivery_tag: Dict[str, int] = dict()
+        self.message_id_delivery_tag: dict[str, int] = dict()
 
         self.delivery_tag = 0
 
-        self.getter: Optional[asyncio.Future] = None
+        self.getter: asyncio.Future | None = None
         self.getter_lock = asyncio.Lock()
 
         self.frames: asyncio.Queue = asyncio.Queue(maxsize=frame_buffer or 0)
@@ -139,8 +137,8 @@ class Channel(Base, AbstractChannel):
         )
         self.write_queue = connector.write_queue
         self.on_return_raises = on_return_raises
-        self.on_return_callbacks: Set[ReturnCallback] = set()
-        self.on_consumer_cancel_callbacks: Set[
+        self.on_return_callbacks: set[ReturnCallback] = set()
+        self.on_consumer_cancel_callbacks: set[
             ConsumerCancelCallback
         ] = set()
         self._close_exception: BaseException | None = None
@@ -233,7 +231,7 @@ class Channel(Base, AbstractChannel):
     @overload
     async def rpc(
         self,
-        frame: Union[spec.Basic.Recover, spec.Basic.RecoverAsync],
+        frame: spec.Basic.Recover | spec.Basic.RecoverAsync,
         timeout: TimeoutType = None,
     ) -> spec.Basic.RecoverOk: ...
 
@@ -353,7 +351,7 @@ class Channel(Base, AbstractChannel):
                 await self.__close_after_failure(frame)
                 raise
 
-    async def __close_after_failure(self, frame: Optional[Frame]) -> None:
+    async def __close_after_failure(self, frame: Frame | None) -> None:
         """Close the channel after a cancelled or timed out RPC call.
 
         When Channel.Open reached the writer, the broker has a channel
@@ -429,11 +427,11 @@ class Channel(Base, AbstractChannel):
 
     async def _read_content(
         self,
-        frame: Union[spec.Basic.Deliver, spec.Basic.Return, GetResultType],
+        frame: spec.Basic.Deliver | spec.Basic.Return | GetResultType,
         header: ContentHeader,
     ) -> DeliveredMessage:
         with BytesIO() as body:
-            content: Optional[ContentBody] = None
+            content: ContentBody | None = None
 
             if header.body_size:
                 content = await self.__get_content_frame()
@@ -485,7 +483,7 @@ class Channel(Base, AbstractChannel):
             task.add_done_callback(self._on_consumer_done)
 
     async def _on_get_frame(
-        self, frame: Union[spec.Basic.GetOk, spec.Basic.GetEmpty],
+        self, frame: spec.Basic.GetOk | spec.Basic.GetEmpty,
     ) -> None:
         message = None
         if isinstance(frame, spec.Basic.GetOk):
@@ -546,7 +544,7 @@ class Channel(Base, AbstractChannel):
         confirmation.set_result(message)
 
     def _confirm_delivery(
-        self, delivery_tag: Optional[int],
+        self, delivery_tag: int | None,
         frame: ConfirmationFrameType,
     ) -> None:
         if delivery_tag not in self.confirmations:
@@ -596,7 +594,7 @@ class Channel(Base, AbstractChannel):
 
     async def _on_cancel_frame(
         self,
-        frame: Union[spec.Basic.CancelOk, spec.Basic.Cancel],
+        frame: spec.Basic.CancelOk | spec.Basic.Cancel,
     ) -> None:
         if frame.consumer_tag is not None:
             self.consumers.pop(frame.consumer_tag, None)
@@ -640,7 +638,7 @@ class Channel(Base, AbstractChannel):
         raise ChannelClosed(None, None)
 
     async def _reader(self) -> None:
-        last_exception: Optional[BaseException] = None
+        last_exception: BaseException | None = None
 
         try:
             while True:
@@ -683,7 +681,7 @@ class Channel(Base, AbstractChannel):
             )
 
     @task
-    async def _on_close(self, exc: Optional[ExceptionType] = None) -> None:
+    async def _on_close(self, exc: ExceptionType | None = None) -> None:
         if not self.connection.is_opened or self.__close_event.is_set():
             return
 
@@ -715,7 +713,7 @@ class Channel(Base, AbstractChannel):
                 self.getter.cancel()
                 raise
             else:
-                frame: Union[spec.Basic.GetEmpty, spec.Basic.GetOk]
+                frame: spec.Basic.GetEmpty | spec.Basic.GetOk
                 message: DeliveredMessage
 
                 frame, message = await countdown(self.getter)
@@ -758,8 +756,8 @@ class Channel(Base, AbstractChannel):
         *,
         no_ack: bool = False,
         exclusive: bool = False,
-        arguments: Optional[ArgumentsType] = None,
-        consumer_tag: Optional[str] = None,
+        arguments: ArgumentsType | None = None,
+        consumer_tag: str | None = None,
         timeout: TimeoutType = None,
     ) -> spec.Basic.ConsumeOk:
 
@@ -863,7 +861,7 @@ class Channel(Base, AbstractChannel):
         if drain_future is not None:
             await drain_future
 
-    def _split_body(self, body: bytes) -> List[ContentBody]:
+    def _split_body(self, body: bytes) -> list[ContentBody]:
         if not body:
             return []
 
@@ -1000,8 +998,8 @@ class Channel(Base, AbstractChannel):
     async def basic_qos(
         self,
         *,
-        prefetch_size: Optional[int] = None,
-        prefetch_count: Optional[int] = None,
+        prefetch_size: int | None = None,
+        prefetch_count: int | None = None,
         global_: bool = False,
         timeout: TimeoutType = None,
     ) -> spec.Basic.QosOk:
@@ -1030,7 +1028,7 @@ class Channel(Base, AbstractChannel):
         self, *, nowait: bool = False, requeue: bool = False,
         timeout: TimeoutType = None,
     ) -> spec.Basic.RecoverOk | None:
-        frame: Union[spec.Basic.RecoverAsync, spec.Basic.Recover]
+        frame: spec.Basic.RecoverAsync | spec.Basic.Recover
         if nowait:
             frame = spec.Basic.RecoverAsync(requeue=requeue)
         else:
@@ -1391,7 +1389,7 @@ class Channel(Base, AbstractChannel):
         queue: str = "",
         exchange: str = "",
         routing_key: str = "",
-        arguments: Optional[ArgumentsType] = None,
+        arguments: ArgumentsType | None = None,
         timeout: TimeoutType = None,
     ) -> spec.Queue.UnbindOk:
         _check_routing_key(routing_key)

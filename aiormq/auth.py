@@ -1,12 +1,10 @@
 import abc
 from enum import Enum
-from typing import Optional
-
 from .abc import AbstractConnection
 
 
 class AuthBase:
-    value: Optional[str]
+    value: str | None
 
     def __init__(self, connector: AbstractConnection):
         self.connector = connector
