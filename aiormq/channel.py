@@ -386,6 +386,11 @@ class Channel(Base, AbstractChannel):
             ),
         )
 
+    def _remove_from_connection(self) -> None:
+        # The number can be reused before this channel handles a close reply.
+        if self.connection.channels.get(self.number) is self:
+            self.connection.channels.pop(self.number, None)
+
     def _close_locally(self) -> None:
         """Close the channel without a Channel.Close handshake.
 
@@ -394,7 +399,7 @@ class Channel(Base, AbstractChannel):
         """
         self.__close_event.set()
         self.__reader_task.cancel()
-        self.connection.channels.pop(self.number, None)
+        self._remove_from_connection()
 
     async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
         try:
@@ -628,12 +633,12 @@ class Channel(Base, AbstractChannel):
                     frames=[spec.Channel.CloseOk()],
                 ),
             )
-        self.connection.channels.pop(self.number, None)
+        self._remove_from_connection()
         self.__close_event.set()
         raise exc
 
     async def _on_close_ok_frame(self, _: spec.Channel.CloseOk) -> None:
-        self.connection.channels.pop(self.number, None)
+        self._remove_from_connection()
         self.__close_event.set()
         raise ChannelClosed(None, None)
 
