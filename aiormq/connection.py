@@ -989,8 +989,8 @@ class Connection(Base, AbstractConnection):
 
         self.channels[channel_number] = channel
 
-        # On failure the channel removes itself from self.channels when
-        # its reader task exits. This covers cancellation too.
+        # Keep the number until the broker confirms that the channel is closed.
+        # Release the number immediately if Channel.Open was not sent.
         await channel.open(timeout=timeout)
 
         return channel

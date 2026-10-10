@@ -394,7 +394,8 @@ class Channel(Base, AbstractChannel):
         """
         self.__close_event.set()
         self.__reader_task.cancel()
-        self.connection.channels.pop(self.number, None)
+        if self.connection.channels.get(self.number) is self:
+            del self.connection.channels[self.number]
 
     async def open(self, timeout: TimeoutType = None) -> spec.Channel.OpenOk:
         try:
@@ -628,12 +629,10 @@ class Channel(Base, AbstractChannel):
                     frames=[spec.Channel.CloseOk()],
                 ),
             )
-        self.connection.channels.pop(self.number, None)
         self.__close_event.set()
         raise exc
 
     async def _on_close_ok_frame(self, _: spec.Channel.CloseOk) -> None:
-        self.connection.channels.pop(self.number, None)
         self.__close_event.set()
         raise ChannelClosed(None, None)
 
