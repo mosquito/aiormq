@@ -897,6 +897,59 @@ async def test_connection_close_publish(proxy, amqp_url: URL):
 
     await asyncio.wait_for(run(), timeout=5)
 
+
+async def test_close_waits_for_close_ok(amqp_connection, monkeypatch):
+    connection = amqp_connection
+    close_ok_received = asyncio.Event()
+    handle_close_ok = connection._Connection__handle_close_ok
+
+    async def on_close_ok(frame):
+        close_ok_received.set()
+        await handle_close_ok(frame)
+
+    monkeypatch.setattr(
+        connection, "_Connection__handle_close_ok", on_close_ok,
+    )
+    channel = await connection.channel()
+    await channel.queue_declare(auto_delete=True)
+
+    await asyncio.wait_for(connection.close(), timeout=5)
+
+    assert close_ok_received.is_set()
+    # The reader stops by itself after Close-Ok, it is not cancelled.
+    reader_task: asyncio.Task = connection._reader_task      # type: ignore
+    assert reader_task.done()
+    assert not reader_task.cancelled()
+    assert reader_task.exception() is None
+
+
+@aiomisc.timeout(20)
+async def test_close_does_not_wait_forever_for_close_ok(
+    amqp_connection, monkeypatch,
+):
+    connection = amqp_connection
+    monkeypatch.setattr(connection, "READER_CLOSE_TIMEOUT", 0.5)
+
+    async def never_handle_close_ok(_):
+        # Act like Close-Ok never comes back from the broker.
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        connection, "_Connection__handle_close_ok", never_handle_close_ok,
+    )
+
+    started = connection.loop.time()
+    await asyncio.wait_for(connection.close(), timeout=5)
+    elapsed = connection.loop.time() - started
+
+    assert connection.is_closed
+    assert 0.5 <= elapsed < 5
+
+    reader_task: asyncio.Task = connection._reader_task      # type: ignore
+    assert reader_task.done()
+    assert reader_task.cancelled()
+
+
 PARSE_INT_PARAMS = (
     (1, 1),
     ("1", 1),
