@@ -34,8 +34,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
 ]
 dependencies = [
     "pamqp>=4,<5",
@@ -59,7 +61,9 @@ dev = [
     "aiomisc-pytest>=2,<3",
     "ty>=0.0.84",
 ]
-uvloop = ["uvloop>=0.22,<0.23"]
+uvloop = ["uvloop>=0.23,<0.24"]
+# An empty group runs the tests on the asyncio event loop.
+asyncio = []
 
 [tool.uv]
 default-groups = "all"
@@ -83,11 +87,6 @@ python-version = "3.11"
 addopts = "-p no:asyncio"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-]
-filterwarnings = [
-    # uvloop 0.22 calls asyncio.iscoroutinefunction() in run_in_executor().
-    # The warning is attributed to aiormq because of the stack level.
-    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
