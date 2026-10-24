@@ -747,6 +747,10 @@ class Connection(Base, AbstractConnection):
                     match frame:
                         case spec.Connection.CloseOk():
                             await self.__handle_close_ok(frame)
+                            # Close-Ok is the last frame on the connection.
+                            # The writer waits for the reader to stop
+                            # before it closes the socket.
+                            return
                         case spec.Connection.Close():
                             await self.__handle_close(frame)
                         case Heartbeat():
@@ -856,7 +860,21 @@ class Connection(Base, AbstractConnection):
                 await asyncio.wait_for(
                     writer.drain(), timeout=self.__heartbeat_grace_timeout,
                 )
+                # The broker must answer with Connection.Close-Ok before
+                # the socket is closed, or it logs an unexpected close.
+                # The reader stops after it gets Close-Ok.
+                if not self._reader_task.done():
+                    await asyncio.wait(
+                        [asyncio.gather(
+                            self._reader_task, return_exceptions=True,
+                        )],
+                        timeout=self.READER_CLOSE_TIMEOUT,
+                    )
             finally:
+                # Stop the reader before the socket is closed, so it does
+                # not fail on EOF.
+                if not self._reader_task.done():
+                    self._reader_task.cancel()
                 await self.__close_writer(writer)
 
             raise
@@ -900,13 +918,16 @@ class Connection(Base, AbstractConnection):
         exc: ExceptionType | None = ConnectionClosed(0, "normal closed"),
     ) -> None:
         log.debug("Closing connection %r cause: %r", self, exc)
-        if not self._reader_task.done():
-            self._reader_task.cancel()
         if (
             not self._writer_task.done() and
             not self._writer_task.cancelling()
         ):
+            # Stop the writer first. It sends Connection.Close and waits
+            # for the reader to get Connection.Close-Ok.
             self._writer_task.cancel()
+            await asyncio.gather(self._writer_task, return_exceptions=True)
+        if not self._reader_task.done():
+            self._reader_task.cancel()
 
         await asyncio.gather(
             self._reader_task, self._writer_task, return_exceptions=True,
