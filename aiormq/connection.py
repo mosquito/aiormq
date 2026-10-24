@@ -865,7 +865,9 @@ class Connection(Base, AbstractConnection):
                 # The reader stops after it gets Close-Ok.
                 if not self._reader_task.done():
                     await asyncio.wait(
-                        [self._reader_task],
+                        [asyncio.gather(
+                            self._reader_task, return_exceptions=True,
+                        )],
                         timeout=self.READER_CLOSE_TIMEOUT,
                     )
             finally:
