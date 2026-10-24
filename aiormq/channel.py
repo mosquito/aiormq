@@ -801,29 +801,35 @@ class Channel(Base, AbstractChannel):
             timeout=timeout,
         )
 
+    async def __send_and_drain(self, frame: Frame, *, wait: bool) -> None:
+        drain_future = self.create_future() if wait else None
+
+        try:
+            await self.write_queue.put(
+                ChannelFrame.marshall(
+                    frames=[frame],
+                    channel_number=self.number,
+                    drain_future=drain_future,
+                ),
+            )
+        except BaseException:
+            if drain_future is not None:
+                drain_future.cancel()
+            raise
+
+        if drain_future is not None:
+            await drain_future
+
     async def basic_ack(
         self, delivery_tag: int, multiple: bool = False, wait: bool = True,
     ) -> None:
         if self.is_closed or self.__close_event.is_set():
             raise ChannelInvalidStateError("%r closed" % self)
 
-        drain_future = self.create_future() if wait else None
-
-        await self.write_queue.put(
-            ChannelFrame.marshall(
-                frames=[
-                    spec.Basic.Ack(
-                        delivery_tag=delivery_tag,
-                        multiple=multiple,
-                    ),
-                ],
-                channel_number=self.number,
-                drain_future=drain_future,
-            ),
+        await self.__send_and_drain(
+            spec.Basic.Ack(delivery_tag=delivery_tag, multiple=multiple),
+            wait=wait,
         )
-
-        if drain_future is not None:
-            await drain_future
 
     async def basic_nack(
         self,
@@ -838,24 +844,14 @@ class Channel(Base, AbstractChannel):
         if not self.connection.basic_nack:
             raise MethodNotImplemented
 
-        drain_future = self.create_future() if wait else None
-
-        await self.write_queue.put(
-            ChannelFrame.marshall(
-                frames=[
-                    spec.Basic.Nack(
-                        delivery_tag=delivery_tag,
-                        multiple=multiple,
-                        requeue=requeue,
-                    ),
-                ],
-                channel_number=self.number,
-                drain_future=drain_future,
+        await self.__send_and_drain(
+            spec.Basic.Nack(
+                delivery_tag=delivery_tag,
+                multiple=multiple,
+                requeue=requeue,
             ),
+            wait=wait,
         )
-
-        if drain_future is not None:
-            await drain_future
 
     async def basic_reject(
         self, delivery_tag: int, *, requeue: bool = True, wait: bool = True,
@@ -863,22 +859,10 @@ class Channel(Base, AbstractChannel):
         if self.is_closed or self.__close_event.is_set():
             raise ChannelInvalidStateError("%r closed" % self)
 
-        drain_future = self.create_future()
-        await self.write_queue.put(
-            ChannelFrame.marshall(
-                channel_number=self.number,
-                frames=[
-                    spec.Basic.Reject(
-                        delivery_tag=delivery_tag,
-                        requeue=requeue,
-                    ),
-                ],
-                drain_future=drain_future,
-            ),
+        await self.__send_and_drain(
+            spec.Basic.Reject(delivery_tag=delivery_tag, requeue=requeue),
+            wait=wait,
         )
-
-        if drain_future is not None:
-            await drain_future
 
     def _split_body(self, body: bytes) -> list[ContentBody]:
         if not body:
