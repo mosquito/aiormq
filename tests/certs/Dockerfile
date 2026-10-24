@@ -1,15 +1,17 @@
-FROM rabbitmq:3.8-management-alpine
+# Test broker for aiormq. Build from the repository root:
+#
+#   make rabbitmq-image
+#
+# RabbitMQ 4.3.7 and later advertise the accept_consumer_cancel_ok
+# capability, which the consumer cancel tests require.
+FROM rabbitmq:4.4-management-alpine
 
 RUN mkdir -p /certs/
 
 COPY tests/certs/ca.pem /certs/
 COPY tests/certs/server.key /certs/
 COPY tests/certs/server.pem /certs/
-
-ENV RABBITMQ_SSL_CERTFILE=/certs/server.pem
-ENV RABBITMQ_SSL_KEYFILE=/certs/server.key
-ENV RABBITMQ_SSL_CACERTFILE=/certs/ca.pem
-ENV RABBITMQ_SSL_FAIL_IF_NO_PEER_CERT=false
+COPY tests/certs/rabbitmq.conf /etc/rabbitmq/conf.d/20-aiormq.conf
 
 ENV RABBITMQ_DEFAULT_USER=guest
 ENV RABBITMQ_DEFAULT_PASS=guest

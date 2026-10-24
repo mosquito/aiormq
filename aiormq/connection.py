@@ -931,6 +931,17 @@ class Connection(Base, AbstractConnection):
         return bool(self.server_capabilities.get("consumer_cancel_notify"))
 
     @property
+    def accept_consumer_cancel_ok(self) -> bool:
+        """The broker accepts a client answer to its own Basic.Cancel.
+
+        RabbitMQ 4.3.7 and later advertise this capability. Older brokers
+        close the channel on an unexpected Basic.CancelOk.
+        """
+        return bool(
+            self.server_capabilities.get("accept_consumer_cancel_ok"),
+        )
+
+    @property
     def exchange_exchange_bindings(self) -> bool:
         return bool(self.server_capabilities.get("exchange_exchange_bindings"))
 

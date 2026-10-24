@@ -668,6 +668,19 @@ async with aiormq.connect(amqp_url) as connection:
     assert await cancelled == consume_ok.consumer_tag
 ```
 
+A RabbitMQ 4.3 or later broker also cancels a consumer which does not
+acknowledge a delivery in time, and it keeps the consumer tag until the
+client answers with `Basic.CancelOk`. aiormq sends that answer before the
+callbacks run, when the broker advertises the `accept_consumer_cancel_ok`
+capability (`connection.accept_consumer_cancel_ok`). A consumer which
+starts again with the cancelled tag therefore reaches the broker after the
+answer, and the broker accepts the tag.
+
+> **Note**
+> The channel reader waits for the callbacks. A callback which calls the
+> broker, for example `basic_consume`, must run that call as a separate
+> task, otherwise it waits for its own reply forever.
+
 ### Remote procedure call (RPC)
 
 #### RPC server

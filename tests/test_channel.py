@@ -3,6 +3,7 @@ import uuid
 from os import urandom
 
 import aiomisc
+import pamqp.frame
 import pytest
 from aiomisc_pytest import TCPProxy
 
@@ -394,3 +395,184 @@ async def test_client_cancel_does_not_call_callbacks(
 
     assert calls == []
     assert consume_ok.consumer_tag not in amqp_channel.consumers
+
+
+def written_frames(write_queue: asyncio.Queue) -> list:
+    """Return the frames which wait in a channel write queue."""
+    frames = []
+    while not write_queue.empty():
+        payload = write_queue.get_nowait().payload
+        while payload:
+            consumed, _, frame = pamqp.frame.unmarshal(payload)
+            payload = payload[consumed:]
+            frames.append(frame)
+    return frames
+
+
+@pytest.mark.parametrize("capability", [True, False])
+@aiomisc.timeout(20)
+async def test_broker_cancel_answer_needs_capability(
+    amqp_channel: aiormq.Channel, capability: bool,
+):
+    # A broker which advertises accept_consumer_cancel_ok holds the consumer
+    # tag until the client answers Basic.Cancel with Basic.CancelOk. Brokers
+    # without the capability close the channel on that answer.
+    declare_ok = await amqp_channel.queue_declare(auto_delete=True)
+    consume_ok = await amqp_channel.basic_consume(
+        declare_ok.queue, lambda message: None,
+    )
+
+    # The answer goes to a private queue, so it never reaches the broker
+    # and the test result does not depend on the broker version.
+    write_queue: asyncio.Queue = asyncio.Queue()
+    pending_before_callback: list = []
+    done = asyncio.Event()
+
+    def on_cancel(frame: aiormq.spec.Basic.Cancel) -> None:
+        pending_before_callback.append(write_queue.qsize())
+        done.set()
+
+    amqp_channel.on_consumer_cancel_callbacks.add(on_cancel)
+    capabilities = amqp_channel.connection.server_capabilities
+    original = capabilities.get("accept_consumer_cancel_ok")
+    capabilities["accept_consumer_cancel_ok"] = capability
+    original_write_queue = amqp_channel.write_queue
+    amqp_channel.write_queue = write_queue
+
+    try:
+        # The broker always sets the nowait flag in its own Basic.Cancel.
+        await amqp_channel.frames.put(
+            (1, aiormq.spec.Basic.Cancel(
+                consumer_tag=consume_ok.consumer_tag, nowait=True,
+            )),
+        )
+        await asyncio.wait_for(done.wait(), timeout=5)
+    finally:
+        amqp_channel.write_queue = original_write_queue
+        if original is None:
+            capabilities.pop("accept_consumer_cancel_ok", None)
+        else:
+            capabilities["accept_consumer_cancel_ok"] = original
+
+    frames = written_frames(write_queue)
+
+    if capability:
+        assert len(frames) == 1
+        assert isinstance(frames[0], aiormq.spec.Basic.CancelOk)
+        assert frames[0].consumer_tag == consume_ok.consumer_tag
+        # The answer is queued before the callbacks run, therefore a
+        # callback which consumes again with the same tag reaches the
+        # broker later than the answer.
+        assert pending_before_callback == [1]
+    else:
+        assert frames == []
+        assert pending_before_callback == [0]
+
+    assert consume_ok.consumer_tag not in amqp_channel.consumers
+    assert not amqp_channel.is_closed
+
+
+@aiomisc.timeout(20)
+async def test_broker_cancel_unknown_tag_is_not_answered(
+    amqp_channel: aiormq.Channel,
+):
+    # An unknown consumer tag gets no answer. The broker holds no such
+    # consumer, and brokers before 4.3.7 would close the channel.
+    done = asyncio.Event()
+    amqp_channel.on_consumer_cancel_callbacks.add(lambda frame: done.set())
+
+    write_queue: asyncio.Queue = asyncio.Queue()
+    capabilities = amqp_channel.connection.server_capabilities
+    original = capabilities.get("accept_consumer_cancel_ok")
+    capabilities["accept_consumer_cancel_ok"] = True
+    original_write_queue = amqp_channel.write_queue
+    amqp_channel.write_queue = write_queue
+
+    try:
+        await amqp_channel.frames.put(
+            (1, aiormq.spec.Basic.Cancel(
+                consumer_tag="ctag-unknown", nowait=True,
+            )),
+        )
+        await asyncio.wait_for(done.wait(), timeout=5)
+    finally:
+        amqp_channel.write_queue = original_write_queue
+        if original is None:
+            capabilities.pop("accept_consumer_cancel_ok", None)
+        else:
+            capabilities["accept_consumer_cancel_ok"] = original
+
+    assert written_frames(write_queue) == []
+    assert not amqp_channel.is_closed
+
+
+@aiomisc.timeout(60)
+async def test_consumer_timeout_allows_the_same_consumer_tag(
+    amqp_direct_url,
+):
+    # RabbitMQ 4.3 and later cancel a timed out consumer instead of closing
+    # the channel, and hold the consumer tag until the client answers. A
+    # client which consumes again with the same tag before the answer gets
+    # "NOT_ALLOWED - attempt to reuse consumer tag" and loses the whole
+    # connection.
+    async with aiormq.Connection(amqp_direct_url) as connection:
+        if not connection.accept_consumer_cancel_ok:
+            pytest.skip("Broker without accept_consumer_cancel_ok")
+
+        channel = await connection.channel()
+        queue = "consumer-timeout-%s" % uuid.uuid4().hex
+        await channel.queue_declare(
+            queue, durable=True,
+            arguments={
+                "x-queue-type": "quorum",
+                "x-consumer-timeout": 1000,
+            },
+        )
+
+        redelivered: asyncio.Queue = asyncio.Queue()
+        cancels: asyncio.Queue = asyncio.Queue()
+        tasks: list = []
+
+        first_delivery = True
+
+        async def consume(message: DeliveredMessage) -> None:
+            nonlocal first_delivery
+            if first_delivery:
+                # The first delivery stays unacknowledged, so the broker
+                # cancels the consumer after x-consumer-timeout.
+                first_delivery = False
+                return
+            await message.channel.basic_ack(message.delivery_tag)
+            await redelivered.put(message)
+
+        async def reconsume(consumer_tag: str) -> None:
+            await channel.basic_consume(
+                queue, consume, consumer_tag=consumer_tag,
+            )
+
+        def on_cancel(frame: aiormq.spec.Basic.Cancel) -> None:
+            # A robust client consumes again with the same tag. The call
+            # runs as a task, because an RPC inside the callback would wait
+            # for the blocked channel reader.
+            tasks.append(asyncio.ensure_future(reconsume(frame.consumer_tag)))
+            cancels.put_nowait(frame)
+
+        channel.on_consumer_cancel_callbacks.add(on_cancel)
+        consume_ok = await channel.basic_consume(queue, consume)
+        await channel.basic_publish(b"first", routing_key=queue)
+
+        frame = await asyncio.wait_for(cancels.get(), timeout=30)
+        assert frame.consumer_tag == consume_ok.consumer_tag
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=30)
+
+        # The broker redelivers the message to the restored consumer, which
+        # proves the consumer tag and the connection still work.
+        message = await asyncio.wait_for(redelivered.get(), timeout=30)
+        assert message.body == b"first"
+
+        assert consume_ok.consumer_tag in channel.consumers
+        assert not channel.is_closed
+        assert not connection.is_closed
+
+        await channel.basic_cancel(consume_ok.consumer_tag)
+        await channel.queue_delete(queue)

@@ -798,6 +798,11 @@ class AbstractConnection(AbstractBase):
 
     @property
     @abstractmethod
+    def accept_consumer_cancel_ok(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
     def exchange_exchange_bindings(self) -> bool:
         raise NotImplementedError
 
