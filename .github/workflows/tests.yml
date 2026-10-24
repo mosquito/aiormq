@@ -73,20 +73,38 @@ jobs:
     strategy:
       fail-fast: false
 
+      # The uvloop wheels start at cp314t, therefore the 3.13 free-threaded
+      # build runs on the asyncio event loop.
       matrix:
-        python:
-          - '3.11'
-          - '3.12'
-          - '3.13'
-          - '3.14'
+        include:
+          - python: '3.11'
+            loop: uvloop
+          - python: '3.12'
+            loop: uvloop
+          - python: '3.13'
+            loop: uvloop
+          - python: '3.13t'
+            loop: asyncio
+          - python: '3.14'
+            loop: uvloop
+          - python: '3.14t'
+            loop: uvloop
+          - python: '3.15'
+            loop: uvloop
+          - python: '3.15t'
+            loop: uvloop
     steps:
       - uses: actions/checkout@v7
       - name: Setup python${{ matrix.python }}
         uses: actions/setup-python@v7
         with:
           python-version: "${{ matrix.python }}"
+          allow-prereleases: true
       - uses: astral-sh/setup-uv@v10.2.0
-      - run: uv sync --group uvloop
+      - run: >-
+          uv sync --no-default-groups
+          --group dev
+          --group ${{ matrix.loop }}
       - name: pytest
         run: >-
           uv run pytest \
