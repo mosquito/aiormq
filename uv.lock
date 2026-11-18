@@ -60,7 +60,7 @@ uvloop = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pamqp", specifier = ">=5,<6" },
+    { name = "pamqp", specifier = ">=6,<7" },
     { name = "yarl" },
 ]
 
@@ -632,11 +632,11 @@ wheels = [
 
 [[package]]
 name = "pamqp"
-version = "5.0.0"
+version = "6.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/db/10/3a0d1040a1bac414ef1b4cb9b6f53344b6bc33e57eef287ac58d6dc1d1de/pamqp-5.0.0.tar.gz", hash = "sha256:d76dd4af900802483cda5f318a5328c86a1e9b127159f5455b17d9a0bb658b89", size = 137474, upload-time = "2026-10-30T15:41:57.894Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e9/ce/0bf7c22e0609798d79e7609842d93497002e563ad9d693d085687c758388/pamqp-6.0.0.tar.gz", hash = "sha256:3a6bde25adc93fc43755b16433f8f65aa761b43664d55f10c0e4cb1e4313eb94", size = 138642, upload-time = "2026-11-16T16:44:14.351Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ed/ac/fd44d9085dc1270e9f6a9eae0a08bbc69d8354c66623c647fe45ecd4b97d/pamqp-5.0.0-py3-none-any.whl", hash = "sha256:f426351b57f6a9e453ee27682431e532c44771cb61b4f74018b8a7088f4cac20", size = 32793, upload-time = "2026-10-30T15:41:56.381Z" },
+    { url = "https://files.pythonhosted.org/packages/61/88/2f5e16eede479d4a20267f2715a80d89f12f6f20d4c436ed878f9a370f05/pamqp-6.0.0-py3-none-any.whl", hash = "sha256:28b6e4656b6a50463f3db9277d3410064fe8b0befa34a19ab71d83195215ec96", size = 33125, upload-time = "2026-11-16T16:44:13.066Z" },
 ]
 
 [[package]]
