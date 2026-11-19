@@ -139,6 +139,8 @@ ConsumerCallback = Callable[[DeliveredMessage], CallbackCoro]
 ReturnCallback = Callable[[DeliveredMessage], Any]
 # Called with the Basic.Cancel frame the broker sent for a consumer.
 ConsumerCancelCallback = Callable[[spec.Basic.Cancel], Any]
+BlockedCallback = Callable[[spec.Connection.Blocked], Any]
+UnblockedCallback = Callable[[spec.Connection.Unblocked], Any]
 
 ArgumentsType = FieldTable
 
@@ -752,6 +754,8 @@ class AbstractConnection(AbstractBase):
     channels: dict[int, AbstractChannel | None]
     write_queue: asyncio.Queue
     url: URL
+    on_blocked_callbacks: set[BlockedCallback]
+    on_unblocked_callbacks: set[UnblockedCallback]
 
     @property
     @abstractmethod
@@ -848,11 +852,13 @@ class AbstractConnection(AbstractBase):
 
 __all__ = (
     "AbstractBase", "AbstractChannel", "AbstractConnection",
-    "AbstractFutureStore", "ArgumentsType", "CallbackCoro", "ChannelFrame",
+    "AbstractFutureStore", "ArgumentsType", "BlockedCallback",
+    "CallbackCoro", "ChannelFrame",
     "ChannelRType", "ConfirmationFrameType", "ConsumerCallback",
     "ConsumerCancelCallback",
     "CoroutineType", "DeliveredMessage", "DrainResult", "ExceptionType",
     "FieldArray", "FieldTable", "FieldValue", "FrameReceived", "FrameType",
     "GetResultType", "ReturnCallback", "RpcReturnType", "SSLCerts",
-    "TaskType", "TaskWrapper", "TimeoutType", "URLorStr",
+    "TaskType", "TaskWrapper", "TimeoutType", "UnblockedCallback",
+    "URLorStr",
 )

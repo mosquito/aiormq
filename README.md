@@ -22,6 +22,7 @@ aiormq is a pure python AMQP client library.
   * [Routing](#routing)
   * [Topics](#topics)
   * [Consumer cancelled by the broker](#consumer-cancelled-by-the-broker)
+  * [Blocked connection notifications](#blocked-connection-notifications)
   * [Remote procedure call (RPC)](#remote-procedure-call-rpc)
 
 ## Status
@@ -49,6 +50,7 @@ aiormq is a pure python AMQP client library.
   > content header. But frames might be sent asynchronously
   > on another channels.
 
+* RabbitMQ blocked and unblocked connection notifications
 * Tracking unroutable messages
   (Use **connection.channel(on_return_raises=False)** for disabling)
 * Full SSL/TLS support, using your choice of:
@@ -305,6 +307,37 @@ new channel. With `no_ack=True`, RabbitMQ does not wait for processing to finish
 and cannot recover a delivery lost by the consumer. Exclusive and auto-delete
 queues may disappear when their connection or consumers go away; plan their
 recreation and message retention accordingly.
+
+### Blocked connection notifications
+
+RabbitMQ can block publishing connections during memory or disk alarms.
+Register callbacks on an existing `connection` to observe these events:
+
+<!-- name: blocked_connection_callback_example -->
+```python
+import aiormq
+
+
+def on_blocked(frame: aiormq.spec.Connection.Blocked) -> None:
+    print(f"Connection blocked: {frame.reason}")
+
+
+def on_unblocked(frame: aiormq.spec.Connection.Unblocked) -> None:
+    print("Connection unblocked")
+
+
+connection.on_blocked_callbacks.add(on_blocked)
+connection.on_unblocked_callbacks.add(on_unblocked)
+```
+
+Callbacks may be regular or async functions. They run in separate tasks,
+async callbacks can await without delaying the connection reader. Regular
+callbacks should return quickly, and async callbacks can overlap. Callback
+errors are logged without closing the connection. Remove a callback with
+`discard()` on its set.
+These notifications report resource alarms, not the transient `flow` state, 
+and do not confirm individual publications.
+Use publisher confirms when acceptance of a message matters.
 
 ### Work Queues
 

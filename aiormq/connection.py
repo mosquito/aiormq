@@ -7,7 +7,7 @@ import sys
 from abc import abstractmethod, ABC
 from base64 import b64decode
 from collections.abc import (
-    AsyncIterable, Coroutine, Generator, Mapping,
+    AsyncIterable, Callable, Coroutine, Generator, Mapping,
 )
 from contextlib import suppress
 from importlib.metadata import version
@@ -27,8 +27,9 @@ from pamqp.heartbeat import Heartbeat
 from yarl import URL
 
 from .abc import (
-    AbstractChannel, AbstractConnection, ArgumentsType, ChannelFrame,
-    ExceptionType, SSLCerts, TaskType, URLorStr,
+    AbstractChannel, AbstractConnection, ArgumentsType, BlockedCallback,
+    ChannelFrame, ExceptionType, SSLCerts, TaskType, UnblockedCallback,
+    URLorStr,
 )
 from .auth import AuthMechanism
 from .base import Base, task
@@ -41,7 +42,7 @@ from .exceptions import (
     IncompatibleProtocolError, InvalidFrameError, ProbableAuthenticationError,
     ProtocolSyntaxError,
 )
-from .tools import Countdown, censor_url
+from .tools import Countdown, awaitable, censor_url
 
 
 __version__ = version("aiormq")
@@ -436,6 +437,8 @@ class Connection(Base, AbstractConnection):
         self.__update_secret_lock: asyncio.Lock = asyncio.Lock()
         self.__update_secret_future: asyncio.Future | None = None
         self.__connection_unblocked: asyncio.Event = asyncio.Event()
+        self.on_blocked_callbacks: set[BlockedCallback] = set()
+        self.on_unblocked_callbacks: set[UnblockedCallback] = set()
         self.__heartbeat_grace_timeout = (
             (self.heartbeat_timeout + 1) * self.HEARTBEAT_GRACE_MULTIPLIER
         )
@@ -718,12 +721,29 @@ class Connection(Base, AbstractConnection):
     ) -> None:
         log.warning("Connection %r was blocked by: %r", self, frame.reason)
         self.__connection_unblocked.clear()
+        # Callbacks must not hold up the reader while the broker is blocked.
+        # noinspection PyAsyncCall
+        for callback in self.on_blocked_callbacks:
+            self.create_task(self.__run_block_callback(callback, frame))
 
     async def __handle_connection_unblocked(
-        self, _: spec.Connection.Unblocked,
+        self, frame: spec.Connection.Unblocked,
     ) -> None:
         log.warning("Connection %r was unblocked", self)
         self.__connection_unblocked.set()
+        # noinspection PyAsyncCall
+        for callback in self.on_unblocked_callbacks:
+            self.create_task(self.__run_block_callback(callback, frame))
+
+    async def __run_block_callback(
+        self,
+        callback: Callable[..., Any],
+        frame: spec.Connection.Blocked | spec.Connection.Unblocked,
+    ) -> None:
+        try:
+            await awaitable(callback)(frame)
+        except Exception:
+            log.exception("Unhandled connection block callback exception")
 
     async def __reader(self, frame_receiver: FrameReceiver) -> None:
         self.__connection_unblocked.set()
